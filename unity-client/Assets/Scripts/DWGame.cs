@@ -270,6 +270,7 @@ namespace DW
                     if (m["state"] != null) warInfo = (JObject)m["state"];
                     break;
                 case "feed": Feed((string)m["msg"]); break;
+                case "chat": Feed($"💬 {(string)m["name"]}：{(string)m["msg"]}"); break;
                 case "err": Toast("⚠ " + (string)m["msg"]); break;
             }
         }
@@ -574,6 +575,8 @@ namespace DW
 
         void UpdateInput()
         {
+            if (chatOpen) return;   // 聊天时键盘归输入框
+            if (Input.GetKeyDown(KeyCode.T)) { chatOpen = true; return; }
             if (Input.GetMouseButton(1))
             {
                 camYaw -= Input.GetAxis("Mouse X") * 0.05f;

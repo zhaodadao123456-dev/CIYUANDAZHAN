@@ -410,6 +410,11 @@ function onMsg(m) {
     case 'you': updateYou(m); break;
     case 'war': setWar(m.state); break;
     case 'feed': feed(m.msg); break;
+    case 'chat': {
+      const d = DIMENSIONS.find((x) => x.id === m.dim);
+      feed(`💬 ${d ? d.icon : ''}${m.name}：${m.msg}`);  // feed 用 textContent，天然防注入
+      break;
+    }
     case 'err': toast('⚠️ ' + m.msg); break;
   }
 }
@@ -818,6 +823,13 @@ function onDmg(m) {
 function bindInput() {
   addEventListener('keydown', (e) => {
     if (!joined) return;
+    // 聊天框打开时键盘只归输入框
+    if (document.activeElement === $('chat-input')) {
+      if (e.code === 'Enter' || e.code === 'NumpadEnter') sendChat();
+      if (e.code === 'Escape') closeChat();
+      return;
+    }
+    if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); openChat(); return; }
     keys[e.code] = true;
     if (e.code === 'KeyQ') castSkill('q');
     if (e.code === 'KeyE') castSkill('e');
@@ -827,6 +839,7 @@ function bindInput() {
     if (e.code === 'Space') { e.preventDefault(); dodge(); }
   });
   addEventListener('keyup', (e) => keys[e.code] = false);
+  $('btn-chat').onclick = openChat;
 
   const cv = $('c3d');
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1306,6 +1319,22 @@ function feed(msg) {
   $('feed').prepend(el);
   while ($('feed').children.length > 6) $('feed').lastChild.remove();
   setTimeout(() => el.remove(), 12000);
+}
+
+/* ---------- 次元聊天 ---------- */
+function openChat() {
+  $('chatbar').classList.remove('hidden');
+  $('chat-input').focus();
+}
+function closeChat() {
+  $('chatbar').classList.add('hidden');
+  $('chat-input').blur();
+}
+function sendChat() {
+  const msg = $('chat-input').value.trim();
+  if (msg) net({ t: 'chat', msg });
+  $('chat-input').value = '';
+  closeChat();
 }
 
 let toastTimer;

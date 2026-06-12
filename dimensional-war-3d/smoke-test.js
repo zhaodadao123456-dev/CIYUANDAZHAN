@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = 34567;
-const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvErr = '';
 srv.stdout.on('data', (d) => process.stdout.write('[srv] ' + d));
 srv.stderr.on('data', (d) => { srvErr += d; process.stderr.write('[srv-err] ' + d); });
@@ -90,6 +90,16 @@ function client(name, dim, cls) {
   await sleep(300);
   const rank = A.got('rank');
   check('排行榜返回在线玩家', !!(rank && rank.list.some((r) => r.name === '测试猎人' && r.online)), rank && `共${rank.list.length}人`);
+
+  // 10.6 次元聊天：发送后本房间（含自己）应收到
+  A.send({ t: 'chat', msg: '聊天测试 hello' });
+  await sleep(300);
+  const chat = A.got('chat', (m) => m.msg === '聊天测试 hello');
+  check('次元聊天广播', !!chat, chat && `来自 ${chat.name}`);
+
+  // 10.7 世界BOSS：测试环境 2 秒必刷，全服收到降临公告
+  const bossFeed = A.got('feed', (m) => /世界BOSS/.test(m.msg));
+  check('世界BOSS降临公告', !!bossFeed, bossFeed && bossFeed.msg.slice(0, 30));
 
   // 11. 坦克属性验证：hpMul=1.75 → maxHp≈(200+30)*1.75=402
   const youC = C.got('you', (m) => m.maxHp);

@@ -174,7 +174,8 @@ const MODELS = (() => {
 
   /* 怪物按所在次元主色染色；small=true 用于猎人宝宝 */
   function makeMonster(tier, accent, small = false) {
-    const obj = instantiate('mon_t' + tier, small ? 0.75 + tier * 0.25 : 1.15 + tier * 0.4);
+    // tier 5 = 世界BOSS：复用 T4 模型放大（premium 可覆盖 mon_t4）
+    const obj = instantiate('mon_t' + Math.min(4, tier), small ? 0.75 + tier * 0.25 : 1.15 + tier * 0.4);
     if (!obj) return makeMonsterProc(tier, accent);
     tint(obj, accent, small ? 0.45 : 0.3);
     obj.userData.tier = tier;

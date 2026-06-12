@@ -10,6 +10,8 @@ namespace DW
     public partial class Game
     {
         bool panelOpen;
+        protected bool chatOpen;
+        string chatText = "";
         int panelTab;
         Vector2 panelScroll;
         readonly List<Rect> guiRects = new List<Rect>();
@@ -147,6 +149,32 @@ namespace DW
             GuiSkillBar();
             if (panelOpen) GuiPanel();
             if (meDead) GuiDeath();
+            if (chatOpen) GuiChat();
+            else GUI.Label(new Rect(12, Screen.height - 24, 300, 20), "<size=11><color=#888>按 T 聊天</color></size>", _label);
+        }
+
+        void GuiChat()
+        {
+            var r = new Rect(Screen.width / 2f - 240, Screen.height - 150, 480, 34);
+            guiRects.Add(r);
+            // 回车发送 / Esc 关闭（在控件处理前截获按键）
+            var ev = Event.current;
+            if (ev.type == EventType.KeyDown)
+            {
+                if (ev.keyCode == KeyCode.Return || ev.keyCode == KeyCode.KeypadEnter)
+                {
+                    var msg = chatText.Trim();
+                    if (msg.Length > 0) Send(new { t = "chat", msg });
+                    chatText = "";
+                    chatOpen = false;
+                    ev.Use();
+                    return;
+                }
+                if (ev.keyCode == KeyCode.Escape) { chatOpen = false; ev.Use(); return; }
+            }
+            GUI.SetNextControlName("dw_chat");
+            chatText = GUI.TextField(r, chatText, 60);
+            GUI.FocusControl("dw_chat");
         }
 
         void DrawBar(Rect r, float pct, Color c, string txt)

@@ -94,6 +94,32 @@ function addMonster(room, { name, tier, x, z }) {
 }
 for (const d of DIMENSIONS) spawnMonsters(rooms[d.id], d.id);
 
+/* ---------- 世界BOSS：定时降临随机次元，击杀必掉史诗+装备 ---------- */
+const BOSS_MS = +process.env.DW_BOSS_MS || 5 * 60 * 1000;
+const BOSS_NAMES = {
+  tech: '湮灭机神·零', xiuxian: '上古剑魔·殇', cyber: '霓虹暴君·VOID',
+  magic: '深渊魔龙·灾厄', hunter: '万兽之王·饕餮',
+};
+let worldBoss = null;   // { roomId, mid }
+function spawnWorldBoss() {
+  if (worldBoss) return;
+  const dim = DIMENSIONS[Math.floor(Math.random() * DIMENSIONS.length)];
+  const room = rooms[dim.id];
+  const ang = (LAIR_ANGLES[dim.id] || 0);
+  const id = 'm' + nextMid++;
+  room.monsters.set(id, {
+    id, name: BOSS_NAMES[dim.id] || '次元主宰', tier: 5, boss: true,
+    x: Math.cos(ang) * (LAIR_R - 8), z: Math.sin(ang) * (LAIR_R - 8),
+    spawnX: 0, spawnZ: 0, ry: 0,
+    hp: 3200, maxHp: 3200, atk: 46, speed: 4.4,
+    exp: 900, gold: 600,
+    state: 'idle', targetId: null, atkT: 0, dieT: 0, wanderT: 0, wx: 0, wz: 0,
+  });
+  worldBoss = { roomId: dim.id, mid: id };
+  allCast({ t: 'feed', msg: `🔥🔥 世界BOSS【${BOSS_NAMES[dim.id]}】降临【${dim.name}】BOSS巢穴！击杀者必得史诗级装备与海量金币！` });
+}
+setInterval(spawnWorldBoss, BOSS_MS);
+
 /* ---------- 玩家 ---------- */
 let nextPid = 1;
 const conns = new Map(); // ws -> player
@@ -192,7 +218,7 @@ function makeItem(slot, name, rar, q, spdBonus = 0) {
 }
 
 /* 野怪掉落：槽位随机，稀有度受怪物层级限制 */
-function rollDrop(tier, dimId) {
+function rollDrop(tier, dimId, minRar = 0) {
   const slots = ['weapon', 'helmet', 'armor', 'boots', 'acc'];
   const slot = slots[Math.floor(Math.random() * slots.length)];
   const maxRar = Math.min(4, tier);   // T1最多精良…T4可出传说
@@ -200,6 +226,7 @@ function rollDrop(tier, dimId) {
   const total = pool.reduce((s, r) => s + r.weight, 0);
   let roll = Math.random() * total, rar = 0;
   for (let i = 0; i < pool.length; i++) { roll -= pool[i].weight; if (roll <= 0) { rar = i; break; } }
+  rar = Math.min(maxRar, Math.max(rar, minRar));
   const dim = DIMENSIONS.find((d) => d.id === dimId) || DIMENSIONS[0];
   const idx = Math.min(2, Math.max(0, rar - 1));
   const name = slot === 'weapon' ? dim.weaponNames[idx]
@@ -378,6 +405,15 @@ function handle(ws, m) {
       return;
     }
     case 'capture': return capturePet(p);
+    case 'chat': {
+      const msg = String(m.msg || '').trim().slice(0, 60);
+      if (!msg) return;
+      const t = now();
+      if (p.lastChatT && t - p.lastChatT < 1200) return;  // 防刷屏
+      p.lastChatT = t;
+      roomCast(p.room, { t: 'chat', name: p.name, dim: p.dim, msg });
+      return;
+    }
     case 'rank': {
       // 全服排行榜：含离线玩家（存档）+ 在线实时数据
       const all = new Map();
@@ -640,8 +676,13 @@ function killMonster(p, mo) {
   p.kills++;
   p.gold += mo.gold;
   roomCast(p.room, { t: 'mdie', id: mo.id, by: p.id });
-  // 几率掉落装备（层级越高概率越大、品质越好）
-  if (Math.random() < 0.14 + mo.tier * 0.05) {
+  if (mo.boss) {
+    // 世界BOSS：必掉史诗级以上装备，全服公告
+    giveItem(p, rollDrop(4, p.dim, 3), `世界BOSS【${mo.name}】掉落`);
+    allCast({ t: 'feed', msg: `👑 【${dimName(p.dim)}】${p.name} 讨伐了世界BOSS【${mo.name}】，获得史诗战利品！` });
+    worldBoss = null;
+  } else if (Math.random() < 0.14 + mo.tier * 0.05) {
+    // 几率掉落装备（层级越高概率越大、品质越好）
     giveItem(p, rollDrop(mo.tier, p.dim), `【${mo.name}】掉落`);
   }
   gainExp(p, mo.exp); // 内部会 sendYou + persist
@@ -751,6 +792,10 @@ function tickRoom(room) {
   // 怪物AI
   for (const mo of room.monsters.values()) {
     if (mo.state === 'dead') {
+      if (mo.boss) {
+        if (t - mo.dieT > 8000) room.monsters.delete(mo.id);  // BOSS不复活，尸体消散
+        continue;
+      }
       if (t - mo.dieT > MONSTER_RESPAWN_MS && room.id !== 'war') {
         mo.hp = mo.maxHp; mo.state = 'idle'; mo.targetId = null;
         mo.x = mo.spawnX; mo.z = mo.spawnZ;

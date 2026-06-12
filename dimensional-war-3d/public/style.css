@@ -257,7 +257,21 @@ body.touch .controls-help { display: none; }
 }
 .inv-btns button:hover { background: #3a3a7a; }
 
-/* ---------- 背包/退出按钮 ---------- */
+/* ---------- 背包/聊天/退出按钮 ---------- */
 .bag-btn { top: 64px; }
-.exit-btn { top: 114px; }
+.chat-btn { top: 114px; }
+.exit-btn { top: 164px; }
 body.touch #panel { right: 8px; top: 56px; max-height: 78vh; }
+
+/* ---------- 聊天输入条 ---------- */
+#chatbar {
+  position: absolute; left: 50%; bottom: 130px; transform: translateX(-50%);
+  width: min(480px, 86vw); z-index: 30;
+}
+#chatbar.hidden { display: none; }
+#chat-input {
+  width: 100%; box-sizing: border-box; padding: 10px 14px;
+  background: rgba(10, 16, 30, 0.92); color: #eaf2ff;
+  border: 1px solid rgba(120, 180, 255, 0.45); border-radius: 10px;
+  font-size: 15px; outline: none;
+}
