@@ -70,6 +70,8 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
 #hud .btn { pointer-events: auto; }
+/* 面板与技能加点按钮需要接收点击（hud 整层默认穿透给3D画面） */
+#hud #panel, #hud .sk-plus { pointer-events: auto; }
 
 #top-left {
   position: absolute; top: 14px; left: 14px;
