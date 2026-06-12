@@ -151,7 +151,7 @@ const skHealMul = (p, k) => 1 + 0.15 * ((p.sk[k] || 1) - 1);
 function persist(p) {
   saved[p.name] = {
     level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills,
-    cls: p.cls, sk: p.sk, skPts: p.skPts, inv: p.inv, equip: p.equip,
+    cls: p.cls, dim: p.dim, sk: p.sk, skPts: p.skPts, inv: p.inv, equip: p.equip,
     pet: p.pet ? { name: p.pet.name, tier: p.pet.tier, maxHp: p.pet.maxHp, atk: p.pet.atk } : null,
   };
   saveDirty = true;
@@ -378,6 +378,20 @@ function handle(ws, m) {
       return;
     }
     case 'capture': return capturePet(p);
+    case 'rank': {
+      // 全服排行榜：含离线玩家（存档）+ 在线实时数据
+      const all = new Map();
+      for (const [name, rec] of Object.entries(saved)) {
+        all.set(name, { name, level: rec.level || 1, kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, gold: rec.gold || 0, dim: rec.dim || '', cls: rec.cls || '', online: false });
+      }
+      for (const op of conns.values()) {
+        all.set(op.name, { name: op.name, level: op.level, kills: op.kills, pvpKills: op.pvpKills, gold: op.gold, dim: op.dim, cls: op.cls, online: true });
+      }
+      const list = [...all.values()]
+        .sort((a, b) => b.level - a.level || b.pvpKills - a.pvpKills || b.kills - a.kills)
+        .slice(0, 20);
+      return send(p.ws, { t: 'rank', list });
+    }
     case 'sklvl': {
       const k = ['basic', 'q', 'e', 'r'].includes(m.k) ? m.k : null;
       if (!k || p.skPts <= 0) return;

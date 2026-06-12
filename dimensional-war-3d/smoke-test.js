@@ -85,6 +85,12 @@ function client(name, dim, cls) {
   check('快照含 pets 字段', !!(snapA && Array.isArray(snapA.pets)));
   check('怪物已刷新', !!(snapA && snapA.ms.length === 24), snapA && `本房间怪物=${snapA.ms.length}`);
 
+  // 10.5 排行榜
+  A.send({ t: 'rank' });
+  await sleep(300);
+  const rank = A.got('rank');
+  check('排行榜返回在线玩家', !!(rank && rank.list.some((r) => r.name === '测试猎人' && r.online)), rank && `共${rank.list.length}人`);
+
   // 11. 坦克属性验证：hpMul=1.75 → maxHp≈(200+30)*1.75=402
   const youC = C.got('you', (m) => m.maxHp);
   check('坦克血量加成生效', !!(youC && youC.maxHp > 380), youC && `maxHp=${youC.maxHp}`);

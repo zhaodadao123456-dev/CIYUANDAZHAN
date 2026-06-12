@@ -312,6 +312,11 @@ function onMsg(m) {
       renderPanel();
       break;
     }
+    case 'rank': {
+      rankData = m.list || [];
+      renderPanel();
+      break;
+    }
     case 'heal': {
       const pos = m.id === myId ? (me && me.obj.position) : (remotes.get(m.id) || {}).obj && remotes.get(m.id).obj.position;
       if (pos) {
@@ -850,6 +855,7 @@ function bindInput() {
   $('btn-bag').onclick = togglePanel;
   document.querySelectorAll('.panel-tab').forEach((el) => el.onclick = () => {
     panelTab = el.dataset.tab;
+    if (panelTab === 'rank') net({ t: 'rank' });   // 打开时拉取最新榜单
     renderPanel();
   });
   $('btn-panel-close').onclick = togglePanel;
@@ -1187,6 +1193,7 @@ function updateYou(y) {
 
 /* ---------- 属性/背包/商店 面板 ---------- */
 let panelTab = 'stats';
+let rankData = [];
 const RAR_COLORS = ['#95a5a6', '#2ecc71', '#3498db', '#9b59b6', '#f39c12'];
 function itemStatText(it) {
   const parts = [];
@@ -1244,6 +1251,17 @@ function renderPanel() {
     body.querySelectorAll('[data-eq]').forEach((b) => b.onclick = () => net({ t: 'equip', i: +b.dataset.eq }));
     body.querySelectorAll('[data-sell]').forEach((b) => b.onclick = () => net({ t: 'sell', i: +b.dataset.sell }));
     body.querySelectorAll('.equip-slot').forEach((el) => el.onclick = () => { if ((invData.equip || {})[el.dataset.slot]) net({ t: 'unequip', slot: el.dataset.slot }); });
+  } else if (panelTab === 'rank') {
+    const dimIcon2 = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.icon : '❔'; };
+    body.innerHTML = `
+      <div class="panel-sub">🏆 全服排行榜（按等级/PvP击杀）</div>
+      ${rankData.length === 0 ? '<div class="dim-text">加载中…</div>' : rankData.map((r, i) => `
+        <div class="inv-row">
+          <span>${i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.'} ${dimIcon2(r.dim)} <b>${r.name}</b>
+            ${r.online ? '<span style="color:#2ecc71;font-size:10px">●在线</span>' : ''}
+            ${(CLASS_NAMES[r.dim] || {})[r.cls] ? `<small class="dim-text">${CLASS_NAMES[r.dim][r.cls]}</small>` : ''}</span>
+          <small class="dim-text">Lv.${r.level} ｜ PvP ${r.pvpKills} ｜ 击杀 ${r.kills}</small>
+        </div>`).join('')}`;
   } else {
     body.innerHTML = `
       <div class="panel-sub">商店（金币：💰${HUD.gold || 0}）</div>
