@@ -82,7 +82,7 @@ const MODELS = (() => {
     let done = 0;
     const finishOne = () => { done++; for (const cb of progressCbs) cb(done, ASSET_LIST.length); };
     /* 单个资产：失败/超时自动重试一次，仍不行就用程序化模型兜底，绝不卡死加载 */
-    const loadOne = ([key, url]) => new Promise((resolve) => {
+    const loadOne = ([key, url], animMap) => new Promise((resolve) => {
       let settled = false;
       const settle = () => { if (!settled) { settled = true; finishOne(); resolve(); } };
       const attempt = (retriesLeft) => {
@@ -97,7 +97,7 @@ const MODELS = (() => {
           clearTimeout(timer);
           if (settled) return;
           const box = new THREE.Box3().setFromObject(gltf.scene);
-          cache[key] = { scene: gltf.scene, anims: gltf.animations, height: Math.max(0.1, box.max.y - box.min.y) };
+          cache[key] = { scene: gltf.scene, anims: gltf.animations, height: Math.max(0.1, box.max.y - box.min.y), animMap: animMap || null };
           settle();
         }, undefined, (err) => {
           clearTimeout(timer);
@@ -108,7 +108,21 @@ const MODELS = (() => {
       };
       attempt(1);
     });
-    loadPromise = Promise.all(ASSET_LIST.map(loadOne)).then(() => { assetsReady = true; });
+    /* 高级素材覆盖：服务器上若存在 assets/premium/manifest.json（购买的精品模型，
+     * 直接 SFTP 上传到服务器，不入 Git），优先加载其中声明的模型。
+     * 格式见 docs/premium-assets.md */
+    loadPromise = fetch('assets/premium/manifest.json', { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((premium) => {
+        const overrides = (premium && premium.overrides) || {};
+        return Promise.all(ASSET_LIST.map(([key, url]) => {
+          const ov = overrides[key];
+          if (ov && ov.url) return loadOne([key, 'assets/premium/' + ov.url.replace(/^\/+/, '')], ov.animMap);
+          return loadOne([key, url]);
+        }));
+      })
+      .then(() => { assetsReady = true; });
     return loadPromise;
   }
 
@@ -123,8 +137,13 @@ const MODELS = (() => {
     const mixer = new THREE.AnimationMixer(obj);
     const actions = {};
     for (const clip of tpl.anims) actions[clip.name] = mixer.clipAction(clip);
-    obj.userData.rig = { mixer, actions, base: null, baseName: '', one: null, busyUntil: 0, deadDone: false, deadAction: null };
+    obj.userData.rig = { mixer, actions, base: null, baseName: '', one: null, busyUntil: 0, deadDone: false, deadAction: null, animMap: tpl.animMap };
     return obj;
+  }
+
+  /* 高级素材的动画名翻译：购买包的动画命名各不相同，按 manifest 的 animMap 映射 */
+  function animName(rig, name) {
+    return (rig.animMap && rig.animMap[name]) || name;
   }
 
   /* 向次元主色染色（克隆材质，避免影响其他实例） */
@@ -193,7 +212,7 @@ const MODELS = (() => {
   /* ============ 骨骼动画状态机 ============ */
   function setBase(rig, name, fade = 0.18) {
     if (rig.baseName === name) return;
-    const a = rig.actions[name];
+    const a = rig.actions[animName(rig, name)];
     if (!a) return;
     if (rig.base) rig.base.fadeOut(fade);
     a.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(fade).play();
@@ -213,7 +232,7 @@ const MODELS = (() => {
         rig.deadDone = true;
         if (rig.one) { rig.one.fadeOut(0.1); rig.one = null; }
         if (rig.base) { rig.base.fadeOut(0.1); rig.base = null; rig.baseName = ''; }
-        const d = rig.actions['Death_A'];
+        const d = rig.actions[animName(rig, 'Death_A')];
         if (d) { d.reset().setLoop(THREE.LoopOnce, 1); d.clampWhenFinished = true; d.fadeIn(0.1).play(); rig.deadAction = d; }
       }
       return true;
@@ -229,7 +248,7 @@ const MODELS = (() => {
   }
 
   function playOnce(rig, name, speed) {
-    const a = rig.actions[name];
+    const a = rig.actions[animName(rig, name)];
     if (!a) return;
     rig.busyUntil = performance.now() + (a.getClip().duration / speed) * 1000 - 60;
     if (rig.base) { rig.base.fadeOut(0.08); rig.base = null; rig.baseName = ''; }
