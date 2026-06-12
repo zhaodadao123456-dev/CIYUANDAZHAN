@@ -1,0 +1,16 @@
+# Unity 自动生成目录
+Library/
+Temp/
+Obj/
+obj/
+Logs/
+UserSettings/
+Build/
+Builds/
+MemoryCaptures/
+*.csproj
+*.sln
+*.user
+.vs/
+.idea/
+.DS_Store
