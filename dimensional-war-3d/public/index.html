@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>次元大战 3D · Dimensional War</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="c3d"></canvas>
+
+  <!-- 加入界面 -->
+  <div id="join-screen">
+    <h1 class="title">🌌 次元大战 3D</h1>
+    <p class="subtitle">实时动作战斗 · 多人在线 · 次元重叠战场</p>
+    <div class="join-box">
+      <input id="join-name" type="text" maxlength="12" placeholder="输入你的降临者之名">
+      <div id="dim-cards" class="dim-cards"></div>
+      <button id="btn-join" class="btn primary wide">⚔️ 降临次元</button>
+      <div class="preview-hint">⬇ 点击次元卡片预览英雄 ⬇</div>
+    </div>
+    <div class="controls-help">
+      <b>操作：</b> WASD 移动 ｜ 按住右键拖动转视角 ｜ 滚轮缩放<br>
+      鼠标左键 普攻 ｜ Q 弹道技 ｜ E 范围爆发(Lv.3) ｜ R 突进斩(Lv.5) ｜ 空格 翻滚闪避<br>
+      <span class="dim-text">打怪升级 → 等待「次元重叠」→ 进入重叠战场与敌对次元玩家实时厮杀，击杀掠夺金币！同次元玩家无法互相伤害。</span>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="top-left">
+      <div id="room-name"></div>
+      <div class="bar hpbar"><div id="hp-fill"></div><span id="hp-text"></span></div>
+      <div class="bar expbar"><div id="exp-fill"></div></div>
+      <div id="stat-line"></div>
+    </div>
+
+    <div id="war-banner" class="hidden">
+      <span id="war-text"></span>
+      <button id="btn-war" class="btn war hidden"></button>
+    </div>
+
+    <div id="feed"></div>
+
+    <div id="skill-bar">
+      <div class="skill-slot" id="sk-basic"><span class="key">左键</span>普攻<div class="cd"></div></div>
+      <div class="skill-slot" id="sk-q"><span class="key">Q</span>弹道<div class="cd"></div></div>
+      <div class="skill-slot" id="sk-e"><span class="key">E</span>爆发<div class="cd"></div></div>
+      <div class="skill-slot" id="sk-r"><span class="key">R</span>突斩<div class="cd"></div></div>
+      <div class="skill-slot" id="sk-dodge"><span class="key">空格</span>翻滚<div class="cd"></div></div>
+    </div>
+  </div>
+
+  <!-- 受击红屏 -->
+  <div id="hurt" class="hidden"></div>
+
+  <!-- 死亡界面 -->
+  <div id="death" class="hidden">
+    <div class="death-box">
+      <h2>💀 你已阵亡</h2>
+      <p>复活倒计时 <span id="death-cd"></span></p>
+      <button id="btn-respawn" class="btn primary">立即复活</button>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <!-- 静音切换 -->
+  <button id="btn-mute" class="btn mute-btn">🔊</button>
+
+  <!-- 移动端虚拟摇杆 + 攻击键（仅触屏显示） -->
+  <div id="joy" class="hidden"><div id="joy-knob"></div></div>
+  <button id="btn-atk" class="atk-btn">⚔️</button>
+
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js" } }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from './vendor/GLTFLoader.js';
+    import { clone as skeletonClone } from './vendor/SkeletonUtils.js';
+    window.THREE = THREE;
+    window.GLTFLoader = GLTFLoader;
+    window.skeletonClone = skeletonClone;
+  </script>
+  <script src="js/data.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# systemd 服务文件 — 放到 /etc/systemd/system/dimensional-war.service
+# 按需修改 WorkingDirectory 和环境变量后执行：
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dimensional-war
+[Unit]
+Description=Dimensional War Online Game Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/dimensional-war-online
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+Environment=PORT=3000
+# 一个游戏日的真实分钟数；1440=现实1天(每周开战一次)。测试时可改小，如 2
+Environment=GAME_DAY_MINUTES=1440
+# 设置后可用 GET /admin/tick?key=xxx 手动推进游戏日（建议改成随机长字符串）
+# Environment=ADMIN_KEY=change-me
+
+[Install]
+WantedBy=multi-user.target

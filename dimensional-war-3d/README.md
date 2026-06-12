@@ -1,0 +1,83 @@
+# 🌌 次元大战 3D · 实时动作多人版
+
+Three.js 实时 3D 动作战斗 + Node.js 权威服务器的多人在线版本。
+**不是回合制**：WASD 走位、鼠标视角、技能连招、翻滚闪避、实时打怪与玩家对战。
+
+![玩法] 五大次元各有专属 3D 地图与英雄造型 → 实时砍怪升级解锁技能 → 周期性「次元重叠」开启重叠战场 → 两个次元的玩家进场实时厮杀，击杀掠夺金币、为本方拿下战场胜利。
+
+## 操作
+
+| 按键 | 动作 |
+|------|------|
+| WASD | 移动 |
+| 按住右键拖动 | 旋转视角（滚轮缩放） |
+| 鼠标左键 | 普攻（自动锁定面前最近敌人） |
+| Q | 次元弹道（射出能量弹） |
+| E | 范围爆发（Lv.3 解锁） |
+| R | 突进斩击（Lv.5 解锁） |
+| 空格 | 翻滚闪避 |
+
+## 玩法规则
+
+- 五大次元（科技/修仙/赛博朋克/西方魔法/猎人）各一张主题地图：专属配色、场景、怪物（T1~T4 越外圈越强），出生点周围是怪物无法进入的安全区
+- 击杀怪物获得经验金币，升级解锁 E/R 技能；按昵称自动存档（等级/金币/击杀数）
+- **重叠战场**：服务器定时随机抽取两个次元开启战场（默认每 12 分钟一场、持续 5 分钟，可配置）。参战次元玩家点击「⚔️ 进入战场」传送进场，**与敌对次元玩家实时 PvP**，击杀掠夺对方 10% 金币并为本方+1 战意；战场结束按击杀数分胜负，胜方多拿奖励
+- **同次元玩家受世界规则保护**，任何技能都无法伤害同次元玩家
+- 阵亡 4 秒后复活；被怪击杀丢失 5% 金币
+
+## 本地运行
+
+```bash
+cd dimensional-war-3d
+npm install
+ADMIN_KEY=test123 WAR_INTERVAL_MINUTES=2 WAR_DURATION_MINUTES=3 npm start
+# 浏览器打开 http://localhost:3000，开多个窗口用不同昵称加入即可联机
+# 手动开战：curl "http://localhost:3000/admin/war?key=test123&a=xiuxian&b=cyber"
+```
+
+## 腾讯云部署
+
+与 2D 在线版完全相同的部署方式（Node 20 + systemd + nginx WebSocket 反代），
+按 [`../dimensional-war-online/README.md`](../dimensional-war-online/README.md) 的指南操作，
+只需把目录换成 `dimensional-war-3d`、服务名换一个即可。要点：
+
+```bash
+sudo cp -r /opt/repo/dimensional-war-3d /opt/dimensional-war-3d
+cd /opt/dimensional-war-3d && npm install --omit=dev
+PORT=3000 node server.js   # 试运行，浏览器访问 http://公网IP:3000
+```
+
+环境变量：`PORT` / `WAR_INTERVAL_MINUTES`（战场间隔）/ `WAR_DURATION_MINUTES`（战场时长）/ `ADMIN_KEY`（手动开战接口）。
+
+## 架构
+
+```
+dimensional-war-3d/
+├── server.js              # 权威服务器：10Hz世界模拟（怪物AI/技能弹道判定/PvP/战场调度）
+│                          #   伤害与掉落全部服务端计算；位置限速防作弊
+├── public/
+│   ├── index.html         # 加入界面 + HUD（血条/技能栏/战场横幅/击杀播报）
+│   ├── js/data.js         # 五大次元共享数据
+│   ├── js/models.js       # 程序化低模英雄/怪物/武器 + 程序化动画
+│   ├── js/game.js         # Three.js 渲染、第三人称操控、实体插值、特效、伤害飘字
+│   └── vendor/three.min.js
+└── players.json           # 运行时按昵称存档（gitignore）
+```
+
+- 客户端 15Hz 上报位置（服务器限速校验），服务器 10Hz 广播房间快照，客户端插值平滑
+- 命中判定全部在服务器：近战扇形 / 弹道球体扫掠 / 范围圆形，客户端只做表现
+- 角色美术使用 **KayKit 专业游戏资产**（CC0 授权，可免费商用，无需署名）：
+  - 英雄（KayKit Adventurers）：骑士→科技 / 盗贼双刀→修仙 / 兜帽夜行者→赛博朋克 / 法师→西方魔法 / 野蛮人→猎人，每个次元隐藏不同配件形成专属武器外观
+  - 怪物（KayKit Skeletons）：骷髅小兵/盗贼/法师/武士 → T1~T4
+  - 全部为带骨骼动画的 GLB（Idle/跑步/多种攻击/施法/翻滚/死亡），客户端用动画状态机驱动，技能按次元映射不同攻击动作
+  - GLB 已用 gltf-transform 裁剪动画瘦身（36MB→25MB）；`models.js` 保留程序化低模作为加载失败的兜底
+  - 资产来源：https://kaylousberg.itch.io/kaykit-adventurers 与 https://kaylousberg.itch.io/kaykit-skeletons（LICENSE 文件随包附在 public/assets/）
+- 场景美术使用 KayKit 场景包（均 CC0）：太空基地→科技 / 六边形王国树木岩石+地牢石柱→修仙 / 城市高楼路灯→赛博朋克 / 地牢遗迹→西方魔法与战场 / 万圣节松树枯树→猎人；33 种摆件按主题加权随机布场（共 1.6MB）
+- 粒子特效系统：单 Points 粒子池（1600 容量，加色混合），Q 弹道拖尾+命中爆裂、E 范围喷发+闪光、R 冲刺残影、受击火花、击杀飞散、升级金色喷泉、死亡爆散；爆发瞬间附带衰减点光源
+- 英雄选择 3D 预览转盘：进入页面即后台预载资产，点击次元卡片在发光底座上 360° 展示该次元英雄（带待机动画+攻击动作演示）
+- 渲染：实时阴影（PCFSoft 2048）+ ACES 电影级色调映射 + 主题雾效
+
+## 测试
+
+- `node /tmp/dw3d-test.js`：19 项联机集成测试（双客户端移动同步/打怪/战场PvP/结算/同次元保护/存档）
+- Playwright + SwiftShader 无头浏览器端到端：真实渲染截图验证

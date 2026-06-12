@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>次元大战 Online · Dimensional War</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===== 登录/注册界面 ===== -->
+  <div id="screen-login">
+    <h1 class="title">🌌 次元大战 Online</h1>
+    <p class="subtitle">真实多人世界：五大次元彼此征伐，每周一战，败者淹灭。</p>
+    <div id="conn-status" class="conn-status">连接服务器中……</div>
+
+    <div class="auth-box">
+      <div class="auth-tabs">
+        <button id="tab-login" class="auth-tab active">登录</button>
+        <button id="tab-register" class="auth-tab">注册降临</button>
+      </div>
+
+      <div id="form-login" class="auth-form">
+        <input id="li-user" type="text" placeholder="账号" autocomplete="username">
+        <input id="li-pass" type="password" placeholder="密码" autocomplete="current-password">
+        <button class="btn primary wide" onclick="doLogin()">⚔️ 进入次元</button>
+      </div>
+
+      <div id="form-register" class="auth-form hidden">
+        <input id="rg-user" type="text" placeholder="账号（3~20位字母/数字/下划线）">
+        <input id="rg-pass" type="password" placeholder="密码（至少6位）">
+        <input id="rg-name" type="text" maxlength="12" placeholder="降临者之名（昵称）">
+        <input id="rg-invite" type="text" placeholder="邀请码（可选，将降临好友的世界）">
+        <div class="dim-text" style="margin:6px 0">选择降临次元（使用邀请码时将自动降临好友所在次元）：</div>
+        <div id="dim-cards" class="dim-cards small"></div>
+        <button class="btn primary wide" onclick="doRegister()">🌟 降临！</button>
+      </div>
+    </div>
+
+    <div class="rules">
+      <h3>📜 世界规则</h3>
+      <ul>
+        <li>所有玩家共享同一个真实世界，服务器统一推进时间，<b>每周第7天开启两两次元大战</b>。</li>
+        <li>同次元玩家受世界规则保护，无法互相战斗。</li>
+        <li>大战前夕（第5~6天）随机地图区域成为<b>🌀重叠区</b>，两个参战次元的玩家在此相遇，胜者<b>真实掠夺</b>对方玩家的金币与装备！</li>
+        <li>重叠区每次击杀为本方积累<b>战意</b>，提升大战胜算；大战胜负由次元总战力（所有玩家+底蕴+战意）决定。</li>
+        <li>败方次元淹灭，玩家随机重生于其他次元；直到决出最终冠军次元，开启新赛季。</li>
+        <li>把<b>邀请码</b>分享给好友，好友注册后降临你的世界：你获得世界意志奖励，本方战力提升！</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===== 游戏主界面 ===== -->
+  <div id="screen-game" class="hidden">
+    <header id="hud">
+      <div id="hud-dim"></div>
+      <div id="hud-day"></div>
+      <div id="hud-energy"></div>
+      <div id="hud-countdown" class="dim-text"></div>
+      <div id="hud-war"></div>
+      <div id="hud-online" class="dim-text"></div>
+      <button class="btn danger" onclick="logout()">退出</button>
+    </header>
+
+    <main class="layout">
+      <!-- 左：角色 -->
+      <section class="panel">
+        <h2>👤 角色</h2>
+        <div id="char-info"></div>
+        <h3>🛡️ 装备</h3>
+        <div id="char-equip"></div>
+        <h3>📖 技能</h3>
+        <div id="char-skills"></div>
+        <h3>🎒 背包</h3>
+        <div id="char-bag" class="bag"></div>
+        <h3>📬 战报邮件 <button class="mini-btn" onclick="toggleMail()">展开/收起</button></h3>
+        <div id="char-mail" class="bag hidden"></div>
+      </section>
+
+      <!-- 中：地图 + 邀请 -->
+      <section class="panel">
+        <h2 id="map-title"></h2>
+        <div id="map-regions"></div>
+        <div class="panel-sub">
+          <h3>📨 邀请好友 · 世界意志奖励</h3>
+          <p class="dim-text">已成功邀请 <b id="invite-count">0</b> 人。好友注册时填写你的邀请码，将降临你的世界，世界意志会降下奖励（金币/史诗·传说装备/永久属性加成），并提升本方次元大战战力！</p>
+          <div class="invite-code">我的邀请码：<b id="invite-code"></b>
+            <button class="mini-btn" onclick="copyInvite()">复制邀请信息</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右：局势 + 排行 + 日志 + 聊天 -->
+      <section class="panel">
+        <h2>🌐 诸天次元局势</h2>
+        <div id="dims-list"></div>
+        <h3>🏆 战力排行 <button class="mini-btn" onclick="reqTop()">刷新</button></h3>
+        <div id="top-list"></div>
+        <h3>📰 世界动态</h3>
+        <div id="log-list" class="logs"></div>
+        <h3>💬 次元频道</h3>
+        <div id="chat-list" class="logs chat"></div>
+        <div class="chat-input">
+          <input id="chat-text" type="text" maxlength="200" placeholder="与同次元的伙伴交流……">
+          <button class="btn" onclick="sendChat()">发送</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===== 战斗弹窗 ===== -->
+  <div id="combat-modal" class="modal hidden">
+    <div class="modal-box combat-box">
+      <h2 id="combat-title"></h2>
+      <div class="combat-field">
+        <div class="fighter">
+          <div id="cb-pname" class="fighter-name"></div>
+          <div class="bar"><div id="cb-php" class="bar-fill hp"></div><span id="cb-php-t"></span></div>
+        </div>
+        <div class="vs">VS</div>
+        <div class="fighter">
+          <div id="cb-ename" class="fighter-name enemy"></div>
+          <div class="bar"><div id="cb-ehp" class="bar-fill ehp"></div><span id="cb-ehp-t"></span></div>
+        </div>
+      </div>
+      <div id="combat-actions" class="combat-actions"></div>
+      <div id="combat-log" class="combat-log"></div>
+    </div>
+  </div>
+
+  <!-- ===== 提示条 ===== -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/game/data.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>

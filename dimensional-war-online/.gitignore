@@ -1,0 +1,4 @@
+node_modules/
+world.json
+world.json.tmp
+npm-debug.log

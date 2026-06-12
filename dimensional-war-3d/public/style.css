@@ -1,0 +1,179 @@
+/* ===== 次元大战 3D ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a18; }
+body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: #e8e8f0; }
+#c3d { position: fixed; inset: 0; display: block; }
+.hidden { display: none !important; }
+.dim-text { color: #9a9ab5; font-size: 12px; }
+
+/* ---------- 加入界面 ---------- */
+#join-screen {
+  position: fixed; inset: 0; z-index: 50;
+  background: linear-gradient(to bottom,
+    rgba(12,12,28,0.94) 0%, rgba(12,12,28,0.78) 30%,
+    rgba(12,12,28,0.18) 52%, rgba(12,12,28,0.08) 78%, rgba(12,12,28,0.55) 100%);
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding: 14px 20px 0;
+}
+.title {
+  font-size: 36px;
+  background: linear-gradient(90deg, #00a8ff, #2ecc71, #e84393, #9b59b6, #e67e22);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.subtitle { color: #aab; margin: 6px 0 14px; text-shadow: 0 1px 4px #000; }
+.join-box { width: min(640px, 94vw); text-align: center; }
+.preview-hint { color: #8a8aa3; font-size: 12px; margin-top: 10px; text-shadow: 0 1px 3px #000; }
+.join-box input {
+  width: 100%; padding: 12px 16px; font-size: 16px;
+  background: #15152c; border: 1px solid #44447a; border-radius: 10px;
+  color: #fff; outline: none; margin-bottom: 14px;
+}
+.dim-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+@media (max-width: 640px) { .dim-cards { grid-template-columns: repeat(2, 1fr); } }
+.dim-card {
+  background: rgba(30,30,56,0.8); border: 2px solid; border-radius: 12px;
+  padding: 14px 6px; cursor: pointer; transition: transform .15s, box-shadow .15s;
+  text-align: center;
+}
+.dim-card:hover { transform: translateY(-4px); }
+.dim-card.chosen { box-shadow: 0 0 22px rgba(120,120,255,0.8); transform: scale(1.06); }
+.dc-icon { font-size: 30px; }
+.dc-name { font-size: 13px; font-weight: bold; margin-top: 4px; }
+.controls-help {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  width: min(860px, 92vw);
+  font-size: 12px; line-height: 1.8; text-align: center;
+  color: #c8c8dd; background: rgba(14,14,32,0.72);
+  border: 1px solid #333355; border-radius: 12px; padding: 8px 18px;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  background: #2d2d55; color: #e8e8f0; border: 1px solid #44447a;
+  border-radius: 8px; padding: 9px 18px; font-size: 14px; cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: #3d3d75; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: #4a4aff; border-color: #6c6cff; }
+.btn.wide { width: 100%; padding: 13px; font-size: 17px; }
+.btn.war {
+  background: linear-gradient(90deg, #c0392b, #e67e22);
+  border-color: #ff8a5a; font-weight: bold;
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 2px rgba(255,94,90,0.3); }
+  50% { box-shadow: 0 0 18px rgba(255,94,90,0.8); }
+}
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+#hud .btn { pointer-events: auto; }
+
+#top-left {
+  position: absolute; top: 14px; left: 14px;
+  background: rgba(12,12,28,0.75); border: 1px solid #333355;
+  border-radius: 12px; padding: 10px 14px; min-width: 250px;
+}
+#room-name { font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+.bar { position: relative; height: 16px; border-radius: 8px; background: #11112a; overflow: hidden; border: 1px solid #333; margin: 4px 0; }
+.bar.expbar { height: 7px; }
+#hp-fill { height: 100%; background: linear-gradient(90deg,#27ae60,#2ecc71); transition: width .2s; }
+#exp-fill { height: 100%; background: linear-gradient(90deg,#8e44ad,#9b59b6); transition: width .2s; }
+#hp-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; text-shadow: 0 1px 2px #000; }
+#stat-line { font-size: 12px; color: #cfcfe5; margin-top: 4px; }
+
+#war-banner {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  background: rgba(30,10,20,0.8); border: 1px solid #aa3355;
+  border-radius: 12px; padding: 9px 18px; font-size: 14px;
+  display: flex; align-items: center; gap: 14px; white-space: nowrap;
+}
+
+#feed {
+  position: absolute; top: 70px; right: 14px; width: 330px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.feed-item {
+  background: rgba(12,12,28,0.7); border-left: 3px solid #6c6cff;
+  font-size: 12px; padding: 6px 9px; border-radius: 6px; line-height: 1.5;
+  animation: fadein .3s;
+}
+@keyframes fadein { from { opacity: 0; transform: translateX(20px); } }
+
+#skill-bar {
+  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 10px;
+}
+.skill-slot {
+  position: relative; width: 64px; height: 64px;
+  background: rgba(15,15,35,0.85); border: 2px solid #44447a; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: #dde; overflow: hidden;
+}
+.skill-slot .key {
+  position: absolute; top: 3px; left: 6px;
+  font-size: 10px; color: #ffd166; font-weight: bold;
+}
+.skill-slot .cd {
+  position: absolute; left: 0; bottom: 0; width: 100%; height: 0%;
+  background: rgba(0,0,0,0.72); pointer-events: none;
+}
+.skill-slot.locked { filter: grayscale(1) brightness(0.5); }
+
+/* ---------- 受击/死亡 ---------- */
+#hurt {
+  position: fixed; inset: 0; z-index: 20; pointer-events: none;
+  box-shadow: inset 0 0 120px rgba(255, 30, 50, 0.55);
+}
+#death {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(10, 0, 5, 0.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.death-box {
+  background: rgba(20,10,16,0.95); border: 1px solid #aa3355;
+  border-radius: 16px; padding: 30px 50px; text-align: center;
+}
+.death-box h2 { margin-bottom: 10px; }
+.death-box p { margin-bottom: 16px; color: #faa; }
+
+#toast {
+  position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%);
+  background: rgba(20,20,45,0.95); color: #ffe0a3;
+  border: 1px solid #6c6cff; border-radius: 10px;
+  padding: 11px 22px; font-size: 14px; z-index: 60; max-width: 84vw;
+}
+
+/* ---------- 静音按钮 ---------- */
+.mute-btn {
+  position: fixed; top: 14px; right: 14px; z-index: 70;
+  width: 42px; height: 42px; padding: 0; font-size: 18px; border-radius: 50%;
+}
+
+/* ---------- 移动端虚拟摇杆 ---------- */
+#c3d { touch-action: none; }
+#joy {
+  position: fixed; z-index: 40; width: 120px; height: 120px;
+  border: 2px solid rgba(140,140,255,0.5); border-radius: 50%;
+  background: rgba(30,30,60,0.25); pointer-events: none;
+}
+#joy-knob {
+  position: absolute; left: 50%; top: 50%; margin: -26px 0 0 -26px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(120,120,255,0.55); border: 2px solid rgba(180,180,255,0.8);
+}
+.atk-btn {
+  display: none; position: fixed; right: 26px; bottom: 110px; z-index: 40;
+  width: 84px; height: 84px; border-radius: 50%; font-size: 34px;
+  background: rgba(74,74,255,0.55); border: 2px solid #6c6cff; color: #fff;
+}
+body.touch .atk-btn { display: block; }
+body.touch #skill-bar { left: auto; right: 18px; bottom: 22px; transform: none; gap: 8px; }
+body.touch .skill-slot { width: 58px; height: 58px; pointer-events: auto; }
+body.touch .controls-help { display: none; }
+@media (pointer: coarse) {
+  #feed { width: 240px; font-size: 11px; }
+  #war-banner { font-size: 12px; padding: 7px 10px; flex-wrap: wrap; white-space: normal; max-width: 70vw; }
+}

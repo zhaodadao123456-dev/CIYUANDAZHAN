@@ -1,0 +1,14 @@
+{
+  "name": "dimensional-war-3d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "次元大战 3D · 实时动作多人在线版",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.0",
+    "three": "0.158.0"
+  }
+}
