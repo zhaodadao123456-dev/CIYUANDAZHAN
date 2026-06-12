@@ -100,23 +100,25 @@ const BOSS_NAMES = {
   tech: '湮灭机神·零', xiuxian: '上古剑魔·殇', cyber: '霓虹暴君·VOID',
   magic: '深渊魔龙·灾厄', hunter: '万兽之王·饕餮',
 };
-let worldBoss = null;   // { roomId, mid }
+let worldBoss = null;   // { roomId, mid, dim, name, x, z }
 function spawnWorldBoss() {
   if (worldBoss) return;
   const dim = DIMENSIONS[Math.floor(Math.random() * DIMENSIONS.length)];
   const room = rooms[dim.id];
   const ang = (LAIR_ANGLES[dim.id] || 0);
   const id = 'm' + nextMid++;
+  const bx = Math.cos(ang) * (LAIR_R - 8), bz = Math.sin(ang) * (LAIR_R - 8);
+  const name = BOSS_NAMES[dim.id] || '次元主宰';
   room.monsters.set(id, {
-    id, name: BOSS_NAMES[dim.id] || '次元主宰', tier: 5, boss: true,
-    x: Math.cos(ang) * (LAIR_R - 8), z: Math.sin(ang) * (LAIR_R - 8),
-    spawnX: 0, spawnZ: 0, ry: 0,
+    id, name, tier: 5, boss: true,
+    x: bx, z: bz, spawnX: bx, spawnZ: bz, ry: 0,
     hp: 3200, maxHp: 3200, atk: 46, speed: 4.4,
     exp: 900, gold: 600,
-    state: 'idle', targetId: null, atkT: 0, dieT: 0, wanderT: 0, wx: 0, wz: 0,
+    state: 'idle', targetId: null, atkT: 0, aoeT: now(), dieT: 0, wanderT: 0, wx: bx, wz: bz,
   });
-  worldBoss = { roomId: dim.id, mid: id };
-  allCast({ t: 'feed', msg: `🔥🔥 世界BOSS【${BOSS_NAMES[dim.id]}】降临【${dim.name}】BOSS巢穴！击杀者必得史诗级装备与海量金币！` });
+  worldBoss = { roomId: dim.id, mid: id, dim: dim.id, name, x: +bx.toFixed(1), z: +bz.toFixed(1) };
+  allCast({ t: 'feed', msg: `🔥🔥 世界BOSS【${name}】降临【${dim.name}】BOSS巢穴！击杀者必得史诗级装备与海量金币！` });
+  allCast({ t: 'boss', alive: 1, dim: dim.id, name, x: worldBoss.x, z: worldBoss.z });
 }
 setInterval(spawnWorldBoss, BOSS_MS);
 
@@ -547,6 +549,7 @@ function joinRoom(p, roomId, isFirst = false) {
     you: { name: p.name, dim: p.dim, cls: p.cls, level: p.level, exp: p.exp, expNeed: expNeed(p.level), gold: p.gold, hp: Math.round(p.hp), maxHp: maxHp(p), kills: p.kills, pvpKills: p.pvpKills },
     players: [...rooms[roomId].players.values()].filter((o) => o.id !== p.id).map(publicP),
     war: warState(),
+    boss: worldBoss ? { alive: 1, dim: worldBoss.dim, name: worldBoss.name, x: worldBoss.x, z: worldBoss.z } : null,
     shop: isFirst ? SHOP : undefined,
     equip: p.equip, inv: p.inv,
     x: p.x, z: p.z,
@@ -680,6 +683,7 @@ function killMonster(p, mo) {
     // 世界BOSS：必掉史诗级以上装备，全服公告
     giveItem(p, rollDrop(4, p.dim, 3), `世界BOSS【${mo.name}】掉落`);
     allCast({ t: 'feed', msg: `👑 【${dimName(p.dim)}】${p.name} 讨伐了世界BOSS【${mo.name}】，获得史诗战利品！` });
+    allCast({ t: 'boss', alive: 0 });
     worldBoss = null;
   } else if (Math.random() < 0.14 + mo.tier * 0.05) {
     // 几率掉落装备（层级越高概率越大、品质越好）
@@ -815,10 +819,43 @@ function tickRoom(room) {
       }
       if (best) { mo.targetId = best.id; mo.state = 'chase'; tgt = best; }
     }
+    // 世界BOSS：半血狂暴
+    if (mo.boss && !mo.enraged && mo.hp < mo.maxHp * 0.5) {
+      mo.enraged = true;
+      mo.atk = Math.round(mo.atk * 1.5);
+      mo.speed *= 1.3;
+      allCast({ t: 'feed', msg: `💢 世界BOSS【${mo.name}】进入狂暴状态！攻速与移速大幅提升，小心走位！` });
+    }
     if (tgt) {
       const d = Math.sqrt(dist2(mo.x, mo.z, tgt.x, tgt.z));
       mo.ry = Math.atan2(tgt.x - mo.x, tgt.z - mo.z);
-      if (d > 2.0) {
+      // 世界BOSS：周期性震地轰击（7米范围，伤害=1.6倍攻击）
+      if (mo.boss && d < 11 && t - mo.aoeT > 6000) {
+        mo.aoeT = t;
+        roomCast(room.id, { t: 'baoe', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 7 });
+        for (const pl of room.players.values()) {
+          if (pl.dead || dist2(mo.x, mo.z, pl.x, pl.z) > 7 * 7) continue;
+          const pst = statsOf(pl);
+          let adm = mo.atk * 1.6 * 100 / (100 + pst.armor) * clsOf(pl).dmgTakenMul;
+          adm = Math.max(1, Math.round(adm));
+          pl.hp -= adm;
+          roomCast(room.id, { t: 'dmg', kind: 'p', id: pl.id, amt: adm, hp: Math.max(0, Math.round(pl.hp)), by: mo.id });
+          sendYou(pl);
+          if (pl.hp <= 0) {
+            pl.hp = 0;
+            pl.dead = true; pl.dieT = t; pl.anim = 'dead';
+            const lost = Math.floor(pl.gold * 0.05);
+            pl.gold -= lost;
+            roomCast(room.id, { t: 'pdie', id: pl.id, by: mo.id });
+            send(pl.ws, { t: 'feed', msg: `💀 你被世界BOSS【${mo.name}】的震地轰击粉碎，丢失 ${lost} 金币。` });
+            sendYou(pl);
+            persist(pl);
+          }
+        }
+      }
+      if (tgt.dead) {           // 轰击若击杀了目标，本帧停手
+        mo.targetId = null; mo.state = 'idle';
+      } else if (d > 2.0) {
         mo.state = 'chase';
         mo.x += (tgt.x - mo.x) / d * mo.speed * dt;
         mo.z += (tgt.z - mo.z) / d * mo.speed * dt;

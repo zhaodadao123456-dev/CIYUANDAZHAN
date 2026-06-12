@@ -293,6 +293,7 @@ function onMsg(m) {
       if (m.shop) shopData = m.shop;
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       enterRoom(m.room, m);
+      setBoss(m.boss);
       if (m.first && !joined) {
         joined = true;
         $('join-screen').classList.add('hidden');
@@ -409,6 +410,13 @@ function onMsg(m) {
     }
     case 'you': updateYou(m); break;
     case 'war': setWar(m.state); break;
+    case 'boss': setBoss(m); break;
+    case 'baoe': {
+      // 世界BOSS震地轰击：红色冲击环 + 红光
+      ringFx(m.x, m.z, m.r || 7, 0xff3344);
+      flashLight(m.x, 1.5, m.z, 0xff3344, 4, 14, 0.35);
+      break;
+    }
     case 'feed': feed(m.msg); break;
     case 'chat': {
       const d = DIMENSIONS.find((x) => x.id === m.dim);
@@ -1311,6 +1319,19 @@ function renderWarBanner() {
   }
 }
 setInterval(renderWarBanner, 1000);
+
+/* ---------- 世界BOSS横幅 ---------- */
+let bossInfo = null;
+function setBoss(b) {
+  bossInfo = b && b.alive ? b : null;
+  const el = $('boss-banner');
+  if (!el) return;
+  if (!bossInfo) { el.classList.add('hidden'); return; }  // 横幅在 #hud 内，未入场时随 HUD 隐藏
+  el.classList.remove('hidden');
+  $('boss-text').textContent = bossInfo.dim === myDim
+    ? `🔥 世界BOSS【${bossInfo.name}】就在本次元BOSS巢穴！讨伐必得史诗装备！`
+    : `🔥 世界BOSS【${bossInfo.name}】正在肆虐【${dimName(bossInfo.dim)}】…`;
+}
 
 function feed(msg) {
   const el = document.createElement('div');

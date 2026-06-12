@@ -43,6 +43,8 @@ namespace DW
         GameObject meGo;
         JObject you;            // 服务器下发的完整属性
         JObject warInfo;
+        protected JObject bossInfo;
+        float shakeUntil, shakeAmp;
         JObject equipData;
         JArray invData, shopData;
 
@@ -269,6 +271,17 @@ namespace DW
                 case "war":
                     if (m["state"] != null) warInfo = (JObject)m["state"];
                     break;
+                case "boss":
+                    bossInfo = ((int?)m["alive"] ?? 0) == 1 ? m : null;
+                    break;
+                case "baoe":
+                {
+                    // 世界BOSS震地：红色冲击波 + 若我在范围附近则镜头震动
+                    var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
+                    SpawnShockwave(at, (float?)m["r"] ?? 7f, new Color(1f, 0.2f, 0.27f));
+                    if ((at - pos).sqrMagnitude < 14f * 14f) Shake(0.45f, 0.5f);
+                    break;
+                }
                 case "feed": Feed((string)m["msg"]); break;
                 case "chat": Feed($"💬 {(string)m["name"]}：{(string)m["msg"]}"); break;
                 case "err": Toast("⚠ " + (string)m["msg"]); break;
@@ -528,7 +541,7 @@ namespace DW
             }
             else
             {
-                if (id == myId) FloatText("-" + amt, pos, Color.red);
+                if (id == myId) { FloatText("-" + amt, pos, Color.red); Shake(0.2f, 0.18f); }
                 else
                 {
                     Ent e;
@@ -573,11 +586,50 @@ namespace DW
         int MySkPts => you != null ? (int?)you["skPts"] ?? 0 : 0;
         float MySpeed => you != null && you["spd"] != null ? (float)you["spd"] : Data.Cls(myCls).speed;
 
+        // 触屏：左半屏虚拟摇杆，右半屏拖动转视角
+        protected int moveTouchId = -1;
+        int lookTouchId = -1;
+        protected Vector2 moveTouchStart, moveTouchVec;
+
+        void UpdateTouch()
+        {
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                var t = Input.GetTouch(i);
+                if (t.phase == TouchPhase.Began)
+                {
+                    var guiPos = new Vector2(t.position.x, Screen.height - t.position.y);
+                    bool overGui = false;
+                    foreach (var r in guiRects) if (r.Contains(guiPos)) { overGui = true; break; }
+                    if (overGui) continue;
+                    if (t.position.x < Screen.width / 2f && moveTouchId < 0)
+                    { moveTouchId = t.fingerId; moveTouchStart = t.position; moveTouchVec = Vector2.zero; }
+                    else if (lookTouchId < 0) lookTouchId = t.fingerId;
+                }
+                else if (t.fingerId == moveTouchId)
+                {
+                    if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled) { moveTouchId = -1; moveTouchVec = Vector2.zero; }
+                    else moveTouchVec = Vector2.ClampMagnitude((t.position - moveTouchStart) / 70f, 1f);
+                }
+                else if (t.fingerId == lookTouchId)
+                {
+                    if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled) lookTouchId = -1;
+                    else if (t.phase == TouchPhase.Moved)
+                    {
+                        camYaw -= t.deltaPosition.x * 0.006f;
+                        camPitch = Mathf.Clamp(camPitch + t.deltaPosition.y * 0.005f, 0.12f, 1.25f);
+                    }
+                }
+            }
+        }
+
         void UpdateInput()
         {
             if (chatOpen) return;   // 聊天时键盘归输入框
             if (Input.GetKeyDown(KeyCode.T)) { chatOpen = true; return; }
-            if (Input.GetMouseButton(1))
+            UpdateTouch();
+            bool touching = Input.touchCount > 0;  // 触屏时屏蔽模拟出来的鼠标事件
+            if (!touching && Input.GetMouseButton(1))
             {
                 camYaw -= Input.GetAxis("Mouse X") * 0.05f;
                 camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.04f, 0.12f, 1.25f);
@@ -589,7 +641,7 @@ namespace DW
                 if (Time.time - deadAt > 4f && Input.GetKeyDown(KeyCode.Space)) Send(new { t = "respawn" });
                 return;
             }
-            if (Input.GetMouseButtonDown(0) && !MouseOverGui()) Cast("basic");
+            if (!touching && Input.GetMouseButtonDown(0) && !MouseOverGui()) Cast("basic");
             if (Input.GetKeyDown(KeyCode.Q)) Cast("q");
             if (Input.GetKeyDown(KeyCode.E)) Cast("e");
             if (Input.GetKeyDown(KeyCode.R)) Cast("r");
@@ -603,7 +655,7 @@ namespace DW
             {
                 dodgeReadyAt = Time.time + 1.2f;
                 var mv = MoveVec();
-                burstDir = mv.sqrMagnitude > 0.01f ? mv : new Vector3(Mathf.Sin(ry), 0, Mathf.Cos(ry));
+                burstDir = mv.sqrMagnitude > 0.01f ? mv.normalized : new Vector3(Mathf.Sin(ry), 0, Mathf.Cos(ry));
                 burstSpeed = 21f;
                 burstUntil = Time.time + 0.24f;
             }
@@ -611,13 +663,13 @@ namespace DW
 
         Vector3 MoveVec()
         {
-            float fx = 0, fz = 0;
+            float fx = moveTouchVec.x, fz = moveTouchVec.y;
             if (Input.GetKey(KeyCode.W)) fz += 1;
             if (Input.GetKey(KeyCode.S)) fz -= 1;
             if (Input.GetKey(KeyCode.A)) fx -= 1;
             if (Input.GetKey(KeyCode.D)) fx += 1;
-            if (fx == 0 && fz == 0) return Vector3.zero;
-            var v = new Vector3(fx, 0, fz).normalized;
+            if (Mathf.Abs(fx) < 0.12f && Mathf.Abs(fz) < 0.12f) return Vector3.zero;
+            var v = Vector3.ClampMagnitude(new Vector3(fx, 0, fz), 1f);
             float s = Mathf.Sin(camYaw), c = Mathf.Cos(camYaw);
             return new Vector3(v.x * c - v.z * s, 0, v.x * -s - v.z * c);
         }
@@ -716,6 +768,23 @@ namespace DW
             }
         }
 
+        void Shake(float amp, float dur)
+        {
+            shakeAmp = Mathf.Max(shakeAmp, amp);
+            shakeUntil = Mathf.Max(shakeUntil, Time.time + dur);
+        }
+
+        void SpawnShockwave(Vector3 at, float radius, Color c)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.transform.position = at;
+            Tint(go, c);
+            var l = go.AddComponent<Light>();
+            l.color = c; l.range = radius * 2.2f; l.intensity = 4f;
+            var fx = go.AddComponent<Shockwave>();
+            fx.radius = radius;
+        }
+
         void UpdateCamera()
         {
             float cx = pos.x + Mathf.Sin(camYaw) * camDist * Mathf.Cos(camPitch);
@@ -723,6 +792,13 @@ namespace DW
             float cy = 1.5f + Mathf.Sin(camPitch) * camDist;
             cam.transform.position = Vector3.Lerp(cam.transform.position, new Vector3(cx, cy, cz), 0.25f);
             cam.transform.LookAt(new Vector3(pos.x, 1.6f, pos.z));
+            if (Time.time < shakeUntil)
+            {
+                float k = shakeAmp * (shakeUntil - Time.time);
+                cam.transform.position += new Vector3(
+                    UnityEngine.Random.Range(-k, k), UnityEngine.Random.Range(-k, k), UnityEngine.Random.Range(-k, k));
+            }
+            else shakeAmp = 0;
         }
 
         void LateUpdate()
@@ -748,6 +824,22 @@ namespace DW
             feed.Insert(0, msg);
             feedAt.Insert(0, Time.time);
             while (feed.Count > 6) { feed.RemoveAt(feed.Count - 1); feedAt.RemoveAt(feedAt.Count - 1); }
+        }
+    }
+
+    public class Shockwave : MonoBehaviour
+    {
+        public float radius = 7f;
+        float born;
+        Light l;
+        void Start() { born = Time.time; l = GetComponent<Light>(); }
+        void Update()
+        {
+            float k = (Time.time - born) / 0.5f;
+            if (k >= 1f) { Destroy(gameObject); return; }
+            float s = radius * 2f * k;
+            transform.localScale = new Vector3(s, 0.4f, s);
+            if (l != null) l.intensity = 4f * (1f - k);
         }
     }
 

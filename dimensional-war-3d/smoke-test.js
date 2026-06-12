@@ -97,9 +97,26 @@ function client(name, dim, cls) {
   const chat = A.got('chat', (m) => m.msg === '聊天测试 hello');
   check('次元聊天广播', !!chat, chat && `来自 ${chat.name}`);
 
-  // 10.7 世界BOSS：测试环境 2 秒必刷，全服收到降临公告
+  // 10.7 世界BOSS：测试环境 2 秒必刷，全服收到降临公告 + 状态广播
   const bossFeed = A.got('feed', (m) => /世界BOSS/.test(m.msg));
   check('世界BOSS降临公告', !!bossFeed, bossFeed && bossFeed.msg.slice(0, 30));
+  const bossMsg = A.got('boss', (m) => m.alive === 1);
+  check('世界BOSS状态广播(含坐标)', !!(bossMsg && bossMsg.dim && typeof bossMsg.x === 'number'), bossMsg && `在${bossMsg.dim}(${bossMsg.x},${bossMsg.z})`);
+
+  // 10.8 走到BOSS脚下，验证震地轰击(baoe)
+  if (bossMsg) {
+    const D = client();
+    await D.open;
+    D.send({ t: 'join', name: '测试讨伐者', dim: bossMsg.dim, cls: 'tank' });
+    await sleep(400);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 7000 && !D.got('baoe')) {
+      D.send({ t: 'mv', x: bossMsg.x, z: bossMsg.z, ry: 0, anim: 'run' });
+      await sleep(60);
+    }
+    check('世界BOSS震地轰击', !!D.got('baoe'), D.got('baoe') ? `r=${D.got('baoe').r}` : '未触发');
+    D.ws.close();
+  }
 
   // 11. 坦克属性验证：hpMul=1.75 → maxHp≈(200+30)*1.75=402
   const youC = C.got('you', (m) => m.maxHp);

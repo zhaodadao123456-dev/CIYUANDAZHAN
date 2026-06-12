@@ -134,6 +134,29 @@ namespace DW
                 }
             }
 
+            // 世界BOSS横幅
+            if (bossInfo != null)
+            {
+                bool warOn = warInfo != null && (bool?)warInfo["active"] == true;
+                var br = new Rect(Screen.width / 2f - 240, warOn ? 50 : 8, 480, 30);
+                guiRects.Add(br);
+                GUI.Box(br, "", _box);
+                string bd = (string)bossInfo["dim"];
+                string btxt = bd == myDim
+                    ? $"🔥 世界BOSS【{bossInfo["name"]}】就在本次元巢穴！讨伐必得史诗装备！"
+                    : $"🔥 世界BOSS【{bossInfo["name"]}】肆虐【{Data.Dim(bd).name}】…";
+                GUI.Label(new Rect(br.x + 10, br.y + 4, 464, 22), $"<color=#ff7766>{btxt}</color>", _label);
+            }
+
+            // 虚拟摇杆（触屏）
+            if (moveTouchId >= 0)
+            {
+                var c = new Vector2(moveTouchStart.x, Screen.height - moveTouchStart.y);
+                GUI.Box(new Rect(c.x - 55, c.y - 55, 110, 110), "");
+                var cur = c + new Vector2(moveTouchVec.x, -moveTouchVec.y) * 42f;
+                GUI.Box(new Rect(cur.x - 20, cur.y - 20, 40, 40), "●");
+            }
+
             // 右上按钮
             var bagR = new Rect(Screen.width - 56, 10, 44, 40);
             guiRects.Add(bagR);
