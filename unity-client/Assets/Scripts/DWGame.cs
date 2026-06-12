@@ -41,6 +41,7 @@ namespace DW
         bool meDead;
         float deadAt;
         GameObject meGo;
+        DWAnimDriver meDrv;
         JObject you;            // 服务器下发的完整属性
         JObject warInfo;
         protected JObject bossInfo;
@@ -268,7 +269,11 @@ namespace DW
                 {
                     Ent e;
                     if (players.TryGetValue((string)m["id"], out e))
+                    {
                         e.tRy = Mathf.Atan2((float)m["dx"], (float)m["dz"]);
+                        var drv = e.go != null ? e.go.GetComponent<DWAnimDriver>() : null;
+                        if (drv != null) drv.PlayOnce((string)m["k"] == "basic" ? "Attack1" : "Skill", 0.6f);
+                    }
                     break;
                 }
                 case "war":
@@ -314,8 +319,9 @@ namespace DW
             pos = new Vector3((float?)m["x"] ?? 0, 0, (float?)m["z"] ?? 0);
             meDead = false;
             if (meGo != null) Destroy(meGo);
-            meGo = MakeHumanoid(Data.Dim(myDim).accent, myCls == "tank" ? 1.12f : 1f);
+            meGo = MakeHero(myCls, myDim);
             meGo.name = "Me";
+            meDrv = meGo.GetComponent<DWAnimDriver>();
 
             if (m["players"] != null)
                 foreach (JObject p in (JArray)m["players"]) AddPlayer(p);
@@ -368,6 +374,46 @@ namespace DW
             if (r != null) r.material.color = c;
         }
 
+        /* 职业→模型键位（与网页版一致：坦克tech 刺客xiuxian 射手cyber 奶妈magic 战士hunter） */
+        static string ModelKey(string clsId)
+        {
+            switch (clsId)
+            {
+                case "tank": return "tech";
+                case "assassin": return "xiuxian";
+                case "ranger": return "cyber";
+                case "healer": return "magic";
+                default: return "hunter";
+            }
+        }
+
+        /* 优先用「次元大战→一键接入」生成的正式模型（Resources/DW/hero_*），否则占位小人 */
+        GameObject MakeHero(string clsId, string dimId)
+        {
+            var prefab = Resources.Load<GameObject>("DW/hero_" + ModelKey(clsId));
+            if (prefab == null)
+                return MakeHumanoid(Data.Dim(dimId).accent, clsId == "tank" ? 1.12f : 1f);
+            var root = new GameObject("Hero");
+            var inst = Instantiate(prefab, root.transform);
+            var b = CalcBounds(inst);
+            float target = clsId == "tank" ? 2.0f : 1.85f;
+            float scale = target / Mathf.Max(0.1f, b.size.y);
+            inst.transform.localScale = Vector3.one * scale;
+            b = CalcBounds(inst);
+            inst.transform.localPosition = new Vector3(0, -b.min.y, 0);   // 脚踩地面
+            root.AddComponent<DWAnimDriver>();
+            return root;
+        }
+
+        static Bounds CalcBounds(GameObject go)
+        {
+            var rs = go.GetComponentsInChildren<Renderer>(true);
+            if (rs.Length == 0) return new Bounds(go.transform.position, Vector3.one);
+            var b = rs[0].bounds;
+            foreach (var r in rs) b.Encapsulate(r.bounds);
+            return b;
+        }
+
         GameObject MakeHumanoid(Color c, float scale)
         {
             var root = new GameObject("Humanoid");
@@ -415,7 +461,7 @@ namespace DW
                 target = new Vector3((float)p["x"], 0, (float)p["z"]),
                 dead = (bool?)p["dead"] ?? false,
             };
-            e.go = MakeHumanoid(Data.Dim(dim).accent, e.cls == "tank" ? 1.12f : 1f);
+            e.go = MakeHero(e.cls, dim);
             e.go.transform.position = e.target;
             e.label = MakeLabel(e.go, 2.6f);
             players[id] = e;
@@ -707,6 +753,7 @@ namespace DW
             }
             meGo.transform.position = pos;
             meGo.transform.rotation = Quaternion.Euler(0, ry * Mathf.Rad2Deg, 0);
+            if (meDrv != null) meDrv.SetBase(moving ? "Run" : "Idle");
 
             if (Time.time - lastMvSent > 0.066f)
             {
@@ -754,6 +801,7 @@ namespace DW
                 burstSpeed = 25f;
                 burstUntil = Time.time + 0.18f;
             }
+            if (meDrv != null) meDrv.PlayOnce(key == "basic" ? "Attack1" : "Skill", 0.6f);
             Send(new { t = "cast", k = key, dx = Math.Round(dx, 3), dz = Math.Round(dz, 3) });
         }
 
@@ -779,8 +827,18 @@ namespace DW
             e.go.transform.position = Vector3.Lerp(e.go.transform.position, e.target, k);
             if (!e.isMonster && !e.isPet)
             {
-                if (e.dead) e.go.transform.rotation = Quaternion.Euler(85, e.tRy * Mathf.Rad2Deg, 0);
-                else e.go.transform.rotation = Quaternion.Slerp(e.go.transform.rotation, Quaternion.Euler(0, e.tRy * Mathf.Rad2Deg, 0), k);
+                var drv = e.go.GetComponent<DWAnimDriver>();
+                if (e.dead)
+                {
+                    // 有死亡动画就播动画，否则占位小人倒地
+                    if (drv == null || !drv.SetBase("Death"))
+                        e.go.transform.rotation = Quaternion.Euler(85, e.tRy * Mathf.Rad2Deg, 0);
+                }
+                else
+                {
+                    if (drv != null) drv.SetBase(e.anim == "run" ? "Run" : "Idle");
+                    e.go.transform.rotation = Quaternion.Slerp(e.go.transform.rotation, Quaternion.Euler(0, e.tRy * Mathf.Rad2Deg, 0), k);
+                }
             }
         }
 
@@ -840,6 +898,49 @@ namespace DW
             feed.Insert(0, msg);
             feedAt.Insert(0, Time.time);
             while (feed.Count > 6) { feed.RemoveAt(feed.Count - 1); feedAt.RemoveAt(feedAt.Count - 1); }
+        }
+    }
+
+    /* 骨骼动画驱动：状态不存在时静默跳过（保证任何模型都不报错） */
+    public class DWAnimDriver : MonoBehaviour
+    {
+        Animator an;
+        string baseState = "Idle";
+        string applied = "";
+        float oneUntil;
+
+        void Awake() { an = GetComponentInChildren<Animator>(); }
+
+        bool Has(string s) => an != null && an.runtimeAnimatorController != null
+            && an.HasState(0, Animator.StringToHash(s));
+
+        public bool SetBase(string s)
+        {
+            baseState = s;
+            if (Time.time < oneUntil) return Has(s);
+            return Apply(s, 0.15f);
+        }
+
+        public void PlayOnce(string s, float dur)
+        {
+            if (!Has(s)) return;
+            an.CrossFadeInFixedTime(Animator.StringToHash(s), 0.05f, 0, 0f);
+            applied = s;
+            oneUntil = Time.time + dur;
+        }
+
+        bool Apply(string s, float fade)
+        {
+            if (!Has(s)) return false;
+            if (applied == s) return true;
+            an.CrossFade(Animator.StringToHash(s), fade);
+            applied = s;
+            return true;
+        }
+
+        void Update()
+        {
+            if (oneUntil > 0 && Time.time >= oneUntil) { oneUntil = 0; Apply(baseState, 0.15f); }
         }
     }
 
