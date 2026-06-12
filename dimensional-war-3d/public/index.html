@@ -24,13 +24,14 @@
     <div class="join-box">
       <input id="join-name" type="text" maxlength="12" placeholder="输入你的降临者之名">
       <div id="dim-cards" class="dim-cards"></div>
+      <div id="class-cards" class="class-cards"></div>
       <button id="btn-join" class="btn primary wide">⚔️ 降临次元</button>
-      <div class="preview-hint">⬇ 点击次元卡片预览英雄 ⬇</div>
+      <div class="preview-hint">⬇ 选择次元与职业，预览你的英雄 ⬇</div>
     </div>
     <div class="controls-help">
-      <b>操作：</b> WASD 移动 ｜ 按住右键拖动转视角 ｜ 滚轮缩放<br>
-      鼠标左键 普攻 ｜ Q 弹道技 ｜ E 范围爆发(Lv.3) ｜ R 突进斩(Lv.5) ｜ 空格 翻滚闪避<br>
-      <span class="dim-text">打怪升级 → 等待「次元重叠」→ 进入重叠战场与敌对次元玩家实时厮杀，击杀掠夺金币！同次元玩家无法互相伤害。</span>
+      <b>操作：</b> WASD 移动 ｜ 按住右键拖动转视角 ｜ 滚轮缩放 ｜ B 属性/背包/商店<br>
+      鼠标左键 普攻 ｜ Q/E/R 职业技能 ｜ 空格 翻滚闪避 ｜ F 捕捉宝宝(猎人专属)<br>
+      <span class="dim-text">打怪升级拿技能点，装备掉落+商店购物 → 等待「次元重叠」→ 进入重叠战场与敌对次元玩家实时厮杀，击杀掠夺金币！</span>
     </div>
   </div>
 
@@ -51,12 +52,31 @@
     <div id="feed"></div>
 
     <div id="skill-bar">
-      <div class="skill-slot" id="sk-basic"><span class="key">左键</span>普攻<div class="cd"></div></div>
-      <div class="skill-slot" id="sk-q"><span class="key">Q</span>弹道<div class="cd"></div></div>
-      <div class="skill-slot" id="sk-e"><span class="key">E</span>爆发<div class="cd"></div></div>
-      <div class="skill-slot" id="sk-r"><span class="key">R</span>突斩<div class="cd"></div></div>
-      <div class="skill-slot" id="sk-dodge"><span class="key">空格</span>翻滚<div class="cd"></div></div>
+      <div class="skill-slot" id="sk-basic"><span class="key">左键</span><span class="sk-name">普攻</span><span class="sk-lv"></span><button class="sk-plus hidden">＋</button><div class="cd"></div></div>
+      <div class="skill-slot" id="sk-q"><span class="key">Q</span><span class="sk-name">技能</span><span class="sk-lv"></span><button class="sk-plus hidden">＋</button><div class="cd"></div></div>
+      <div class="skill-slot" id="sk-e"><span class="key">E</span><span class="sk-name">技能</span><span class="sk-lv"></span><button class="sk-plus hidden">＋</button><div class="cd"></div></div>
+      <div class="skill-slot" id="sk-r"><span class="key">R</span><span class="sk-name">技能</span><span class="sk-lv"></span><button class="sk-plus hidden">＋</button><div class="cd"></div></div>
+      <div class="skill-slot" id="sk-dodge"><span class="key">空格</span><span class="sk-name">翻滚</span><div class="cd"></div></div>
+      <div class="skill-slot hidden" id="sk-pet"><span class="key">F</span><span class="sk-name">捕捉</span><div class="cd"></div></div>
     </div>
+
+    <!-- 首次使用技能介绍 -->
+    <div id="skill-intro" class="hidden"></div>
+
+    <!-- 属性/背包/商店 面板 -->
+    <div id="panel" class="hidden">
+      <div class="panel-head">
+        <button class="panel-tab active" data-tab="stats">📊 属性</button>
+        <button class="panel-tab" data-tab="bag">🎒 背包·装备</button>
+        <button class="panel-tab" data-tab="shop">🛒 商店</button>
+        <button id="btn-panel-close">✕</button>
+      </div>
+      <div id="panel-body"></div>
+    </div>
+
+    <!-- 背包 / 退出（对局内） -->
+    <button id="btn-bag" class="btn mute-btn bag-btn">🎒</button>
+    <button id="btn-exit" class="btn mute-btn exit-btn">🚪</button>
   </div>
 
   <!-- 受击红屏 -->

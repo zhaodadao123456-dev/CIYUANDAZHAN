@@ -14,15 +14,15 @@ const THEMES = {
   hunter:  { ground: 0x3a2a12, fog: 0x261a0a, accent: 0xe67e22 },
   war:     { ground: 0x301020, fog: 0x1c0a12, accent: 0xff3355 },
 };
-const SKILL_CDS = { basic: 600, q: 3000, e: 7000, r: 12000 };
-const MAP_HALF = 45;
+/* MAP_HALF / CLASSES / CLASS_NAMES 由 data.js 提供（窗口全局） */
 
 /* ---------- 全局状态 ---------- */
 let renderer, scene, camera, clock;
-let ws = null, myId = null, myDim = null, curRoom = null;
+let ws = null, myId = null, myDim = null, myCls = 'warrior', curRoom = null;
 let me = null;                 // {obj,x,z,ry,anim,hp,maxHp,level,...}
 const remotes = new Map();     // id -> remote player
 const monsters = new Map();    // id -> monster
+const petsEnt = new Map();     // ownerId -> pet entity
 const projectiles = new Map(); // id -> proj
 const fxList = [];             // 特效
 const dmgSprites = [];
@@ -32,6 +32,13 @@ let burstT = 0, burstSpeed = 0, burstDir = [0, 0], dodgeCd = 0, rushTrail = 0;
 let warInfo = { active: false };
 let dead = false, deadAt = 0;
 let joined = false;
+let lastJoin = null;           // 断线自动重连凭据 {name, dim, cls}
+let reconnectN = 0;
+let shopData = [];             // 商店货架（welcome 下发）
+let invData = { equip: {}, inv: [] };
+const seenSkills = JSON.parse(localStorage.getItem('dw3d_seen_skills') || '{}');
+const myClsDef = () => CLASSES.find((c) => c.id === myCls) || CLASSES[0];
+const cdOf = (k) => { const s = myClsDef().skills[k]; return s ? s.cd : 600; };
 const preview = { scene: null, camera: null, hero: null, dim: null, pedestal: null, ready: false };
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 const joy = { active: false, id: -1, cx: 0, cy: 0, dx: 0, dy: 0 };   // 虚拟摇杆
@@ -58,35 +65,66 @@ window.addEventListener('load', () => {
     camera.updateProjectionMatrix();
   });
 
+  // 上次登录信息回填（名字/次元/职业不用重输）
+  const lastSave = JSON.parse(localStorage.getItem('dw3d_last_join') || 'null');
+  let chosen = lastSave ? lastSave.dim : null;
+  let chosenCls = lastSave ? lastSave.cls : 'warrior';
+  if (lastSave && lastSave.name) $('join-name').value = lastSave.name;
+
   // 次元选择卡片
   $('dim-cards').innerHTML = DIMENSIONS.map((d) => `
     <div class="dim-card" data-dim="${d.id}" style="border-color:${d.color}">
       <div class="dc-icon">${d.icon}</div>
       <div class="dc-name" style="color:${d.color}">${d.name}</div>
+      ${d.id === 'hunter' ? '<div class="dc-perk">天赋:捕捉宝宝</div>' : ''}
     </div>`).join('');
-  let chosen = null;
+  // 职业选择卡片
+  const renderClassCards = () => {
+    const names = (chosen && CLASS_NAMES[chosen]) || null;
+    $('class-cards').innerHTML = CLASSES.map((c) => `
+      <div class="class-card ${c.id === chosenCls ? 'chosen' : ''}" data-cls="${c.id}">
+        <div class="cc-icon">${c.icon}</div>
+        <div class="cc-name">${names ? names[c.id] : c.role}</div>
+        <div class="cc-role">${c.role}</div>
+      </div>`).join('');
+    document.querySelectorAll('.class-card').forEach((el) => el.onclick = () => {
+      chosenCls = el.dataset.cls;
+      renderClassCards();
+      setPreviewHero(chosen || 'xiuxian', chosenCls);
+    });
+  };
+  renderClassCards();
+
   document.querySelectorAll('.dim-card').forEach((el) => el.onclick = () => {
     chosen = el.dataset.dim;
     document.querySelectorAll('.dim-card').forEach((x) => x.classList.remove('chosen'));
     el.classList.add('chosen');
-    setPreviewHero(chosen);
+    renderClassCards();
+    setPreviewHero(chosen, chosenCls);
   });
+  if (chosen) {
+    const el = document.querySelector(`.dim-card[data-dim="${chosen}"]`);
+    if (el) el.classList.add('chosen');
+  }
+
   $('btn-join').onclick = async () => {
     const name = $('join-name').value.trim();
     if (!name) return toast('请输入昵称');
     if (!chosen) return toast('请选择降临次元');
+    if (!chosenCls) return toast('请选择职业');
     const btn = $('btn-join');
     btn.disabled = true;
     await MODELS.loadAssets((done, total) => { btn.textContent = `⏳ 加载次元资产 ${done}/${total}…`; });
     btn.textContent = '⚔️ 降临次元';
     btn.disabled = false;
-    connect(name, chosen);
+    localStorage.setItem('dw3d_last_join', JSON.stringify({ name, dim: chosen, cls: chosenCls }));
+    connect(name, chosen, chosenCls);
   };
 
   initParticles();
   initPreview();
   // 页面打开即后台预载资产；就绪后展示默认英雄
-  MODELS.loadAssets().then(() => { setPreviewHero(chosen || 'xiuxian'); });
+  MODELS.loadAssets().then(() => { setPreviewHero(chosen || 'xiuxian', chosenCls); });
 
   // 音频：首次交互解锁（浏览器自动播放策略），菜单BGM待命
   AUDIO.setMusic('menu');
@@ -163,6 +201,7 @@ function initTouch() {
   bindTap('sk-e', () => castSkill('e'));
   bindTap('sk-r', () => castSkill('r'));
   bindTap('sk-dodge', dodge);
+  bindTap('sk-pet', capturePet);
   bindTap('btn-atk', () => castSkill('basic'));
 }
 
@@ -189,7 +228,7 @@ function initPreview() {
   });
 }
 
-function setPreviewHero(dimId) {
+function setPreviewHero(dimId, clsId) {
   if (!preview.scene || !MODELS.isReady() || joined) return;
   if (preview.hero) { preview.scene.remove(preview.hero); preview.hero = null; }
   if (preview.pedestal) { preview.scene.remove(preview.pedestal); preview.pedestal = null; }
@@ -212,7 +251,7 @@ function setPreviewHero(dimId) {
   preview.pedestal = ped;
   preview.scene.add(ped);
 
-  preview.hero = MODELS.makeHero(dimId, accent);
+  preview.hero = MODELS.makeHero(dimId, accent, clsId || 'warrior');
   preview.scene.add(preview.hero);
   // 切换时播一段攻击动作展示
   setTimeout(() => { if (preview.hero) MODELS.attackAnim(preview.hero, dimId, 'basic'); }, 350);
@@ -222,13 +261,27 @@ function setPreviewHero(dimId) {
 /* ============================================================
  * 网络
  * ============================================================ */
-function connect(name, dim) {
+function connect(name, dim, cls) {
+  lastJoin = { name, dim, cls };
+  myCls = cls;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, dim }));
+  ws.onopen = () => { reconnectN = 0; ws.send(JSON.stringify({ t: 'join', name, dim, cls })); };
   ws.onmessage = (ev) => onMsg(JSON.parse(ev.data));
-  ws.onclose = () => { if (joined) { toast('🔌 与服务器断开，3秒后刷新'); setTimeout(() => location.reload(), 3000); } };
+  // 断线（切后台/锁屏/网络抖动）自动重连重进，不踢回登录页
+  ws.onclose = () => {
+    if (!joined || !lastJoin) return;
+    if (++reconnectN > 30) { toast('🔌 无法连接服务器，请刷新页面'); return; }
+    toast('🔌 连接断开，正在自动重连…');
+    setTimeout(() => connect(lastJoin.name, lastJoin.dim, lastJoin.cls), Math.min(5000, 1000 * reconnectN));
+  };
 }
+// 切回前台时若连接已死立刻重连（iOS 切后台会挂起定时器）
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && joined && lastJoin && (!ws || ws.readyState >= 2)) {
+    connect(lastJoin.name, lastJoin.dim, lastJoin.cls);
+  }
+});
 const net = (obj) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); };
 
 function onMsg(m) {
@@ -236,16 +289,39 @@ function onMsg(m) {
     case 'welcome': {
       myId = m.id;
       myDim = m.you.dim;
+      if (m.you.cls) myCls = m.you.cls;
+      if (m.shop) shopData = m.shop;
+      if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       enterRoom(m.room, m);
-      if (m.first) {
+      if (m.first && !joined) {
         joined = true;
         $('join-screen').classList.add('hidden');
         $('hud').classList.remove('hidden');
-        toast(`🌌 欢迎降临【${dimName(myDim)}】！打怪升级，等待次元重叠！`);
+        const cn = (CLASS_NAMES[myDim] || {})[myCls] || '';
+        toast(`🌌 欢迎降临【${dimName(myDim)}】！你是一名${cn}，打怪升级，等待次元重叠！`);
       }
+      setupSkillBar();
+      $('sk-pet').classList.toggle('hidden', myDim !== 'hunter');
       AUDIO.setMusic(m.room === 'war' ? 'war' : 'world');
       updateYou(m.you);
       setWar(m.war);
+      break;
+    }
+    case 'inv': {
+      invData = { equip: m.equip || {}, inv: m.inv || [] };
+      renderPanel();
+      break;
+    }
+    case 'heal': {
+      const pos = m.id === myId ? (me && me.obj.position) : (remotes.get(m.id) || {}).obj && remotes.get(m.id).obj.position;
+      if (pos) {
+        dmgNumber(pos, '+' + m.amt, '#6dff8a');
+        sparks(pos.x, 0.5, pos.z, 0x6dff8a, { count: 16, speed: 3.5, life: 0.8, gravity: 2, up: 1.2 });
+      }
+      if (m.id !== myId) {
+        const r = remotes.get(m.id);
+        if (r) { r.hp = m.hp; drawBar(r); }
+      }
       break;
     }
     case 'snap': onSnap(m); break;
@@ -341,15 +417,16 @@ function enterRoom(roomId, m) {
   // 清空场景实体
   for (const r of remotes.values()) disposeEntity(r);
   for (const mo of monsters.values()) disposeEntity(mo);
+  for (const pe of petsEnt.values()) disposeEntity(pe);
   for (const pr of projectiles.values()) scene.remove(pr.obj);
-  remotes.clear(); monsters.clear(); projectiles.clear();
+  remotes.clear(); monsters.clear(); petsEnt.clear(); projectiles.clear();
 
   buildMap(roomId);
 
   // 本地英雄
   if (me && me.obj) scene.remove(me.obj);
   const accent = dimAccent(myDim);
-  const obj = MODELS.makeHero(myDim, accent);
+  const obj = MODELS.makeHero(myDim, accent, myCls);
   scene.add(obj);
   me = { obj, x: m.x, z: m.z, ry: 0, anim: 'idle', attackT: 0, dim: myDim };
   obj.position.set(me.x, 0, me.z);
@@ -365,7 +442,7 @@ function buildMap(roomId) {
   for (const o of mapObjects) scene.remove(o);
   mapObjects = [];
   const theme = THEMES[roomId === 'war' ? 'war' : myDim];
-  scene.fog = new THREE.Fog(theme.fog, 30, 120);
+  scene.fog = new THREE.Fog(theme.fog, 35, 150);
   scene.background = new THREE.Color(theme.fog);
 
   const add = (o) => { scene.add(o); mapObjects.push(o); };
@@ -387,9 +464,9 @@ function buildMap(roomId) {
   sun.position.set(35, 60, 25);
   sun.castShadow = true;
   sun.shadow.mapSize.set(isTouch ? 1024 : 2048, isTouch ? 1024 : 2048);
-  sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
-  sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
-  sun.shadow.camera.far = 160;
+  sun.shadow.camera.left = -85; sun.shadow.camera.right = 85;
+  sun.shadow.camera.top = 85; sun.shadow.camera.bottom = -85;
+  sun.shadow.camera.far = 200;
   sun.shadow.bias = -0.0008;
   add(sun);
 
@@ -398,9 +475,21 @@ function buildMap(roomId) {
   const themeKey = roomId === 'war' ? 'war' : myDim;
   if (roomId === 'war') buildWarLayout(add, rng, theme);
   else buildHomeLayout(themeKey, add, rng, theme);
+  // 四条主题大道（视觉指引，与摆件留出的通道一致）
+  if (roomId !== 'war') {
+    for (let i = 0; i < 4; i++) {
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(3.2, MAP_HALF - 6),
+        new THREE.MeshBasicMaterial({ color: theme.accent, transparent: true, opacity: 0.06 }));
+      road.rotation.x = -Math.PI / 2;
+      road.rotation.z = i * Math.PI / 2;
+      const a = i * Math.PI / 2;
+      road.position.set(Math.sin(a) * (MAP_HALF / 2 + 3), 0.03, Math.cos(a) * (MAP_HALF / 2 + 3));
+      add(road);
+    }
+  }
   // 战场：双方出生区光柱
   if (roomId === 'war') {
-    for (const [x, c] of [[-38, dimAccent(warInfo.a)], [38, dimAccent(warInfo.b)]]) {
+    for (const [x, c] of [[-60, dimAccent(warInfo.a)], [60, dimAccent(warInfo.b)]]) {
       const beam = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 40, 16, 1, true),
         new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.12, side: THREE.DoubleSide }));
       beam.position.set(x, 20, 0);
@@ -458,14 +547,14 @@ function buildHomeLayout(themeKey, add, rng, theme) {
 
   // 3) 野外散布（避开大道与巢穴方向）
   const lairA = (typeof LAIR_ANGLES !== 'undefined' && LAIR_ANGLES[themeKey]) || 0;
-  const count = themeKey === 'cyber' ? 38 : 48;
+  const count = themeKey === 'cyber' ? 56 : 72;
   for (let i = 0; i < count; i++) {
     const a = rng() * Math.PI * 2;
     if (inRoad(a)) continue;
     let da = Math.abs(a - lairA);
     if (da > Math.PI) da = Math.PI * 2 - da;
-    const r = 13 + rng() * 20;
-    if (da < 0.45 && r > 28) continue;  // 巢穴前留空地
+    const r = 15 + rng() * (MAP_HALF - 20);
+    if (da < 0.4 && r > LAIR_R - 16) continue;  // 巢穴前留空地
     const o = MODELS.makeProp(themeKey, rng) || fallback();
     o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
     o.rotation.y = rng() * 6.28;
@@ -473,7 +562,7 @@ function buildHomeLayout(themeKey, add, rng, theme) {
   }
 
   // 4) Boss 巢穴：立柱环 + 红色凶光 + 地面警示环
-  const lx = Math.cos(lairA) * 37, lz = Math.sin(lairA) * 37;
+  const lx = Math.cos(lairA) * LAIR_R, lz = Math.sin(lairA) * LAIR_R;
   for (let i = 0; i < 7; i++) {
     const a = (i / 7) * Math.PI * 2;
     const o = MODELS.makePropNamed(themeKey, defs.lairPillar, 1.15) || fallback();
@@ -499,11 +588,11 @@ function buildWarLayout(add, rng, theme) {
   beacon.position.set(0, 6, 0);
   add(beacon);
 
-  // 对称掩体阵（沿X轴镜像，给两侧推进提供掩护）
+  // 对称掩体阵（沿X轴镜像，给两侧推进提供掩护；随地图扩大外推）
   const covers = [
-    ['rubble_large', 10, 0], ['rubble_large', 22, 6], ['rubble_half', 22, -6],
-    ['pillar', 16, 12], ['pillar', 16, -12], ['gravestone', 28, 0],
-    ['rubble_half', 8, 14], ['rubble_large', 8, -14], ['fence_pillar_broken', 30, 10], ['fence_pillar_broken', 30, -10],
+    ['rubble_large', 15, 0], ['rubble_large', 33, 9], ['rubble_half', 33, -9],
+    ['pillar', 24, 18], ['pillar', 24, -18], ['gravestone', 42, 0],
+    ['rubble_half', 12, 21], ['rubble_large', 12, -21], ['fence_pillar_broken', 46, 15], ['fence_pillar_broken', 46, -15],
   ];
   for (const [name, x, z] of covers) {
     for (const sx of [-1, 1]) {
@@ -515,15 +604,15 @@ function buildWarLayout(add, rng, theme) {
     }
   }
   // 火把走廊（中线）
-  for (let i = -3; i <= 3; i++) {
+  for (let i = -5; i <= 5; i++) {
     if (i === 0) continue;
     const o = MODELS.makePropNamed('war', 'torch_lit', 1);
-    if (o) { o.position.set(i * 6, 0, i % 2 === 0 ? 3 : -3); add(o); }
+    if (o) { o.position.set(i * 7, 0, i % 2 === 0 ? 4 : -4); add(o); }
   }
   // 外圈废墟
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 26; i++) {
     const a = rng() * Math.PI * 2;
-    const r = 34 + rng() * 9;
+    const r = 52 + rng() * 14;
     const o = MODELS.makeProp('war', rng) || PROPS.war(rng, theme.accent);
     o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
     o.rotation.y = rng() * 6.28;
@@ -621,12 +710,20 @@ const PROPS = {
  * ============================================================ */
 function addRemote(p) {
   if (remotes.has(p.id) || p.id === myId) return;
-  const obj = MODELS.makeHero(p.dim, dimAccent(p.dim));
+  const obj = MODELS.makeHero(p.dim, dimAccent(p.dim), p.cls);
   obj.position.set(p.x, 0, p.z);
   scene.add(obj);
   const r = { ...p, obj, tx: p.x, tz: p.z, try_: p.ry, attackT: 0, anim: p.dead ? 'dead' : p.anim };
   r.bar = makeBar(r, p.dim === myDim ? '#2ecc71' : '#ff5566');
   remotes.set(p.id, r);
+}
+function addPetEnt(ownerId, tier, x, z, ry, state, hp, maxHp, name) {
+  const obj = MODELS.makeMonster(tier, dimAccent('hunter'), true);
+  obj.position.set(x, 0, z);
+  scene.add(obj);
+  const pe = { id: ownerId, obj, tx: x, tz: z, try_: ry, state, hp, maxHp, tier, name: '🐾' + name, isMonster: true, isPet: true };
+  pe.bar = makeBar(pe, '#7CFC9A');
+  petsEnt.set(ownerId, pe);
 }
 function removeRemote(id) {
   const r = remotes.get(id);
@@ -667,6 +764,17 @@ function onSnap(m) {
     if (mo.hp !== hp) { mo.hp = hp; drawBar(mo); }
   }
   for (const id of [...monsters.keys()]) if (!seenM.has(id)) { disposeEntity(monsters.get(id)); monsters.delete(id); }
+
+  // 猎人宝宝
+  const seenPet = new Set();
+  for (const [oid, tier, x, z, ry, state, hp, maxHp, name] of (m.pets || [])) {
+    seenPet.add(oid);
+    let pe = petsEnt.get(oid);
+    if (!pe) { addPetEnt(oid, tier, x, z, ry, state, hp, maxHp, name); continue; }
+    pe.tx = x; pe.tz = z; pe.try_ = ry; pe.state = state;
+    if (pe.hp !== hp) { pe.hp = hp; drawBar(pe); }
+  }
+  for (const id of [...petsEnt.keys()]) if (!seenPet.has(id)) { disposeEntity(petsEnt.get(id)); petsEnt.delete(id); }
 }
 
 function onDmg(m) {
@@ -678,6 +786,13 @@ function onDmg(m) {
       flash(mo.obj);
       if (m.by === myId) AUDIO.sfx('hit', 0.6);
       sparks(mo.obj.position.x, 1.0, mo.obj.position.z, 0xffcc55, { count: 7, speed: 4, life: 0.4 });
+    }
+  } else if (m.kind === 'pet') {
+    const pe = petsEnt.get(m.id);
+    if (pe) {
+      pe.hp = m.hp; drawBar(pe);
+      dmgNumber(pe.obj.position, m.amt, '#ffaa88');
+      flash(pe.obj);
     }
   } else {
     if (m.id === myId) {
@@ -702,6 +817,8 @@ function bindInput() {
     if (e.code === 'KeyQ') castSkill('q');
     if (e.code === 'KeyE') castSkill('e');
     if (e.code === 'KeyR') castSkill('r');
+    if (e.code === 'KeyF') capturePet();
+    if (e.code === 'KeyB') togglePanel();
     if (e.code === 'Space') { e.preventDefault(); dodge(); }
   });
   addEventListener('keyup', (e) => keys[e.code] = false);
@@ -723,6 +840,32 @@ function bindInput() {
     if (curRoom === 'war') net({ t: 'war', enter: 0 });
     else net({ t: 'war', enter: 1 });
   };
+  // 退出对局：回到登录/选择界面
+  $('btn-exit').onclick = () => {
+    if (!confirm('退出当前对局，回到次元选择界面？（进度已自动保存）')) return;
+    joined = false; lastJoin = null;
+    try { if (ws) ws.close(); } catch (e) {}
+    location.reload();
+  };
+  $('btn-bag').onclick = togglePanel;
+  document.querySelectorAll('.panel-tab').forEach((el) => el.onclick = () => {
+    panelTab = el.dataset.tab;
+    renderPanel();
+  });
+  $('btn-panel-close').onclick = togglePanel;
+}
+
+function capturePet() {
+  if (!joined || myDim !== 'hunter') return;
+  const t = performance.now();
+  if (t < capCdEnd) return;
+  capCdEnd = t + 3000;
+  net({ t: 'capture' });
+}
+function togglePanel() {
+  if (!joined) return;
+  $('panel').classList.toggle('hidden');
+  if (!$('panel').classList.contains('hidden')) renderPanel();
 }
 
 /* 相机相对移动向量（键盘 WASD 或虚拟摇杆） */
@@ -778,15 +921,18 @@ function nearestEnemy(maxDist = 15) {
 
 function castSkill(kind) {
   if (dead || !me) return;
+  const sk = myClsDef().skills[kind];
+  if (!sk) return;
   const t = performance.now();
   if (t < cds[kind]) return;
-  const lvlReq = { e: 3, r: 5 }[kind];
-  if (lvlReq && (HUD.level || 1) < lvlReq) return toast(`⚠️ ${kind.toUpperCase()} 技能需要 Lv.${lvlReq}`);
-  cds[kind] = t + SKILL_CDS[kind];
+  if (sk.minLvl && (HUD.level || 1) < sk.minLvl) return toast(`⚠️ 【${sk.name}】需要 Lv.${sk.minLvl} 解锁`);
+  cds[kind] = t + sk.cd;
+  showSkillIntro(kind, sk);   // 首次使用弹出技能介绍（参考LOL）
 
   // 朝向：锁定最近敌人，否则面前
+  const isProj = sk.kind === 'proj';
   let dx = Math.sin(me.obj.rotation.y), dz = Math.cos(me.obj.rotation.y);
-  const tgt = nearestEnemy(kind === 'q' ? 24 : 9);
+  const tgt = nearestEnemy(isProj ? 26 : 9);
   if (tgt) {
     const vx = tgt.obj.position.x - me.x, vz = tgt.obj.position.z - me.z;
     const l = Math.hypot(vx, vz) || 1;
@@ -795,14 +941,56 @@ function castSkill(kind) {
   }
   me.attackT = clock.elapsedTime;
   MODELS.attackAnim(me.obj, myDim, kind);
-  AUDIO.sfx(kind === 'q' ? 'laser' : kind === 'e' ? 'explosion' : 'swing', kind === 'basic' ? 0.8 : 1, kind === 'r' ? 0.8 : 1);
-  if (kind === 'e') {
-    ringFx(me.x, me.z, 5.5, dimAccent(myDim));
-    sparks(me.x, 0.4, me.z, dimAccent(myDim), { count: 34, speed: 8, life: 0.7, gravity: -6, up: 1.4 });
-    flashLight(me.x, 1.5, me.z, dimAccent(myDim), 4, 12, 0.35);
+
+  const accent = dimAccent(myDim);
+  if (sk.kind === 'heal' || sk.kind === 'aoeheal') {
+    AUDIO.sfx('levelup', 0.55, 1.3);
+    ringFx(me.x, me.z, sk.radius || 4, 0x6dff8a);
+    sparks(me.x, 0.4, me.z, 0x6dff8a, { count: 26, speed: 4.5, life: 0.9, gravity: 2, up: 1.6 });
+  } else if (sk.kind === 'aoe') {
+    AUDIO.sfx('explosion', 1);
+    ringFx(me.x, me.z, sk.radius, accent);
+    sparks(me.x, 0.4, me.z, accent, { count: 34, speed: 8, life: 0.7, gravity: -6, up: 1.4 });
+    flashLight(me.x, 1.5, me.z, accent, 4, 12, 0.35);
+  } else if (isProj) {
+    AUDIO.sfx('laser', kind === 'basic' ? 0.6 : 1);
+  } else {
+    AUDIO.sfx('swing', kind === 'basic' ? 0.8 : 1, sk.kind === 'dashmelee' ? 0.8 : 1);
   }
-  if (kind === 'r') { burst([dx, dz], 25, 180); rushTrail = 0.2; } // 突进冲刺+残影拖尾
+  if (sk.kind === 'dashmelee') { burst([dx, dz], 25, 180); rushTrail = 0.2; } // 突进冲刺+残影拖尾
   net({ t: 'cast', k: kind, dx, dz });
+}
+
+/* ---------- 技能栏：名称/等级/加点（+号）/首次介绍 ---------- */
+function setupSkillBar() {
+  const def = myClsDef();
+  const keysMap = { basic: isTouch ? '' : '左键', q: 'Q', e: 'E', r: 'R' };
+  for (const k of ['basic', 'q', 'e', 'r']) {
+    const slot = $('sk-' + k);
+    slot.querySelector('.key').textContent = keysMap[k];
+    slot.querySelector('.sk-name').textContent = def.skills[k].name;
+    const plus = slot.querySelector('.sk-plus');
+    if (plus && !plus.dataset.bound) {
+      plus.dataset.bound = '1';
+      const up = (e) => { e.preventDefault(); e.stopPropagation(); AUDIO.sfx('click', 0.5); net({ t: 'sklvl', k }); };
+      plus.addEventListener('click', up);
+      plus.addEventListener('touchstart', up, { passive: false });
+    }
+    // 悬停查看技能说明
+    slot.title = `${def.skills[k].name}：${def.skills[k].desc || ''}`;
+  }
+}
+
+function showSkillIntro(kind, sk) {
+  const key = myCls + '_' + kind;
+  if (seenSkills[key]) return;
+  seenSkills[key] = 1;
+  localStorage.setItem('dw3d_seen_skills', JSON.stringify(seenSkills));
+  const el = $('skill-intro');
+  el.innerHTML = `<div class="si-name">${myClsDef().icon} ${sk.name}</div><div class="si-desc">${sk.desc || ''}</div><div class="si-tip">升级获得技能点后，点技能格上的「+」可强化该技能</div>`;
+  el.classList.remove('hidden');
+  clearTimeout(showSkillIntro._t);
+  showSkillIntro._t = setTimeout(() => el.classList.add('hidden'), 5000);
 }
 
 /* ============================================================
@@ -980,14 +1168,92 @@ function updateBar(ent) { drawBar(ent); }
 /* ============================================================
  * HUD
  * ============================================================ */
-const HUD = { level: 1 };
+const HUD = { level: 1, sk: { basic: 1, q: 1, e: 1, r: 1 }, skPts: 0, spd: 0 };
 function updateYou(y) {
   HUD.level = y.level;
+  if (y.sk) HUD.sk = y.sk;
+  if (y.skPts != null) HUD.skPts = y.skPts;
+  if (y.spd != null) HUD.spd = y.spd;
+  for (const k of ['patk', 'matk', 'armor', 'mres', 'gold', 'maxHp', 'hp', 'exp', 'expNeed', 'kills', 'pvpKills']) {
+    if (y[k] != null) HUD[k] = y[k];
+  }
   $('hp-fill').style.width = Math.max(0, y.hp / y.maxHp * 100) + '%';
   $('hp-text').textContent = `${y.hp}/${y.maxHp}`;
   $('exp-fill').style.width = (y.exp / y.expNeed * 100) + '%';
-  $('stat-line').textContent = `Lv.${y.level} ｜ 💰${y.gold} ｜ 击杀${y.kills} ｜ PvP${y.pvpKills}`;
+  $('stat-line').textContent = `Lv.${y.level} ｜ 💰${y.gold} ｜ 击杀${y.kills} ｜ PvP${y.pvpKills}` + (HUD.skPts > 0 ? ` ｜ ✨技能点×${HUD.skPts}` : '');
   if (me) me.hp = y.hp;
+  if (!$('panel').classList.contains('hidden')) renderPanel();
+}
+
+/* ---------- 属性/背包/商店 面板 ---------- */
+let panelTab = 'stats';
+const RAR_COLORS = ['#95a5a6', '#2ecc71', '#3498db', '#9b59b6', '#f39c12'];
+function itemStatText(it) {
+  const parts = [];
+  if (it.patk) parts.push(`物攻+${it.patk}`);
+  if (it.matk) parts.push(`法攻+${it.matk}`);
+  if (it.armor) parts.push(`物防+${it.armor}`);
+  if (it.mres) parts.push(`法防+${it.mres}`);
+  if (it.hp) parts.push(`生命+${it.hp}`);
+  if (it.spd) parts.push(`移速+${it.spd}`);
+  return parts.join(' ');
+}
+function renderPanel() {
+  const panel = $('panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  document.querySelectorAll('.panel-tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === panelTab));
+  const body = $('panel-body');
+  const cn = (CLASS_NAMES[myDim] || {})[myCls] || myClsDef().role;
+  if (panelTab === 'stats') {
+    const def = myClsDef();
+    body.innerHTML = `
+      <div class="stat-grid">
+        <div>🎖️ 职业</div><div>${def.icon} ${cn}（${def.role}）</div>
+        <div>📈 等级</div><div>Lv.${HUD.level}（经验 ${HUD.exp || 0}/${HUD.expNeed || 0}）</div>
+        <div>❤️ 体力(生命上限)</div><div>${HUD.maxHp || '-'}（当前 ${HUD.hp || 0}）</div>
+        <div>⚔️ 物理攻击</div><div>${HUD.patk || 0}</div>
+        <div>🔮 法术攻击</div><div>${HUD.matk || 0}</div>
+        <div>🛡️ 物理防御</div><div>${HUD.armor || 0}</div>
+        <div>✨ 法术防御</div><div>${HUD.mres || 0}</div>
+        <div>👟 移动速度</div><div>${HUD.spd || myClsDef().speed}</div>
+        <div>💰 金币</div><div>${HUD.gold || 0}</div>
+        <div>🗡️ 击杀</div><div>野怪${HUD.kills || 0} / 玩家${HUD.pvpKills || 0}</div>
+        <div>✨ 技能点</div><div>${HUD.skPts}（升级获得，点技能格上的＋加点）</div>
+      </div>
+      <div class="panel-sub">技能（${cn}）</div>
+      ${['basic', 'q', 'e', 'r'].map((k) => {
+        const s = def.skills[k];
+        const lv = HUD.sk[k] || 1;
+        return `<div class="skill-row"><b>${s.name}</b> <span class="sk-lv-tag">Lv.${lv}/5</span><br><span class="dim-text">${s.desc || ''}</span></div>`;
+      }).join('')}`;
+  } else if (panelTab === 'bag') {
+    const eq = invData.equip || {};
+    const slotNames = { weapon: '武器', helmet: '帽子', armor: '衣服', boots: '鞋子', acc: '饰品' };
+    body.innerHTML = `
+      <div class="panel-sub">已装备（点击卸下）</div>
+      <div class="equip-row">${Object.keys(slotNames).map((s) => {
+        const it = eq[s];
+        return `<div class="equip-slot" data-slot="${s}">${slotNames[s]}<br>${it ? `<span style="color:${RAR_COLORS[it.rar]}">${it.name}</span><br><small>${itemStatText(it)}</small>` : '<span class="dim-text">空</span>'}</div>`;
+      }).join('')}</div>
+      <div class="panel-sub">背包（${(invData.inv || []).length}/24）</div>
+      ${(invData.inv || []).map((it, i) => `
+        <div class="inv-row">
+          <span style="color:${RAR_COLORS[it.rar]}">${it.name}</span> <small class="dim-text">${itemStatText(it)}</small>
+          <span class="inv-btns"><button data-eq="${i}">装备</button><button data-sell="${i}">卖${Math.round(it.val * 0.4)}金</button></span>
+        </div>`).join('') || '<div class="dim-text">背包空空如也，去打怪掉装备或商店购买吧</div>'}`;
+    body.querySelectorAll('[data-eq]').forEach((b) => b.onclick = () => net({ t: 'equip', i: +b.dataset.eq }));
+    body.querySelectorAll('[data-sell]').forEach((b) => b.onclick = () => net({ t: 'sell', i: +b.dataset.sell }));
+    body.querySelectorAll('.equip-slot').forEach((el) => el.onclick = () => { if ((invData.equip || {})[el.dataset.slot]) net({ t: 'unequip', slot: el.dataset.slot }); });
+  } else {
+    body.innerHTML = `
+      <div class="panel-sub">商店（金币：💰${HUD.gold || 0}）</div>
+      ${shopData.map((it) => `
+        <div class="inv-row">
+          <span style="color:${RAR_COLORS[it.rar]}">${it.name}</span> <small class="dim-text">[${({ weapon: '武器', helmet: '帽子', armor: '衣服', boots: '鞋子', acc: '饰品' })[it.slot]}] ${itemStatText(it)}</small>
+          <span class="inv-btns"><button data-buy="${it.id}">💰${it.price}</button></span>
+        </div>`).join('')}`;
+    body.querySelectorAll('[data-buy]').forEach((b) => b.onclick = () => net({ t: 'buy', id: b.dataset.buy }));
+  }
 }
 
 function setWar(w) {
@@ -1033,20 +1299,33 @@ function toast(msg) {
 }
 function toast2(msg) { feed(msg); }
 
-/* 技能栏冷却 */
+/* 技能栏冷却 + 技能等级/加点状态 */
 function renderSkillBar() {
   const t = performance.now();
+  const def = myClsDef();
   for (const k of ['basic', 'q', 'e', 'r']) {
     const slot = $('sk-' + k);
     const remain = Math.max(0, cds[k] - t);
-    const pct = remain / SKILL_CDS[k];
+    const pct = remain / cdOf(k);
     slot.querySelector('.cd').style.height = (pct * 100) + '%';
-    const lvlReq = { e: 3, r: 5 }[k];
-    slot.classList.toggle('locked', !!(lvlReq && HUD.level < lvlReq));
+    const sk = def.skills[k];
+    const locked = !!(sk.minLvl && HUD.level < sk.minLvl);
+    slot.classList.toggle('locked', locked);
+    const lv = (HUD.sk && HUD.sk[k]) || 1;
+    const lvEl = slot.querySelector('.sk-lv');
+    if (lvEl) lvEl.textContent = lv > 1 ? 'Lv' + lv : '';
+    const plus = slot.querySelector('.sk-plus');
+    if (plus) plus.classList.toggle('hidden', !(HUD.skPts > 0 && !locked && lv < 5));
   }
   const dPct = Math.max(0, dodgeCd - t) / 1200;
   $('sk-dodge').querySelector('.cd').style.height = (dPct * 100) + '%';
+  const cap = $('sk-pet');
+  if (cap && !cap.classList.contains('hidden')) {
+    const remain = Math.max(0, (capCdEnd || 0) - t);
+    cap.querySelector('.cd').style.height = (remain / 3000 * 100) + '%';
+  }
 }
+let capCdEnd = 0;
 
 /* ============================================================
  * 主循环
@@ -1072,7 +1351,7 @@ function animate() {
     // 移动
     if (!dead) {
       const t = performance.now();
-      let vx = 0, vz = 0, speed = 8;
+      let vx = 0, vz = 0, speed = HUD.spd || myClsDef().speed;
       if (t < burstT) {
         vx = burstDir[0]; vz = burstDir[1]; speed = burstSpeed;
         if (rushTrail > 0) { rushTrail -= dt; sparks(me.x, 0.7, me.z, dimAccent(myDim), { count: 3, speed: 1.2, life: 0.4, gravity: 0, up: 0.3 }); }
@@ -1128,6 +1407,20 @@ function animate() {
     r.obj.rotation.y += dy * 0.25;
     if (!MODELS.drive(r.obj, r.anim, dt)) MODELS.animateHumanoid(r.obj, r.anim, time, r.attackT);
     if (r.bar) r.bar.sprite.position.set(r.obj.position.x, 2.55, r.obj.position.z);
+  }
+  // 宝宝插值（与怪物同款驱动，体型小、绿色血条）
+  for (const pe of petsEnt.values()) {
+    pe.obj.position.x += (pe.tx - pe.obj.position.x) * 0.22;
+    pe.obj.position.z += (pe.tz - pe.obj.position.z) * 0.22;
+    let dy = pe.try_ - pe.obj.rotation.y;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    pe.obj.rotation.y += dy * 0.25;
+    if (pe.state === 'attack' && pe.prevState !== 'attack') MODELS.monsterAttack(pe.obj);
+    pe.prevState = pe.state;
+    const st = pe.state === 'chase' || pe.state === 'attack' ? 'run' : 'idle';
+    if (!MODELS.drive(pe.obj, st, dt)) MODELS.animateMonster(pe.obj, pe.state, time);
+    if (pe.bar) pe.bar.sprite.position.set(pe.obj.position.x, 1.3 + pe.tier * 0.3, pe.obj.position.z);
   }
   // 怪物插值
   for (const mo of monsters.values()) {

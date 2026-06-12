@@ -177,3 +177,85 @@ body.touch .controls-help { display: none; }
   #feed { width: 240px; font-size: 11px; }
   #war-banner { font-size: 12px; padding: 7px 10px; flex-wrap: wrap; white-space: normal; max-width: 70vw; }
 }
+
+/* ---------- 职业选择卡片 ---------- */
+.class-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
+@media (max-width: 640px) { .class-cards { grid-template-columns: repeat(3, 1fr); } }
+.class-card {
+  border: 2px solid #44447a; border-radius: 10px; padding: 8px 4px;
+  text-align: center; cursor: pointer; background: rgba(20,20,45,0.6);
+  transition: transform .15s, box-shadow .15s;
+}
+.class-card:hover { transform: translateY(-3px); }
+.class-card.chosen { border-color: #ffd166; box-shadow: 0 0 16px rgba(255,209,102,0.5); transform: scale(1.05); }
+.cc-icon { font-size: 22px; }
+.cc-name { font-size: 12px; font-weight: bold; margin-top: 2px; }
+.cc-role { font-size: 10px; color: #8a8aa3; }
+.dc-perk { font-size: 9px; color: #ffd166; margin-top: 2px; }
+
+/* ---------- 技能栏扩展：名称/等级/加点 ---------- */
+.skill-slot .sk-name { font-size: 12px; }
+.skill-slot .sk-lv {
+  position: absolute; bottom: 3px; right: 5px;
+  font-size: 9px; color: #ffd166; font-weight: bold; z-index: 2;
+}
+.sk-plus {
+  position: absolute; top: -10px; right: -6px; z-index: 5;
+  width: 24px; height: 24px; border-radius: 50%; border: none;
+  background: #ffd166; color: #1a1a2e; font-weight: bold; font-size: 16px; line-height: 1;
+  cursor: pointer; animation: pulse 1s infinite alternate;
+}
+@keyframes pulse { from { transform: scale(1); } to { transform: scale(1.18); box-shadow: 0 0 10px #ffd166; } }
+
+/* ---------- 首次技能介绍 ---------- */
+#skill-intro {
+  position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%);
+  background: rgba(15,15,38,0.96); border: 1px solid #ffd166; border-radius: 12px;
+  padding: 14px 22px; max-width: 420px; z-index: 55; animation: fadein .3s;
+}
+#skill-intro .si-name { font-size: 17px; font-weight: bold; color: #ffd166; margin-bottom: 4px; }
+#skill-intro .si-desc { font-size: 13px; line-height: 1.5; }
+#skill-intro .si-tip { font-size: 11px; color: #8a8aa3; margin-top: 6px; }
+
+/* ---------- 属性/背包/商店面板 ---------- */
+#panel {
+  position: fixed; right: 14px; top: 64px; z-index: 65;
+  width: 360px; max-width: 92vw; max-height: 72vh;
+  background: rgba(13,13,32,0.97); border: 1px solid #44447a; border-radius: 14px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel-head { display: flex; border-bottom: 1px solid #33335a; }
+.panel-tab {
+  flex: 1; background: none; border: none; color: #aab; padding: 11px 4px;
+  font-size: 13px; cursor: pointer;
+}
+.panel-tab.active { color: #ffd166; background: rgba(255,209,102,0.08); font-weight: bold; }
+#btn-panel-close { background: none; border: none; color: #889; font-size: 16px; padding: 0 14px; cursor: pointer; }
+#panel-body { padding: 12px 14px; overflow-y: auto; font-size: 13px; }
+.stat-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin-bottom: 8px; }
+.stat-grid > div:nth-child(odd) { color: #8a8aa3; }
+.panel-sub { font-weight: bold; color: #ffd166; margin: 10px 0 6px; font-size: 13px; }
+.skill-row { padding: 6px 0; border-bottom: 1px dashed #2a2a4a; line-height: 1.45; }
+.sk-lv-tag { color: #ffd166; font-size: 11px; margin-left: 6px; }
+.equip-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.equip-slot {
+  border: 1px solid #33335a; border-radius: 8px; padding: 6px 4px; text-align: center;
+  font-size: 10px; line-height: 1.4; cursor: pointer; min-height: 58px; background: rgba(25,25,50,0.5);
+}
+.equip-slot small { font-size: 9px; color: #8a8aa3; }
+.inv-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 0; border-bottom: 1px dashed #2a2a4a; line-height: 1.4;
+}
+.inv-row small { display: block; }
+.inv-btns { display: flex; gap: 5px; flex-shrink: 0; }
+.inv-btns button {
+  background: #2a2a5a; color: #dde; border: 1px solid #44447a; border-radius: 6px;
+  padding: 4px 8px; font-size: 11px; cursor: pointer;
+}
+.inv-btns button:hover { background: #3a3a7a; }
+
+/* ---------- 背包/退出按钮 ---------- */
+.bag-btn { top: 64px; }
+.exit-btn { top: 114px; }
+body.touch #panel { right: 8px; top: 56px; max-height: 78vh; }

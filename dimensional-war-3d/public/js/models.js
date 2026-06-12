@@ -127,18 +127,37 @@ const MODELS = (() => {
     return obj;
   }
 
+  /* 向次元主色染色（克隆材质，避免影响其他实例） */
+  function tint(obj, accent, amount) {
+    if (accent == null || !amount) return;
+    const target = new THREE.Color(accent);
+    obj.traverse((c) => {
+      if ((c.isMesh || c.isSkinnedMesh) && c.material && c.material.color) {
+        c.material = c.material.clone();
+        c.material.color.lerp(target, amount);
+      }
+    });
+  }
+
   /* ============ 对外：创建角色 ============ */
-  function makeHero(dimId, accent) {
-    const obj = instantiate('hero_' + dimId, 1.85);
+  /* 英雄模型按职业定型（clsId → CLASSES.model），再按次元主色染色 */
+  function makeHero(dimId, accent, clsId) {
+    const cls = (typeof CLASSES !== 'undefined') && CLASSES.find((c) => c.id === clsId);
+    const modelKey = cls ? cls.model : dimId;
+    const obj = instantiate('hero_' + modelKey, cls && cls.id === 'tank' ? 2.0 : 1.85);
     if (!obj) return makeHeroProc(dimId, accent);
-    const hide = HIDE[dimId] || [];
+    const hide = HIDE[modelKey] || [];
     obj.traverse((c) => { if (hide.includes(c.name)) c.visible = false; });
+    obj.userData.modelKey = modelKey;
+    tint(obj, accent, 0.22);
     return obj;
   }
 
-  function makeMonster(tier, accent) {
-    const obj = instantiate('mon_t' + tier, 1.15 + tier * 0.4);
+  /* 怪物按所在次元主色染色；small=true 用于猎人宝宝 */
+  function makeMonster(tier, accent, small = false) {
+    const obj = instantiate('mon_t' + tier, small ? 0.75 + tier * 0.25 : 1.15 + tier * 0.4);
     if (!obj) return makeMonsterProc(tier, accent);
+    tint(obj, accent, small ? 0.45 : 0.3);
     obj.userData.tier = tier;
     return obj;
   }
@@ -222,12 +241,13 @@ const MODELS = (() => {
     rig.one = a;
   }
 
-  /* 玩家技能动作 */
+  /* 玩家技能动作（动作集跟随英雄模型而非次元） */
   function attackAnim(obj, dimId, kind) {
     const rig = obj.userData.rig;
     if (!rig) { obj.userData.attackT = performance.now() / 1000; return; }
     const map = SKILL_ANIM[kind] || SKILL_ANIM.basic;
-    playOnce(rig, map[dimId] || map.default, kind === 'basic' ? 1.7 : 1.25);
+    const key = obj.userData.modelKey || dimId;
+    playOnce(rig, map[key] || map.default, kind === 'basic' ? 1.7 : 1.25);
   }
 
   /* 怪物攻击动作 */

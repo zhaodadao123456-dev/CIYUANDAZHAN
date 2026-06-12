@@ -135,5 +135,77 @@ const INVITE_REWARDS = [
 /* Boss巢穴方位（弧度）：服务端刷T4怪与客户端巢穴装饰共用 */
 const LAIR_ANGLES = { tech: 0.7, xiuxian: 2.2, cyber: 3.6, magic: 5.0, hunter: 1.4 };
 
-return { DIMENSIONS, RARITIES, SLOTS, INVITE_REWARDS, LAIR_ANGLES };
+/* ============================================================
+ * 3D 版共享常量（服务端/客户端共用）
+ * ============================================================ */
+const MAP_HALF = 70;   // 地图半径（原45，扩大后野外更辽阔）
+const LAIR_R = 58;     // Boss巢穴距中心距离
+
+/* 职业系统：每个次元都可选 5 种职业（近战/刺客/远程/坦克/奶妈）
+ * model: 使用哪套 KayKit 英雄模型（按职业定型，再按次元染色）
+ * skills.kind: melee近战扇形 / proj弹道 / aoe范围伤害 / dashmelee突进近战
+ *              heal单体治疗 / aoeheal群体治疗 */
+const CLASSES = [
+  {
+    id: 'warrior', icon: '⚔️', role: '近战输出', desc: '重斧近战，攻守兼备', model: 'hunter',
+    dmgType: 'phys', hpMul: 1.05, dmgMul: 1.15, dmgTakenMul: 1.0, speed: 8,
+    skills: {
+      basic: { name: '劈砍',   kind: 'melee',     cd: 600,   range: 4.2, arc: 2.2, mult: 1.0,  desc: '挥斧劈砍面前扇形范围的敌人，造成100%物理伤害' },
+      q:     { name: '飞斧',   kind: 'proj',      cd: 3000,  mult: 1.5, speed: 22, radius: 1.6, life: 1800, desc: '掷出旋转飞斧，命中第一个敌人造成150%物理伤害' },
+      e:     { name: '旋风斩', kind: 'aoe',       cd: 7000,  radius: 5.5, mult: 2.2, minLvl: 3, desc: '以自身为中心旋身横扫，对周围5.5米敌人造成220%物理伤害' },
+      r:     { name: '突进斩', kind: 'dashmelee', cd: 12000, range: 5.0, arc: 3.14, mult: 3.0, minLvl: 5, desc: '向前突进并挥出致命一斩，造成300%物理伤害' },
+    },
+  },
+  {
+    id: 'assassin', icon: '🗡️', role: '近战刺杀', desc: '双刃疾袭，高伤脆皮', model: 'xiuxian',
+    dmgType: 'phys', hpMul: 0.85, dmgMul: 1.3, dmgTakenMul: 1.1, speed: 8.8,
+    skills: {
+      basic: { name: '连刃', kind: 'melee',     cd: 480,   range: 3.8, arc: 1.9, mult: 0.95, desc: '双刃快速连击，攻速极快，每击95%物理伤害' },
+      q:     { name: '掷刃', kind: 'proj',      cd: 2600,  mult: 1.4, speed: 26, radius: 1.4, life: 1500, desc: '掷出淬毒短刃，命中造成140%物理伤害' },
+      e:     { name: '影爆', kind: 'aoe',       cd: 6500,  radius: 4.8, mult: 2.0, minLvl: 3, desc: '影气爆裂，对周围4.8米敌人造成200%物理伤害' },
+      r:     { name: '瞬杀', kind: 'dashmelee', cd: 10000, range: 5.5, arc: 3.14, mult: 3.4, minLvl: 5, desc: '瞬步突进割喉，造成340%物理伤害——刺客的处决技' },
+    },
+  },
+  {
+    id: 'ranger', icon: '🏹', role: '远程输出', desc: '弩炮远射，风筝走位', model: 'cyber',
+    dmgType: 'phys', hpMul: 0.85, dmgMul: 1.0, dmgTakenMul: 1.0, speed: 8.3,
+    skills: {
+      basic: { name: '速射',     kind: 'proj',      cd: 700,   mult: 0.85, speed: 28, radius: 1.3, life: 1500, desc: '快速射击，远距离命中造成85%物理伤害' },
+      q:     { name: '穿云箭',   kind: 'proj',      cd: 3000,  mult: 1.7, speed: 34, radius: 1.5, life: 2200, desc: '蓄力强射，弹速极快射程极远，造成170%物理伤害' },
+      e:     { name: '箭雨',     kind: 'aoe',       cd: 8000,  radius: 6.5, mult: 1.8, minLvl: 3, desc: '万箭齐发，对周围6.5米敌人造成180%物理伤害' },
+      r:     { name: '猎杀冲锋', kind: 'dashmelee', cd: 11000, range: 4.5, arc: 3.14, mult: 2.4, minLvl: 5, desc: '突进拉开身位并近距离爆射，造成240%物理伤害' },
+    },
+  },
+  {
+    id: 'tank', icon: '🛡️', role: '坦克', desc: '巨盾前排，伤害减免45%', model: 'tech',
+    dmgType: 'phys', hpMul: 1.75, dmgMul: 0.7, dmgTakenMul: 0.55, speed: 7.2,
+    skills: {
+      basic: { name: '盾击',     kind: 'melee',     cd: 750,   range: 4.0, arc: 2.4, mult: 1.0, desc: '挥盾横扫，造成100%物理伤害' },
+      q:     { name: '震地',     kind: 'aoe',       cd: 4000,  radius: 4.0, mult: 1.1, desc: '重踏地面，对周围4米敌人造成110%物理伤害' },
+      e:     { name: '盾墙冲击', kind: 'aoe',       cd: 8000,  radius: 5.5, mult: 1.6, minLvl: 3, desc: '盾墙震荡冲击周围5.5米敌人，造成160%物理伤害' },
+      r:     { name: '铁壁冲锋', kind: 'dashmelee', cd: 12000, range: 5.0, arc: 3.14, mult: 2.2, minLvl: 5, desc: '巨盾开路向前冲撞，造成220%物理伤害' },
+    },
+  },
+  {
+    id: 'healer', icon: '✨', role: '奶妈', desc: '治疗辅助，守护队友', model: 'magic',
+    dmgType: 'magic', hpMul: 0.95, dmgMul: 0.7, dmgTakenMul: 0.9, speed: 8,
+    skills: {
+      basic: { name: '圣光弹',   kind: 'proj',    cd: 650,   mult: 0.8, speed: 24, radius: 1.3, life: 1500, desc: '发射圣光法球，命中造成80%法术伤害' },
+      q:     { name: '治愈术',   kind: 'heal',    cd: 4500,  pct: 0.28, range: 9, desc: '治疗自己与9米内伤势最重的队友，恢复28%最大生命' },
+      e:     { name: '群体圣疗', kind: 'aoeheal', cd: 10000, radius: 8, pct: 0.22, minLvl: 3, desc: '圣光普照，恢复周围8米所有队友22%最大生命' },
+      r:     { name: '圣光审判', kind: 'aoe',     cd: 12000, radius: 5.5, mult: 2.2, minLvl: 5, desc: '降下圣光审判，对周围5.5米敌人造成220%法术伤害' },
+    },
+  },
+];
+
+/* 职业在各次元的风格化称号 */
+const CLASS_NAMES = {
+  tech:    { warrior: '光刃武士', assassin: '量子刺客', ranger: '磁轨炮手', tank: '重装机甲', healer: '纳米医师' },
+  xiuxian: { warrior: '剑修',     assassin: '影杀客',   ranger: '御符仙师', tank: '体修金刚', healer: '丹道医仙' },
+  cyber:   { warrior: '街头武士', assassin: '暗巷刺客', ranger: '义体枪手', tank: '重装保镖', healer: '急救骇客' },
+  magic:   { warrior: '圣殿骑士', assassin: '暗影刺客', ranger: '精灵射手', tank: '守护骑士', healer: '光明牧师' },
+  hunter:  { warrior: '兽刃猎手', assassin: '影爪猎手', ranger: '鹰眼猎手', tank: '巨盾猎手', healer: '灵兽驯师' },
+};
+
+return { DIMENSIONS, RARITIES, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
 });
