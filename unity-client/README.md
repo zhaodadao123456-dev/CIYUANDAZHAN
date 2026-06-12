@@ -5,9 +5,11 @@
 
 ## 1. 安装 Unity（一次性，免费）
 
-1. 下载 Unity Hub：https://unity.com/cn/download （选 macOS 版）
+1. 下载 Unity Hub：https://unity.cn 或 https://unity.com/cn/download （选 macOS 版）
 2. 打开 Unity Hub → 登录/注册 Unity 账号（个人版免费）
-3. Hub 里「安装」→ 安装 **Unity 6 (6000.x)** 任意版本（勾选 iOS Build Support 可以以后出 iPhone 包）
+3. 安装编辑器：**Unity 2022.3.x（LTS）** 或 **Unity 6 (6000.x)** 都可以
+   （unity.cn「历史Unity版本」里的 2022.3.62f3c1 即可；勾选 iOS Build Support 可以以后出 iPhone 包）
+   注意：「团结引擎」是 Unity 中国的特供分支，不要选它，选标准 Unity 版本
 
 ## 2. 打开项目
 
