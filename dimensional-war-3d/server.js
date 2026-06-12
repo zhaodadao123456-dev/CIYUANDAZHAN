@@ -112,7 +112,7 @@ function spawnWorldBoss() {
   room.monsters.set(id, {
     id, name, tier: 5, boss: true,
     x: bx, z: bz, spawnX: bx, spawnZ: bz, ry: 0,
-    hp: 3200, maxHp: 3200, atk: 46, speed: 4.4,
+    hp: +process.env.DW_BOSS_HP || 3200, maxHp: +process.env.DW_BOSS_HP || 3200, atk: 46, speed: 4.4,
     exp: 900, gold: 600,
     state: 'idle', targetId: null, atkT: 0, aoeT: now(), dieT: 0, wanderT: 0, wx: bx, wz: bz,
   });
@@ -180,6 +180,7 @@ function persist(p) {
   saved[p.name] = {
     level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills,
     cls: p.cls, dim: p.dim, sk: p.sk, skPts: p.skPts, inv: p.inv, equip: p.equip,
+    daily: p.daily, dailyStreak: p.dailyStreak,
     pet: p.pet ? { name: p.pet.name, tier: p.pet.tier, maxHp: p.pet.maxHp, atk: p.pet.atk } : null,
   };
   saveDirty = true;
@@ -635,6 +636,26 @@ function joinRoom(p, roomId, isFirst = false) {
   });
   sendYou(p);
   roomCast(roomId, { t: 'pjoin', p: publicP(p) }, p.id);
+  if (isFirst) grantDaily(p);
+}
+
+/* ---------- 每日签到：上线即领，连签递增（7天封顶） ---------- */
+function grantDaily(p) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rec = saved[p.name] || {};
+  if (rec.daily === today) {
+    p.daily = rec.daily;
+    p.dailyStreak = rec.dailyStreak || 1;
+    return;
+  }
+  const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  p.dailyStreak = rec.daily === yest ? (rec.dailyStreak || 0) + 1 : 1;
+  p.daily = today;
+  const reward = 150 + 50 * Math.min(7, p.dailyStreak);
+  p.gold += reward;
+  send(p.ws, { t: 'feed', msg: `📅 每日签到成功！连续 ${p.dailyStreak} 天，获得 ${reward} 金币${p.dailyStreak >= 7 ? '（已满额 500/天）' : '（连签 7 天可达每日 500 金）'}` });
+  sendYou(p);
+  persist(p);
 }
 
 /* ---------- 技能施放（服务器判定，按职业差异化） ---------- */
@@ -742,6 +763,11 @@ function applyDamage(attacker, tgt, dmg, dmgType = 'phys') {
   dmg = Math.max(1, Math.round(dmg));
   tgt.hp -= dmg;
   roomCast(attacker.room, { t: 'dmg', kind: isMonster ? 'm' : 'p', id: tgt.id, amt: dmg, hp: Math.max(0, Math.round(tgt.hp)), by: attacker.id });
+  if (isMonster && tgt.boss && attacker.name) {
+    // BOSS战伤害贡献统计（按昵称，结算时分配奖励）
+    tgt.dmgBy = tgt.dmgBy || new Map();
+    tgt.dmgBy.set(attacker.name, (tgt.dmgBy.get(attacker.name) || 0) + dmg);
+  }
   if (isMonster) {
     tgt.targetId = attacker.id;
     if (tgt.state === 'idle') tgt.state = 'chase';
@@ -759,9 +785,26 @@ function killMonster(p, mo) {
   p.gold += mo.gold;
   roomCast(p.room, { t: 'mdie', id: mo.id, by: p.id });
   if (mo.boss) {
-    // 世界BOSS：必掉史诗级以上装备，全服公告
-    giveItem(p, rollDrop(4, p.dim, 3), `世界BOSS【${mo.name}】掉落`);
-    allCast({ t: 'feed', msg: `👑 【${dimName(p.dim)}】${p.name} 讨伐了世界BOSS【${mo.name}】，获得史诗战利品！` });
+    // 世界BOSS按伤害贡献结算：MVP必得史诗，≥10%贡献者得稀有+与半额经验，杜绝抢尾刀
+    const total = Math.max(1, mo.maxHp);
+    const contrib = [...(mo.dmgBy || new Map()).entries()].sort((a, b) => b[1] - a[1]);
+    const topTxt = contrib.slice(0, 3)
+      .map(([n, d]) => `${n} ${Math.min(100, Math.round(d / total * 100))}%`).join('、');
+    allCast({ t: 'feed', msg: `👑 世界BOSS【${mo.name}】被讨伐！伤害贡献榜：${topTxt || p.name}` });
+    let mvpGiven = false;
+    for (const [name, d] of contrib) {
+      const mem = [...conns.values()].find((o) => o.name === name);
+      if (!mem) continue;
+      if (!mvpGiven) {
+        mvpGiven = true;
+        giveItem(mem, rollDrop(4, mem.dim, 3), `世界BOSS【${mo.name}】MVP奖励`);
+        allCast({ t: 'feed', msg: `🏅 本场BOSS战MVP：【${dimName(mem.dim)}】${mem.name}，史诗战利品到手！` });
+      } else if (d / total >= 0.1) {
+        giveItem(mem, rollDrop(4, mem.dim, 2), `世界BOSS【${mo.name}】贡献奖励`);
+        if (mem !== p) gainExp(mem, Math.round(mo.exp * 0.5));
+      }
+    }
+    if (!mvpGiven) giveItem(p, rollDrop(4, p.dim, 3), `世界BOSS【${mo.name}】掉落`);
     allCast({ t: 'boss', alive: 0 });
     worldBoss = null;
   } else if (Math.random() < 0.14 + mo.tier * 0.05) {

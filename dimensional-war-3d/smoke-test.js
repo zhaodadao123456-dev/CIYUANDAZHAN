@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = 34567;
-const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000 }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 40 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvErr = '';
 srv.stdout.on('data', (d) => process.stdout.write('[srv] ' + d));
 srv.stderr.on('data', (d) => { srvErr += d; process.stderr.write('[srv-err] ' + d); });
@@ -103,20 +103,47 @@ function client(name, dim, cls) {
   const bossMsg = A.got('boss', (m) => m.alive === 1);
   check('世界BOSS状态广播(含坐标)', !!(bossMsg && bossMsg.dim && typeof bossMsg.x === 'number'), bossMsg && `在${bossMsg.dim}(${bossMsg.x},${bossMsg.z})`);
 
-  // 10.8 走到BOSS脚下，验证震地轰击(baoe)
+  // 10.8 讨伐BOSS全链路：走近 → 吃到震地轰击 → 打死 → 贡献结算/MVP奖励
   if (bossMsg) {
     const D = client();
     await D.open;
     D.send({ t: 'join', name: '测试讨伐者', dim: bossMsg.dim, cls: 'tank' });
     await sleep(400);
-    const t0 = Date.now();
-    while (Date.now() - t0 < 7000 && !D.got('baoe')) {
-      D.send({ t: 'mv', x: bossMsg.x, z: bossMsg.z, ry: 0, anim: 'run' });
-      await sleep(60);
+    const wD = D.got('welcome');
+    let [dx0, dz0] = [wD ? wD.x : 0, wD ? wD.z : 0];
+    // 小步快走到BOSS身边2米（绕过服务器测速）
+    for (let i = 0; i < 120 && Math.hypot(bossMsg.x - dx0, bossMsg.z - dz0) > 2; i++) {
+      const d = Math.hypot(bossMsg.x - dx0, bossMsg.z - dz0);
+      dx0 += (bossMsg.x - dx0) / d * 0.7; dz0 += (bossMsg.z - dz0) / d * 0.7;
+      D.send({ t: 'mv', x: dx0, z: dz0, ry: 0, anim: 'run' });
+      await sleep(35);
     }
+    // 贴脸盾击直到BOSS倒下（每发按最新快照瞄准；若中途阵亡则复活再战）
+    for (let i = 0; i < 16 && !A.got('feed', (m) => /伤害贡献榜/.test(m.msg)); i++) {
+      if (D.got('pdie', (m) => m.id === (D.got('welcome') || {}).id) && !D.got('prespawn')) {
+        await sleep(4100);
+        D.send({ t: 'respawn' });
+        await sleep(300);
+      }
+      const snap = [...D.msgs].reverse().find((m) => m.t === 'snap');
+      const boss = snap && snap.ms.find((m) => m[7] === 5);
+      const [bx, bz] = boss ? [boss[1], boss[2]] : [bossMsg.x, bossMsg.z];
+      const dl = Math.hypot(bx - dx0, bz - dz0) || 1;
+      D.send({ t: 'cast', k: 'basic', dx: (bx - dx0) / dl, dz: (bz - dz0) / dl });
+      await sleep(780);
+    }
+    await sleep(400);
     check('世界BOSS震地轰击', !!D.got('baoe'), D.got('baoe') ? `r=${D.got('baoe').r}` : '未触发');
+    const settle = A.got('feed', (m) => /伤害贡献榜/.test(m.msg));
+    check('BOSS伤害贡献结算', !!settle, settle && settle.msg.slice(0, 40));
+    const mvp = D.got('feed', (m) => /MVP奖励|MVP/.test(m.msg));
+    check('MVP史诗奖励发放', !!mvp, mvp && mvp.msg.slice(0, 36));
     D.ws.close();
   }
+
+  // 10.95 每日签到（首次上线必触发）
+  const daily = A.got('feed', (m) => /每日签到/.test(m.msg));
+  check('每日签到奖励', !!daily, daily && daily.msg.slice(0, 30));
 
   // 10.9 组队：A 邀请 B → B 收到邀请并接受 → 双方收到队伍名单 → B 退队解散
   A.send({ t: 'party', op: 'invite', name: '测试奶妈' });
