@@ -411,6 +411,19 @@ function onMsg(m) {
     case 'you': updateYou(m); break;
     case 'war': setWar(m.state); break;
     case 'boss': setBoss(m); break;
+    case 'party':
+      partyMembers = m.members || [];
+      renderPartyHud();
+      if (panelTab === 'party') renderPanel();
+      break;
+    case 'pinvite': {
+      pendingInviteFrom = m.from;
+      $('invite-text').textContent = `👥 ${m.from} 邀请你组队（共享经验）`;
+      $('invite-prompt').classList.remove('hidden');
+      clearTimeout(inviteTimer);
+      inviteTimer = setTimeout(() => $('invite-prompt').classList.add('hidden'), 30000);
+      break;
+    }
     case 'baoe': {
       // 世界BOSS震地轰击：红色冲击环 + 红光
       ringFx(m.x, m.z, m.r || 7, 0xff3344);
@@ -772,6 +785,7 @@ function onSnap(m) {
     if (r.hp !== hp || r.level !== level) { r.hp = hp; r.maxHp = maxHp; r.level = level; drawBar(r); }
   }
   for (const id of [...remotes.keys()]) if (!seen.has(id)) removeRemote(id);
+  updatePartyHud();
 
   const seenM = new Set();
   for (const [id, x, z, ry, state, hp, maxHp, tier, name] of m.ms) {
@@ -874,6 +888,14 @@ function bindInput() {
     location.reload();
   };
   $('btn-bag').onclick = togglePanel;
+  $('btn-inv-yes').onclick = () => {
+    $('invite-prompt').classList.add('hidden');
+    net({ t: 'party', op: 'accept' });
+  };
+  $('btn-inv-no').onclick = () => {
+    $('invite-prompt').classList.add('hidden');
+    net({ t: 'party', op: 'decline' });
+  };
   document.querySelectorAll('.panel-tab').forEach((el) => el.onclick = () => {
     panelTab = el.dataset.tab;
     if (panelTab === 'rank') net({ t: 'rank' });   // 打开时拉取最新榜单
@@ -1272,6 +1294,24 @@ function renderPanel() {
     body.querySelectorAll('[data-eq]').forEach((b) => b.onclick = () => net({ t: 'equip', i: +b.dataset.eq }));
     body.querySelectorAll('[data-sell]').forEach((b) => b.onclick = () => net({ t: 'sell', i: +b.dataset.sell }));
     body.querySelectorAll('.equip-slot').forEach((el) => el.onclick = () => { if ((invData.equip || {})[el.dataset.slot]) net({ t: 'unequip', slot: el.dataset.slot }); });
+  } else if (panelTab === 'party') {
+    const mine = playerName();
+    const nearby = [...remotes.values()].filter((r) => r.dim === myDim && !partyMembers.some((m) => m.name === r.name));
+    body.innerHTML = `
+      <div class="panel-sub">👥 我的队伍（${partyMembers.length}/4）｜ 30米内队友共享70%经验</div>
+      ${partyMembers.length === 0 ? '<div class="dim-text">暂无队伍。邀请下方同次元玩家一起讨伐世界BOSS吧！</div>'
+        : partyMembers.map((m) => `
+          <div class="inv-row"><span>${m.name === mine ? '⭐' : '👤'} <b>${m.name}</b> <small class="dim-text">Lv.${m.level} ${(CLASS_NAMES[myDim] || {})[m.cls] || ''}</small></span></div>`).join('')
+        + `<div class="inv-row"><span></span><button class="btn" id="btn-party-leave">🚪 离开队伍</button></div>`}
+      <div class="panel-sub" style="margin-top:10px">附近的同次元玩家</div>
+      ${nearby.length === 0 ? '<div class="dim-text">附近暂无同次元玩家</div>' : nearby.map((r) => `
+        <div class="inv-row"><span>👤 ${r.name} <small class="dim-text">Lv.${r.level}</small></span>
+        <button class="btn btn-pinv" data-name="${r.name}">➕ 邀请</button></div>`).join('')}`;
+    const lv = $('btn-party-leave');
+    if (lv) lv.onclick = () => net({ t: 'party', op: 'leave' });
+    body.querySelectorAll('.btn-pinv').forEach((b) => b.onclick = () => {
+      net({ t: 'party', op: 'invite', name: b.dataset.name });
+    });
   } else if (panelTab === 'rank') {
     const dimIcon2 = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.icon : '❔'; };
     body.innerHTML = `
@@ -1319,6 +1359,41 @@ function renderWarBanner() {
   }
 }
 setInterval(renderWarBanner, 1000);
+
+/* ---------- 组队 ---------- */
+let partyMembers = [];
+let pendingInviteFrom = null;
+let inviteTimer;
+
+function renderPartyHud() {
+  const el = $('party-hud');
+  if (partyMembers.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = partyMembers.map((m) => {
+    const cn = (CLASS_NAMES[myDim] || {})[m.cls] || '';
+    const pct = Math.max(0, Math.min(100, m.hp / m.maxHp * 100));
+    return `<div class="party-mem" data-name="${m.name}">
+      <span>${m.name === playerName() ? '⭐' : '👤'} ${m.name} <small class="dim-text">Lv.${m.level} ${cn}</small></span>
+      <div class="pm-bar"><div class="pm-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+/* 队友血条实时刷新（从快照里的同房间实体取血量） */
+function updatePartyHud() {
+  if (partyMembers.length === 0) return;
+  const byName = new Map();
+  for (const r of remotes.values()) byName.set(r.name, r);
+  for (const m of partyMembers) {
+    const el = document.querySelector(`.party-mem[data-name="${CSS.escape(m.name)}"] .pm-fill`);
+    if (!el) continue;
+    let hp = m.hp, max = m.maxHp;
+    if (m.name === playerName()) { hp = HUD.hp ?? hp; max = HUD.maxHp ?? max; }
+    else { const r = byName.get(m.name); if (r) { hp = r.hp; max = r.maxHp; } }
+    el.style.width = `${Math.max(0, Math.min(100, hp / max * 100))}%`;
+  }
+}
+
+function playerName() { return (lastJoin && lastJoin.name) || ''; }
 
 /* ---------- 世界BOSS横幅 ---------- */
 let bossInfo = null;

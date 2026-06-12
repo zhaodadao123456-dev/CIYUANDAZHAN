@@ -44,6 +44,9 @@ namespace DW
         JObject you;            // 服务器下发的完整属性
         JObject warInfo;
         protected JObject bossInfo;
+        protected JArray partyMembers;
+        string inviteFrom;
+        float inviteUntil;
         float shakeUntil, shakeAmp;
         JObject equipData;
         JArray invData, shopData;
@@ -273,6 +276,14 @@ namespace DW
                     break;
                 case "boss":
                     bossInfo = ((int?)m["alive"] ?? 0) == 1 ? m : null;
+                    break;
+                case "party":
+                    partyMembers = (JArray)m["members"];
+                    break;
+                case "pinvite":
+                    inviteFrom = (string)m["from"];
+                    inviteUntil = Time.time + 30f;
+                    Toast($"👥 {inviteFrom} 邀请你组队 —— 按 Y 接受 / N 拒绝");
                     break;
                 case "baoe":
                 {
@@ -627,6 +638,11 @@ namespace DW
         {
             if (chatOpen) return;   // 聊天时键盘归输入框
             if (Input.GetKeyDown(KeyCode.T)) { chatOpen = true; return; }
+            if (inviteFrom != null && Time.time < inviteUntil)
+            {
+                if (Input.GetKeyDown(KeyCode.Y)) { Send(new { t = "party", op = "accept" }); inviteFrom = null; }
+                else if (Input.GetKeyDown(KeyCode.N)) { Send(new { t = "party", op = "decline" }); inviteFrom = null; }
+            }
             UpdateTouch();
             bool touching = Input.touchCount > 0;  // 触屏时屏蔽模拟出来的鼠标事件
             if (!touching && Input.GetMouseButton(1))

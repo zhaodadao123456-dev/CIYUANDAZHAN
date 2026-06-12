@@ -340,11 +340,89 @@ wss.on('connection', (ws) => {
     const p = conns.get(ws);
     if (!p) return;
     persist(p);
+    leaveParty(p);
     rooms[p.room].players.delete(p.id);
     roomCast(p.room, { t: 'pleave', id: p.id });
     conns.delete(ws);
   });
 });
+
+/* ---------- 组队（最多4人，BOSS战共享经验） ---------- */
+let nextPartyId = 1;
+const parties = new Map();   // id -> { id, members: [player] }
+const PARTY_MAX = 4;
+const partyOf = (p) => (p.partyId ? parties.get(p.partyId) : null);
+
+function partyMsg(party) {
+  return {
+    t: 'party',
+    members: party ? party.members.map((m) => ({
+      name: m.name, cls: m.cls, level: m.level,
+      hp: Math.max(0, Math.round(m.hp)), maxHp: maxHp(m),
+    })) : [],
+  };
+}
+function partySync(party) { for (const m of party.members) send(m.ws, partyMsg(party)); }
+
+function leaveParty(p) {
+  const pa = partyOf(p);
+  if (!pa) return;
+  pa.members = pa.members.filter((m) => m !== p);
+  p.partyId = null;
+  send(p.ws, partyMsg(null));
+  if (pa.members.length <= 1) {
+    for (const m of pa.members) {
+      m.partyId = null;
+      send(m.ws, partyMsg(null));
+      send(m.ws, { t: 'feed', msg: '👥 队伍已解散' });
+    }
+    parties.delete(pa.id);
+  } else {
+    partySync(pa);
+    for (const m of pa.members) send(m.ws, { t: 'feed', msg: `👥 ${p.name} 离开了队伍` });
+  }
+}
+
+function handleParty(p, m) {
+  const op = m.op;
+  if (op === 'invite') {
+    const tgt = [...conns.values()].find((o) => o.name === String(m.name || ''));
+    if (!tgt || tgt === p) return send(p.ws, { t: 'err', msg: '找不到该玩家（需在线）' });
+    if (tgt.dim !== p.dim) return send(p.ws, { t: 'err', msg: '只能邀请同次元的玩家' });
+    if (tgt.partyId) return send(p.ws, { t: 'err', msg: '对方已有队伍' });
+    const pa = partyOf(p);
+    if (pa && pa.members.length >= PARTY_MAX) return send(p.ws, { t: 'err', msg: `队伍已满（${PARTY_MAX}人）` });
+    tgt.pinvite = { from: p.name, at: now() };
+    send(tgt.ws, { t: 'pinvite', from: p.name });
+    send(p.ws, { t: 'feed', msg: `👥 已向 ${tgt.name} 发出组队邀请` });
+  } else if (op === 'accept') {
+    const inv = p.pinvite;
+    p.pinvite = null;
+    if (!inv || now() - inv.at > 30000) return send(p.ws, { t: 'err', msg: '邀请已过期' });
+    if (p.partyId) return;
+    const inviter = [...conns.values()].find((o) => o.name === inv.from);
+    if (!inviter) return send(p.ws, { t: 'err', msg: '邀请者已离线' });
+    let pa = partyOf(inviter);
+    if (!pa) {
+      pa = { id: nextPartyId++, members: [inviter] };
+      inviter.partyId = pa.id;
+      parties.set(pa.id, pa);
+    }
+    if (pa.members.length >= PARTY_MAX) return send(p.ws, { t: 'err', msg: '队伍已满' });
+    pa.members.push(p);
+    p.partyId = pa.id;
+    partySync(pa);
+    for (const mm of pa.members) send(mm.ws, { t: 'feed', msg: `👥 ${p.name} 加入了队伍（${pa.members.length}/${PARTY_MAX}）` });
+  } else if (op === 'decline') {
+    if (p.pinvite) {
+      const inviter = [...conns.values()].find((o) => o.name === p.pinvite.from);
+      if (inviter) send(inviter.ws, { t: 'feed', msg: `👥 ${p.name} 婉拒了你的组队邀请` });
+      p.pinvite = null;
+    }
+  } else if (op === 'leave') {
+    leaveParty(p);
+  }
+}
 
 function handle(ws, m) {
   let p = conns.get(ws);
@@ -407,6 +485,7 @@ function handle(ws, m) {
       return;
     }
     case 'capture': return capturePet(p);
+    case 'party': return handleParty(p, m);
     case 'chat': {
       const msg = String(m.msg || '').trim().slice(0, 60);
       if (!msg) return;
@@ -690,6 +769,15 @@ function killMonster(p, mo) {
     giveItem(p, rollDrop(mo.tier, p.dim), `【${mo.name}】掉落`);
   }
   gainExp(p, mo.exp); // 内部会 sendYou + persist
+  // 组队共享经验：30米内的存活队友各得70%
+  const pa = partyOf(p);
+  if (pa) {
+    for (const mm of pa.members) {
+      if (mm !== p && !mm.dead && mm.room === p.room && dist2(mm.x, mm.z, p.x, p.z) < 30 * 30) {
+        gainExp(mm, Math.max(1, Math.round(mo.exp * 0.7)));
+      }
+    }
+  }
 }
 
 function killPlayer(killer, victim) {

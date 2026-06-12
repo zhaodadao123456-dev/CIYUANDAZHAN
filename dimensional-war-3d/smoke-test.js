@@ -118,6 +118,20 @@ function client(name, dim, cls) {
     D.ws.close();
   }
 
+  // 10.9 组队：A 邀请 B → B 收到邀请并接受 → 双方收到队伍名单 → B 退队解散
+  A.send({ t: 'party', op: 'invite', name: '测试奶妈' });
+  await sleep(300);
+  const inv = B.got('pinvite');
+  check('组队邀请送达', !!(inv && inv.from === '测试猎人'), inv && `来自${inv.from}`);
+  B.send({ t: 'party', op: 'accept' });
+  await sleep(300);
+  const pa = A.got('party', (m) => m.members && m.members.length === 2);
+  check('组队成功(双人名单)', !!pa, pa && pa.members.map((x) => x.name).join('+'));
+  B.send({ t: 'party', op: 'leave' });
+  await sleep(300);
+  const pd = A.got('party', (m) => m.members && m.members.length === 0);
+  check('退队后队伍解散', !!pd);
+
   // 11. 坦克属性验证：hpMul=1.75 → maxHp≈(200+30)*1.75=402
   const youC = C.got('you', (m) => m.maxHp);
   check('坦克血量加成生效', !!(youC && youC.maxHp > 380), youC && `maxHp=${youC.maxHp}`);

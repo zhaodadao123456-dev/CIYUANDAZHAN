@@ -104,6 +104,27 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
   50% { box-shadow: 0 0 18px rgba(255, 60, 40, 0.8); }
 }
 
+#party-hud {
+  position: absolute; left: 14px; top: 150px;
+  display: flex; flex-direction: column; gap: 5px; width: 170px;
+}
+.party-mem {
+  background: rgba(8, 14, 28, 0.72); border: 1px solid rgba(110, 170, 255, 0.3);
+  border-radius: 8px; padding: 4px 8px; font-size: 11px;
+}
+.party-mem .pm-bar {
+  height: 5px; background: rgba(0,0,0,0.55); border-radius: 3px; margin-top: 3px; overflow: hidden;
+}
+.party-mem .pm-fill { height: 100%; background: #2ecc71; border-radius: 3px; }
+
+#invite-prompt {
+  position: absolute; top: 100px; left: 50%; transform: translateX(-50%);
+  background: rgba(12, 20, 40, 0.95); border: 1px solid #4d88ff;
+  border-radius: 12px; padding: 12px 18px; font-size: 14px; z-index: 40;
+  display: flex; align-items: center; gap: 12px;
+}
+#invite-prompt.hidden { display: none; }
+
 #feed {
   position: absolute; top: 70px; right: 14px; width: 330px;
   display: flex; flex-direction: column; gap: 4px;

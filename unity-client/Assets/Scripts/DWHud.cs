@@ -169,11 +169,29 @@ namespace DW
                 GUI.Label(new Rect(Screen.width - 430, 60 + i * 22, 420, 22), $"<size=13>{feed[i]}</size>", _label);
             }
 
+            GuiParty();
             GuiSkillBar();
             if (panelOpen) GuiPanel();
             if (meDead) GuiDeath();
             if (chatOpen) GuiChat();
             else GUI.Label(new Rect(12, Screen.height - 24, 300, 20), "<size=11><color=#888>按 T 聊天</color></size>", _label);
+        }
+
+        void GuiParty()
+        {
+            if (partyMembers == null || partyMembers.Count == 0) return;
+            float y = 130;
+            foreach (var mTok in partyMembers)
+            {
+                var m = (JObject)mTok;
+                var r = new Rect(12, y, 190, 40);
+                guiRects.Add(r);
+                GUI.Box(r, "", _box);
+                int hp = (int?)m["hp"] ?? 0, max = (int?)m["maxHp"] ?? 1;
+                GUI.Label(new Rect(r.x + 8, r.y + 2, 180, 18), $"<size=12>👤 {m["name"]} Lv.{m["level"]}</size>", _label);
+                DrawBar(new Rect(r.x + 8, r.y + 24, 174, 8), (float)hp / max, Color.green, "");
+                y += 44;
+            }
         }
 
         void GuiChat()
@@ -187,7 +205,12 @@ namespace DW
                 if (ev.keyCode == KeyCode.Return || ev.keyCode == KeyCode.KeypadEnter)
                 {
                     var msg = chatText.Trim();
-                    if (msg.Length > 0) Send(new { t = "chat", msg });
+                    // 聊天命令：/邀请 名字 → 组队邀请；/退队 → 离开队伍
+                    if (msg.StartsWith("/邀请 ") || msg.StartsWith("/invite "))
+                        Send(new { t = "party", op = "invite", name = msg.Substring(msg.IndexOf(' ') + 1).Trim() });
+                    else if (msg == "/退队" || msg == "/leave")
+                        Send(new { t = "party", op = "leave" });
+                    else if (msg.Length > 0) Send(new { t = "chat", msg });
                     chatText = "";
                     chatOpen = false;
                     ev.Use();
