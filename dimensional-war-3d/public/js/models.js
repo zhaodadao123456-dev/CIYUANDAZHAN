@@ -80,20 +80,35 @@ const MODELS = (() => {
     if (loadPromise) return loadPromise;
     const loader = new GLTFLoader();
     let done = 0;
-    loadPromise = Promise.all(ASSET_LIST.map(([key, url]) => new Promise((resolve) => {
-      loader.load(url, (gltf) => {
-        const box = new THREE.Box3().setFromObject(gltf.scene);
-        cache[key] = { scene: gltf.scene, anims: gltf.animations, height: Math.max(0.1, box.max.y - box.min.y) };
-        done++;
-        for (const cb of progressCbs) cb(done, ASSET_LIST.length);
-        resolve();
-      }, undefined, (err) => {
-        console.warn('资产加载失败，使用程序化模型兜底:', url, err);
-        done++;
-        for (const cb of progressCbs) cb(done, ASSET_LIST.length);
-        resolve();
-      });
-    }))).then(() => { assetsReady = true; });
+    const finishOne = () => { done++; for (const cb of progressCbs) cb(done, ASSET_LIST.length); };
+    /* 单个资产：失败/超时自动重试一次，仍不行就用程序化模型兜底，绝不卡死加载 */
+    const loadOne = ([key, url]) => new Promise((resolve) => {
+      let settled = false;
+      const settle = () => { if (!settled) { settled = true; finishOne(); resolve(); } };
+      const attempt = (retriesLeft) => {
+        const timer = setTimeout(() => {
+          if (settled) return;
+          if (retriesLeft > 0) { console.warn('资产加载超时，重试:', url); attempt(retriesLeft - 1); }
+          else { console.warn('资产加载超时，使用程序化模型兜底:', url); settle(); }
+        }, 30000);
+        // 重试时加随机参数，强制发起全新请求而不是复用卡死的连接
+        const requestUrl = retriesLeft === 1 ? url : `${url}?r=${Date.now()}`;
+        loader.load(requestUrl, (gltf) => {
+          clearTimeout(timer);
+          if (settled) return;
+          const box = new THREE.Box3().setFromObject(gltf.scene);
+          cache[key] = { scene: gltf.scene, anims: gltf.animations, height: Math.max(0.1, box.max.y - box.min.y) };
+          settle();
+        }, undefined, (err) => {
+          clearTimeout(timer);
+          if (settled) return;
+          if (retriesLeft > 0) { console.warn('资产加载失败，重试:', url, err); attempt(retriesLeft - 1); }
+          else { console.warn('资产加载失败，使用程序化模型兜底:', url, err); settle(); }
+        });
+      };
+      attempt(1);
+    });
+    loadPromise = Promise.all(ASSET_LIST.map(loadOne)).then(() => { assetsReady = true; });
     return loadPromise;
   }
 

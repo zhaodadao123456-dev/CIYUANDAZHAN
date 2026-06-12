@@ -141,6 +141,8 @@ function gainExp(p, n) {
 
 /* ---------- 网络 ---------- */
 const app = express();
+/* 模型/音频等大文件强缓存 7 天，刷新页面无需重新下载 */
+app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), { maxAge: '7d', immutable: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_, res) => {
   res.json({ ok: true, online: conns.size, war: warState() });
