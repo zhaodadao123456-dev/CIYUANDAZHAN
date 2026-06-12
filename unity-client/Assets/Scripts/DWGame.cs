@@ -609,7 +609,7 @@ namespace DW
                 var t = Input.GetTouch(i);
                 if (t.phase == TouchPhase.Began)
                 {
-                    var guiPos = new Vector2(t.position.x, Screen.height - t.position.y);
+                    var guiPos = new Vector2(t.position.x / uiScale, (Screen.height - t.position.y) / uiScale);
                     bool overGui = false;
                     foreach (var r in guiRects) if (r.Contains(guiPos)) { overGui = true; break; }
                     if (overGui) continue;

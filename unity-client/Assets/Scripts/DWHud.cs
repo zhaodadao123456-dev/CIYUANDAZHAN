@@ -16,9 +16,14 @@ namespace DW
         Vector2 panelScroll;
         readonly List<Rect> guiRects = new List<Rect>();
 
+        /* 高分屏 UI 缩放：以 900p 为基准放大，所有界面坐标用逻辑尺寸 SW/SH */
+        protected float uiScale = 1f;
+        float SW => Screen.width / uiScale;
+        float SH => Screen.height / uiScale;
+
         bool MouseOverGui()
         {
-            var mp = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+            var mp = new Vector2(Input.mousePosition.x / uiScale, SH - Input.mousePosition.y / uiScale);
             foreach (var r in guiRects) if (r.Contains(mp)) return true;
             return false;
         }
@@ -40,24 +45,26 @@ namespace DW
 
         void OnGUI()
         {
+            uiScale = Mathf.Max(1f, Screen.height / 900f);
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(uiScale, uiScale, 1f));
             EnsureStyles();
             guiRects.Clear();
             switch (state)
             {
                 case State.Menu: GuiMenu(); break;
                 case State.Connecting:
-                    GUI.Label(new Rect(0, Screen.height / 2f - 20, Screen.width, 40), "🌌 正在连接次元…", _title);
+                    GUI.Label(new Rect(0, SH / 2f - 20, SW, 40), "🌌 正在连接次元…", _title);
                     break;
                 case State.Playing: GuiHud(); break;
             }
             if (Time.time < toastUntil)
-                GUI.Label(new Rect(0, Screen.height - 150, Screen.width, 30), $"<b>{toastMsg}</b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 17 });
+                GUI.Label(new Rect(0, SH - 150, SW, 30), $"<b>{toastMsg}</b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 17 });
         }
 
         void GuiMenu()
         {
             float w = 460, h = 480;
-            var r = new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
+            var r = new Rect((SW - w) / 2, (SH - h) / 2, w, h);
             guiRects.Add(r);
             GUI.Box(r, "", _box);
             GUILayout.BeginArea(new Rect(r.x + 24, r.y + 16, w - 48, h - 32));
@@ -121,7 +128,7 @@ namespace DW
             // 战场横幅
             if (warInfo != null && (bool?)warInfo["active"] == true)
             {
-                var wr = new Rect(Screen.width / 2f - 260, 8, 520, 36);
+                var wr = new Rect(SW / 2f - 260, 8, 520, 36);
                 guiRects.Add(wr);
                 GUI.Box(wr, "", _box);
                 string a = (string)warInfo["a"], b = (string)warInfo["b"];
@@ -138,7 +145,7 @@ namespace DW
             if (bossInfo != null)
             {
                 bool warOn = warInfo != null && (bool?)warInfo["active"] == true;
-                var br = new Rect(Screen.width / 2f - 240, warOn ? 50 : 8, 480, 30);
+                var br = new Rect(SW / 2f - 240, warOn ? 50 : 8, 480, 30);
                 guiRects.Add(br);
                 GUI.Box(br, "", _box);
                 string bd = (string)bossInfo["dim"];
@@ -151,14 +158,14 @@ namespace DW
             // 虚拟摇杆（触屏）
             if (moveTouchId >= 0)
             {
-                var c = new Vector2(moveTouchStart.x, Screen.height - moveTouchStart.y);
+                var c = new Vector2(moveTouchStart.x / uiScale, SH - moveTouchStart.y / uiScale);
                 GUI.Box(new Rect(c.x - 55, c.y - 55, 110, 110), "");
                 var cur = c + new Vector2(moveTouchVec.x, -moveTouchVec.y) * 42f;
                 GUI.Box(new Rect(cur.x - 20, cur.y - 20, 40, 40), "●");
             }
 
             // 右上按钮
-            var bagR = new Rect(Screen.width - 56, 10, 44, 40);
+            var bagR = new Rect(SW - 56, 10, 44, 40);
             guiRects.Add(bagR);
             if (GUI.Button(bagR, "🎒", _btn)) panelOpen = !panelOpen;
 
@@ -166,7 +173,7 @@ namespace DW
             for (int i = 0; i < feed.Count; i++)
             {
                 if (Time.time - feedAt[i] > 12f) continue;
-                GUI.Label(new Rect(Screen.width - 430, 60 + i * 22, 420, 22), $"<size=13>{feed[i]}</size>", _label);
+                GUI.Label(new Rect(SW - 430, 60 + i * 22, 420, 22), $"<size=13>{feed[i]}</size>", _label);
             }
 
             GuiParty();
@@ -174,7 +181,7 @@ namespace DW
             if (panelOpen) GuiPanel();
             if (meDead) GuiDeath();
             if (chatOpen) GuiChat();
-            else GUI.Label(new Rect(12, Screen.height - 24, 300, 20), "<size=11><color=#888>按 T 聊天</color></size>", _label);
+            else GUI.Label(new Rect(12, SH - 24, 300, 20), "<size=11><color=#888>按 T 聊天</color></size>", _label);
         }
 
         void GuiParty()
@@ -196,7 +203,7 @@ namespace DW
 
         void GuiChat()
         {
-            var r = new Rect(Screen.width / 2f - 240, Screen.height - 150, 480, 34);
+            var r = new Rect(SW / 2f - 240, SH - 150, 480, 34);
             guiRects.Add(r);
             // 回车发送 / Esc 关闭（在控件处理前截获按键）
             var ev = Event.current;
@@ -241,7 +248,7 @@ namespace DW
             float slotW = 86, gap = 8;
             int extra = myDim == "hunter" ? 2 : 1;
             float total = (keys.Length + extra) * (slotW + gap);
-            float x0 = (Screen.width - total) / 2, y0 = Screen.height - 92;
+            float x0 = (SW - total) / 2, y0 = SH - 92;
             var def = Data.Cls(myCls);
 
             for (int i = 0; i < keys.Length; i++)
@@ -292,7 +299,7 @@ namespace DW
 
         void GuiDeath()
         {
-            var r = new Rect(Screen.width / 2f - 180, Screen.height / 2f - 80, 360, 150);
+            var r = new Rect(SW / 2f - 180, SH / 2f - 80, 360, 150);
             guiRects.Add(r);
             GUI.Box(r, "", _box);
             GUI.Label(new Rect(r.x, r.y + 16, r.width, 32), "💀 你已阵亡", new GUIStyle(_title) { fontSize = 22 });
@@ -305,8 +312,8 @@ namespace DW
 
         void GuiPanel()
         {
-            float w = 460, h = Mathf.Min(620, Screen.height - 120);
-            var r = new Rect(Screen.width - w - 12, 60, w, h);
+            float w = 460, h = Mathf.Min(620, SH - 120);
+            var r = new Rect(SW - w - 12, 60, w, h);
             guiRects.Add(r);
             GUI.Box(r, "", _box);
             GUILayout.BeginArea(new Rect(r.x + 14, r.y + 10, w - 28, h - 20));
