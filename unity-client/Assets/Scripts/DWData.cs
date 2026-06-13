@@ -40,6 +40,10 @@ namespace DW
     public static class Data
     {
         public const float MapHalf = 210f;   // 与服务器/网页版一致（大幅扩大）
+        public const float LairR = 174f;
+        static readonly Dictionary<string, float> LairAngles = new Dictionary<string, float>
+        { { "tech", 0.7f }, { "xiuxian", 2.2f }, { "cyber", 3.6f }, { "magic", 5.0f }, { "hunter", 1.4f } };
+        public static float LairAngle(string dimId) { float a; return LairAngles.TryGetValue(dimId, out a) ? a : 0f; }
 
         public static Color Hex(string h)
         {

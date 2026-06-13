@@ -945,6 +945,53 @@ function togglePanel() {
 
 /* 相机相对移动向量（键盘 WASD 或虚拟摇杆） */
 let obstacles = [];
+
+/* ---------- 小地图（地图扩大后导航用） ---------- */
+function drawMinimap() {
+  const cv = $('minimap');
+  if (!cv || !joined || !me) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height, pad = 6;
+  const half = MAP_HALF;
+  const toPx = (x, z) => [pad + (x + half) / (half * 2) * (W - pad * 2),
+                          pad + (z + half) / (half * 2) * (H - pad * 2)];
+  ctx.clearRect(0, 0, W, H);
+  // 障碍（暗点）
+  ctx.fillStyle = 'rgba(150,160,190,0.35)';
+  for (const o of obstacles) { const [px, py] = toPx(o.x, o.z); ctx.fillRect(px - 1, py - 1, 2, 2); }
+  // 安全村庄
+  const [cx, cy] = toPx(0, 0);
+  ctx.strokeStyle = 'rgba(120,220,140,0.5)'; ctx.beginPath(); ctx.arc(cx, cy, 7, 0, 7); ctx.stroke();
+  // BOSS 巢穴方向（本次元）
+  if (curRoom !== 'war' && curRoom !== 'melee' && typeof LAIR_ANGLES !== 'undefined') {
+    const la = LAIR_ANGLES[myDim] || 0;
+    const [lx, ly] = toPx(Math.cos(la) * LAIR_R, Math.sin(la) * LAIR_R);
+    ctx.fillStyle = '#ff5544'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('💀', lx, ly + 4);
+  }
+  // 怪物（红点）
+  ctx.fillStyle = '#ff7744';
+  for (const mo of monsters.values()) { if (mo.tier >= 5) continue; const [px, py] = toPx(mo.tx, mo.tz); ctx.fillRect(px - 1, py - 1, 2, 2); }
+  // 世界BOSS（大红星，若在本房间）
+  for (const mo of monsters.values()) if (mo.tier >= 5) {
+    const [px, py] = toPx(mo.tx, mo.tz);
+    ctx.fillStyle = '#ff2244'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('★', px, py + 5);
+  }
+  // 其他玩家（队友绿/敌人橙）
+  for (const r of remotes.values()) {
+    const [px, py] = toPx(r.tx, r.tz);
+    ctx.fillStyle = r.dim === myDim ? '#5cf07a' : '#ffaa33';
+    ctx.beginPath(); ctx.arc(px, py, 2.4, 0, 7); ctx.fill();
+  }
+  // 自己（绿色朝向三角）
+  const [mx, my] = toPx(me.x, me.z);
+  const ang = me.obj ? me.obj.rotation.y : 0;
+  ctx.save(); ctx.translate(mx, my); ctx.rotate(-ang);
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(3.5, 4); ctx.lineTo(-3.5, 4); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+setInterval(drawMinimap, 120);
+
 function resolveObstacles(x, z, rad) {
   for (let k = 0; k < obstacles.length; k++) {
     const o = obstacles[k];

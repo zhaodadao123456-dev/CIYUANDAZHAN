@@ -207,6 +207,7 @@ namespace DW
             }
 
             GuiParty();
+            GuiMinimap();
             GuiSkillBar();
             if (panelOpen) GuiPanel();
             if (meDead) GuiDeath();
@@ -229,6 +230,52 @@ namespace DW
                 DrawBar(new Rect(r.x + 8, r.y + 24, 174, 8), (float)hp / max, Color.green, "");
                 y += 44;
             }
+        }
+
+        /* 小地图（右下角，地图扩大后导航） */
+        void GuiMinimap()
+        {
+            float S = 150f, pad = 6f;
+            var box = new Rect(SW - S - 12, SH - S - 104, S, S);
+            guiRects.Add(box);
+            GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.66f);
+            GUI.DrawTexture(box, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            float half = Data.MapHalf;
+            System.Func<float, float, Vector2> toPx = (x, z) => new Vector2(
+                box.x + pad + (x + half) / (half * 2) * (S - pad * 2),
+                box.y + pad + (z + half) / (half * 2) * (S - pad * 2));
+            System.Action<Vector2, float, Color> dot = (p, sz, c) => {
+                GUI.color = c; GUI.DrawTexture(new Rect(p.x - sz, p.y - sz, sz * 2, sz * 2), Texture2D.whiteTexture);
+            };
+            // 障碍
+            foreach (var o in obstacles) dot(toPx(o.x, o.y), 1f, new Color(0.6f, 0.64f, 0.75f, 0.5f));
+            // 安全区中心
+            dot(toPx(0, 0), 2.5f, new Color(0.4f, 0.85f, 0.5f, 0.8f));
+            // BOSS 巢穴方向
+            if (curRoom != "war" && curRoom != "melee")
+            {
+                float la = Data.LairAngle(myDim);
+                dot(toPx(Mathf.Cos(la) * Data.LairR, Mathf.Sin(la) * Data.LairR), 3f, new Color(1f, 0.3f, 0.27f, 0.9f));
+            }
+            // 怪物 / BOSS
+            foreach (var e in monsters.Values)
+            {
+                if (e.dead || e.go == null) continue;
+                var p = e.go.transform.position;
+                if (e.tier >= 5) dot(toPx(p.x, p.z), 4f, new Color(1f, 0.13f, 0.27f));
+                else dot(toPx(p.x, p.z), 1.2f, new Color(1f, 0.47f, 0.27f));
+            }
+            // 其他玩家
+            foreach (var e in players.Values)
+            {
+                if (e.go == null) continue;
+                var p = e.go.transform.position;
+                dot(toPx(p.x, p.z), 2.2f, e.dim == myDim ? new Color(0.36f, 0.94f, 0.48f) : new Color(1f, 0.67f, 0.2f));
+            }
+            // 自己
+            dot(toPx(pos.x, pos.z), 2.6f, Color.white);
+            GUI.color = Color.white;
         }
 
         void GuiChat()
