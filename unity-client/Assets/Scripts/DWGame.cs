@@ -474,21 +474,59 @@ namespace DW
 
         void AddMonster(string id, float x, float z, string mstate, int hp, int maxHp, int tier, string name)
         {
-            var theme = curRoom == "war" ? Data.WarDim : Data.Dim(myDim);
             var e = new Ent { name = name, tier = tier, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
-            e.go = new GameObject("Monster");
-            var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            body.transform.SetParent(e.go.transform, false);
-            float s = 0.9f + tier * 0.45f;
-            body.transform.localScale = new Vector3(s, s * 0.85f, s);
-            body.transform.localPosition = new Vector3(0, s * 0.45f, 0);
-            Tint(body, Color.Lerp(new Color(0.5f, 0.45f, 0.5f), theme.accent, 0.45f));
+            e.go = MakeCreature(tier);
             e.go.transform.position = e.target;
-            e.label = MakeLabel(e.go, s * 0.9f + 0.9f);
+            e.label = MakeLabel(e.go, 1.1f + tier * 0.45f);
             monsters[id] = e;
             e.dead = mstate == "dead";
             e.go.SetActive(!e.dead);
             UpdateLabel(e, "#ffaa33");
+        }
+
+        /* 怪物：优先用接入的正式模型（Resources/DW/mon_t*），否则生成敌对小怪占位 */
+        GameObject MakeCreature(int tier)
+        {
+            var prefab = Resources.Load<GameObject>("DW/mon_t" + Mathf.Clamp(tier, 1, 4));
+            if (prefab != null)
+            {
+                var root = new GameObject("Monster");
+                var inst = Instantiate(prefab, root.transform);
+                var b = CalcBounds(inst);
+                float target = 1.2f + tier * 0.45f;
+                inst.transform.localScale = Vector3.one * (target / Mathf.Max(0.1f, b.size.y));
+                b = CalcBounds(inst);
+                inst.transform.localPosition = new Vector3(0, -b.min.y, 0);
+                root.AddComponent<DWAnimDriver>();
+                return root;
+            }
+            // 占位：身子+头+獠牙状，统一敌对橙红色，避免和地面同色糊成团
+            var go = new GameObject("Monster");
+            float s = 0.55f + tier * 0.28f;
+            var enemy = Color.Lerp(new Color(0.55f, 0.12f, 0.10f), new Color(0.95f, 0.45f, 0.10f), (tier - 1) / 3f);
+            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            body.transform.SetParent(go.transform, false);
+            body.transform.localScale = new Vector3(s, s * 0.7f, s);
+            body.transform.localPosition = new Vector3(0, s * 0.7f, 0);
+            Tint(body, enemy);
+            var head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            head.transform.SetParent(go.transform, false);
+            head.transform.localScale = Vector3.one * s * 0.8f;
+            head.transform.localPosition = new Vector3(0, s * 1.25f, s * 0.15f);
+            Tint(head, Color.Lerp(enemy, Color.black, 0.25f));
+            // 两只发光红眼，让怪物有"活物"感
+            foreach (var sx in new[] { -1f, 1f })
+            {
+                var eye = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                eye.transform.SetParent(go.transform, false);
+                eye.transform.localScale = Vector3.one * s * 0.18f;
+                eye.transform.localPosition = new Vector3(sx * s * 0.22f, s * 1.32f, s * 0.5f);
+                var em = eye.GetComponent<Renderer>().material;
+                em.color = new Color(1f, 0.85f, 0.2f);
+                em.EnableKeyword("_EMISSION");
+                em.SetColor("_EmissionColor", new Color(1f, 0.7f, 0.1f) * 1.5f);
+            }
+            return go;
         }
 
         void AddPet(string ownerId, int tier, float x, float z, int hp, int maxHp, string name)
@@ -737,7 +775,8 @@ namespace DW
             if (Mathf.Abs(fx) < 0.12f && Mathf.Abs(fz) < 0.12f) return Vector3.zero;
             var v = Vector3.ClampMagnitude(new Vector3(fx, 0, fz), 1f);
             float s = Mathf.Sin(camYaw), c = Mathf.Cos(camYaw);
-            return new Vector3(v.x * c - v.z * s, 0, v.x * -s - v.z * c);
+            // 相机相对移动：forward=(-sin,-cos)、right=(-cos,sin)，A/D 之前算反了
+            return new Vector3(-v.x * c - v.z * s, 0, v.x * s - v.z * c);
         }
 
         void UpdateMove()
