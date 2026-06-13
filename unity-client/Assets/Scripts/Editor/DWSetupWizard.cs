@@ -425,26 +425,34 @@ namespace DW.EditorTools
         /* 按动作名关键词挑选状态片段（关键词按优先级排序，越靠前越优先匹配） */
         static Dictionary<string, AnimationClip> PickStates(List<AnimationClip> clips)
         {
+            // 4 个技能用尽量不同的动作：Attack1/Attack2/Skill/Skill2
             var rules = new (string state, string[] keys)[]
             {
-                ("Idle",   new[] { "idle", "stand" }),
-                ("Run",    new[] { "jog", "run", "sprint", "walk" }),
-                ("Attack1",new[] { "attackl", "attack_l", "attack", "punch", "slash", "sword", "staff", "hit_" }),
-                ("Skill",  new[] { "attackr", "attack_r", "cast", "skill", "spin", "spell", "heavy", "chest" }),
-                ("Dodge",  new[] { "roll", "dodge", "dash" }),
-                ("Death",  new[] { "death", "die", "dead" }),
+                ("Idle",    new[] { "idle", "stand" }),
+                ("Run",     new[] { "jog", "run", "sprint", "walk" }),
+                ("Attack1", new[] { "attack1", "attackl", "attack_l", "attack", "slash", "1h_melee", "punch" }),
+                ("Attack2", new[] { "attack2", "attackr", "attack_r", "stab", "spin", "2h_melee", "dualwield" }),
+                ("Skill",   new[] { "spellcast", "cast", "skill", "spell", "shoot", "heavy", "rage", "chest" }),
+                ("Skill2",  new[] { "spellcast2", "dance", "pickup", "spellcast_long", "attack3", "attack4" }),
+                ("Dodge",   new[] { "roll", "dodge", "dash" }),
+                ("Death",   new[] { "death", "die", "dead" }),
             };
             var res = new Dictionary<string, AnimationClip>();
+            var taken = new HashSet<AnimationClip>();
             foreach (var (state, keys) in rules)
             {
                 foreach (var k in keys)
                 {
-                    var hit = clips.FirstOrDefault((c) => Lower(c.name).Contains(k));
-                    if (hit != null) { res[state] = hit; break; }
+                    var hit = clips.FirstOrDefault((c) => Lower(c.name).Contains(k) && !taken.Contains(c));
+                    if (hit != null) { res[state] = hit; taken.Add(hit); break; }
                 }
             }
-            // 技能动画兜底：实在没有就复用普攻
-            if (!res.ContainsKey("Skill") && res.ContainsKey("Attack1")) res["Skill"] = res["Attack1"];
+            // 兜底：缺的技能动作依次回退，保证不同键尽量不同
+            if (!res.ContainsKey("Attack1") && res.ContainsKey("Attack2")) res["Attack1"] = res["Attack2"];
+            if (!res.ContainsKey("Attack2") && res.ContainsKey("Attack1")) res["Attack2"] = res["Attack1"];
+            if (!res.ContainsKey("Skill")) res["Skill"] = res.ContainsKey("Attack2") ? res["Attack2"] : res.GetValueOrDefault("Attack1");
+            if (!res.ContainsKey("Skill2")) res["Skill2"] = res.ContainsKey("Skill") ? res["Skill"] : res.GetValueOrDefault("Attack1");
+            res = res.Where((kv) => kv.Value != null).ToDictionary((kv) => kv.Key, (kv) => kv.Value);
             return res;
         }
     }

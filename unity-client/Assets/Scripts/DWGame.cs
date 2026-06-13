@@ -317,7 +317,7 @@ namespace DW
                     {
                         e.tRy = Mathf.Atan2((float)m["dx"], (float)m["dz"]);
                         var drv = e.go != null ? e.go.GetComponent<DWAnimDriver>() : null;
-                        if (drv != null) drv.PlayOnce((string)m["k"] == "basic" ? "Attack1" : "Skill", 0.6f);
+                        if (drv != null && !drv.PlayOnce(SkillAnim((string)m["k"]), 0.6f)) drv.PlayOnce("Attack1", 0.6f);
                         var kk = (string)m["kk"];
                         DWAudio.SfxAt(kk == "proj" ? "laser" : (kk == "aoe" ? "explosion" : "swing"), e.target, pos, 0.6f);
                     }
@@ -445,11 +445,16 @@ namespace DW
             RenderSettings.fogStartDistance = 50;
             RenderSettings.fogEndDistance = 240;
             RenderSettings.fogColor = theme.fog;
-            // 关掉默认天空盒漏光，用受控的平面环境光，避免整场过曝发白
-            RenderSettings.skybox = null;
+            // 每个次元一张渐变天空盒（按次元主色），比纯色背景好看；环境光仍用受控平面光防过曝
+            var sky = new Material(Shader.Find("Skybox/Procedural"));
+            sky.SetColor("_SkyTint", Color.Lerp(theme.accent, new Color(0.5f, 0.55f, 0.7f), 0.4f));
+            sky.SetColor("_GroundColor", theme.fog);
+            sky.SetFloat("_AtmosphereThickness", 1.1f);
+            sky.SetFloat("_Exposure", 0.95f);
+            RenderSettings.skybox = sky;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = Color.Lerp(theme.ground, new Color(0.5f, 0.52f, 0.58f), 0.55f);
-            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.clearFlags = CameraClearFlags.Skybox;
             cam.backgroundColor = theme.fog;
             cam.farClipPlane = 400;
 
@@ -896,6 +901,7 @@ namespace DW
                 }
                 e.target = new Vector3((float)a[1], 0, (float)a[2]);
                 e.tRy = (float)a[3];
+                e.anim = (string)a[4];   // idle/chase/attack/dead → 驱动怪物动画
                 bool deadNow = (string)a[4] == "dead";
                 if (deadNow != e.dead) { e.dead = deadNow; e.go.SetActive(!deadNow); }
                 int hp = (int)a[5];
@@ -927,6 +933,13 @@ namespace DW
             var kind = (string)m["kind"];
             var id = (string)m["id"];
             int amt = (int)m["amt"], hp = (int)m["hp"];
+            // 攻击方是怪物 → 播放它的攻击动作
+            var by = (string)m["by"];
+            if (by != null && monsters.TryGetValue(by, out var atk) && atk.go != null)
+            {
+                var ad = atk.go.GetComponent<DWAnimDriver>();
+                if (ad != null) ad.PlayOnce("Attack1", 0.6f);
+            }
             if (kind == "m")
             {
                 Ent e;
@@ -1160,9 +1173,45 @@ namespace DW
                 burstSpeed = 25f;
                 burstUntil = Time.time + 0.18f;
             }
-            if (meDrv != null) meDrv.PlayOnce(key == "basic" ? "Attack1" : "Skill", 0.6f);
+            // 每个技能不同动作（按 q/e/r 分配不同动画，缺失则回退普攻）
+            if (meDrv != null)
+            {
+                var an = SkillAnim(key);
+                if (!meDrv.PlayOnce(an, 0.6f)) meDrv.PlayOnce("Attack1", 0.6f);
+            }
+            SkillCastFx(key, def.kind, pos, new Vector3(dx, 0, dz));   // 每个技能不同特效
             DWAudio.Sfx(def.kind == "proj" ? "laser" : (def.kind == "aoe" ? "explosion" : "swing"), 0.7f);
             Send(new { t = "cast", k = key, dx = Math.Round(dx, 3), dz = Math.Round(dz, 3) });
+        }
+
+        static string SkillAnim(string key)
+        {
+            switch (key) { case "basic": return "Attack1"; case "q": return "Attack2"; case "e": return "Skill"; default: return "Skill2"; }
+        }
+
+        /* 每个技能独立的施放特效（颜色/大小/形态不同） */
+        void SkillCastFx(string key, string kind, Vector3 at, Vector3 dir)
+        {
+            Color c = key == "basic" ? Data.Dim(myDim).accent
+                : key == "q" ? new Color(0.3f, 0.85f, 1f)
+                : key == "e" ? new Color(1f, 0.6f, 0.1f)
+                : new Color(1f, 0.25f, 0.55f);
+            if (kind == "aoe" || kind == "aoeheal")
+                SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c);
+            else if (kind == "heal")
+            { SpawnShockwave(at + Vector3.up * 0.1f, 2.5f, new Color(0.3f, 1f, 0.5f)); }
+            else if (kind == "dashmelee")
+                SpawnShockwave(at + dir * 1.5f + Vector3.up * 0.6f, 2.2f, c);
+            else   // melee / proj：身前一道弧光
+            {
+                var fx = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                Destroy(fx.GetComponent<Collider>());
+                fx.transform.position = at + dir * 1.2f + Vector3.up * 1.1f;
+                fx.transform.localScale = new Vector3(1.8f, 0.3f, 1.0f);
+                var mat = fx.GetComponent<Renderer>().material;
+                mat.color = c; mat.EnableKeyword("_EMISSION"); mat.SetColor("_EmissionColor", c * 2f);
+                fx.AddComponent<Shockwave>().radius = 2.2f;
+            }
         }
 
         void UpdateEntities()
@@ -1185,18 +1234,20 @@ namespace DW
         {
             if (e.go == null || !e.go.activeSelf) return;
             e.go.transform.position = Vector3.Lerp(e.go.transform.position, e.target, k);
-            if (!e.isMonster && !e.isPet)
+            if (!e.isPet)
             {
                 var drv = e.go.GetComponent<DWAnimDriver>();
-                if (e.dead)
+                if (!e.isMonster && e.dead)
                 {
-                    // 有死亡动画就播动画，否则占位小人倒地
+                    // 玩家：有死亡动画就播，否则占位小人倒地
                     if (drv == null || !drv.SetBase("Death"))
                         e.go.transform.rotation = Quaternion.Euler(85, e.tRy * Mathf.Rad2Deg, 0);
                 }
                 else
                 {
-                    if (drv != null) drv.SetBase(e.anim == "run" ? "Run" : "Idle");
+                    // 怪物用 chase 状态判断奔跑；玩家用 anim=="run"
+                    bool running = e.isMonster ? e.anim == "chase" : e.anim == "run";
+                    if (drv != null) drv.SetBase(running ? "Run" : "Idle");
                     e.go.transform.rotation = Quaternion.Slerp(e.go.transform.rotation, Quaternion.Euler(0, e.tRy * Mathf.Rad2Deg, 0), k);
                 }
             }
@@ -1281,12 +1332,13 @@ namespace DW
             return Apply(s, 0.15f);
         }
 
-        public void PlayOnce(string s, float dur)
+        public bool PlayOnce(string s, float dur)
         {
-            if (!Has(s)) return;
+            if (!Has(s)) return false;
             an.CrossFadeInFixedTime(Animator.StringToHash(s), 0.05f, 0, 0f);
             applied = s;
             oneUntil = Time.time + dur;
+            return true;
         }
 
         bool Apply(string s, float fade)
