@@ -69,6 +69,7 @@ window.addEventListener('load', () => {
   const lastSave = JSON.parse(localStorage.getItem('dw3d_last_join') || 'null');
   let chosen = lastSave ? lastSave.dim : null;
   let chosenCls = lastSave ? lastSave.cls : 'warrior';
+  let creatingNew = false;
   if (lastSave && lastSave.name) $('join-name').value = lastSave.name;
 
   // 次元选择卡片
@@ -107,24 +108,48 @@ window.addEventListener('load', () => {
     if (el) el.classList.add('chosen');
   }
 
-  $('btn-join').onclick = async () => {
-    const name = $('join-name').value.trim();
-    if (!name) return toast('请输入昵称');
-    if (!chosen) return toast('请选择降临次元');
-    if (!chosenCls) return toast('请选择职业');
+  // 统一进入逻辑（手动选择 / 自动续上次角色 共用）
+  async function doJoin(name, dim, cls) {
     const btn = $('btn-join');
     btn.disabled = true;
     await MODELS.loadAssets((done, total) => { btn.textContent = `⏳ 加载次元资产 ${done}/${total}…`; });
     btn.textContent = '⚔️ 降临次元';
     btn.disabled = false;
-    localStorage.setItem('dw3d_last_join', JSON.stringify({ name, dim: chosen, cls: chosenCls }));
-    connect(name, chosen, chosenCls);
+    localStorage.setItem('dw3d_last_join', JSON.stringify({ name, dim, cls }));
+    connect(name, dim, cls);
+  }
+
+  $('btn-join').onclick = async () => {
+    const name = $('join-name').value.trim();
+    if (!name) return toast('请输入昵称');
+    if (!chosen) return toast('请选择降临次元');
+    if (!chosenCls) return toast('请选择职业');
+    // 新建角色：名称必须与已有角色不同（避免覆盖原角色存档）
+    if (creatingNew && lastSave && lastSave.name && name === lastSave.name)
+      return toast('新建角色名称需与现有角色不同');
+    doJoin(name, chosen, chosenCls);
+  };
+
+  // 「新建角色」：清空昵称、重新选择，强制取不同名字（其余全部从零开始）
+  const btnNew = $('btn-newchar');
+  if (btnNew) btnNew.onclick = () => {
+    creatingNew = true;
+    $('join-name').value = '';
+    $('join-name').focus();
+    toast('新建角色：取一个新昵称，从零开始闯荡次元');
   };
 
   initParticles();
   initPreview();
   // 页面打开即后台预载资产；就绪后展示默认英雄
   MODELS.loadAssets().then(() => { setPreviewHero(chosen || 'xiuxian', chosenCls); });
+
+  // 自动续上次角色：已有存档且非「登出/新建」时，直接进入，跳过次元/英雄选择
+  const forceSelect = sessionStorage.getItem('dw_force_select') === '1';
+  sessionStorage.removeItem('dw_force_select');
+  if (lastSave && lastSave.name && lastSave.dim && !forceSelect) {
+    doJoin(lastSave.name, lastSave.dim, lastSave.cls || 'warrior');
+  }
 
   // 音频：首次交互解锁（浏览器自动播放策略），菜单BGM待命
   AUDIO.setMusic('menu');
@@ -914,9 +939,9 @@ function bindInput() {
     if (curRoom === 'war') net({ t: 'war', enter: 0 });
     else net({ t: 'war', enter: 1 });
   };
-  // 退出对局：回到登录/选择界面
+  // 退出对局：回到选择界面（进度已自动保存）。用 sessionStorage 标记，避免重载后又自动续登
   $('btn-exit').onclick = () => {
-    if (!confirm('退出当前对局，回到次元选择界面？（进度已自动保存）')) return;
+    sessionStorage.setItem('dw_force_select', '1');
     joined = false; lastJoin = null;
     try { if (ws) ws.close(); } catch (e) {}
     location.reload();
@@ -1648,7 +1673,7 @@ function levelUpBanner(level) {
   el.classList.remove('hidden');
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   clearTimeout(levelupTimer);
-  levelupTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+  levelupTimer = setTimeout(() => el.classList.add('hidden'), 1500);
 }
 
 let achTimer;
