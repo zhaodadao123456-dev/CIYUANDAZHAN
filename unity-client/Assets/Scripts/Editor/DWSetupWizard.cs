@@ -48,7 +48,7 @@ namespace DW.EditorTools
         }
 
         /* 角色分类关键词 */
-        static readonly string[] BossKeys = { "clown", "jester", "小丑", "弄臣" };
+        static readonly string[] BossKeys = { "clown", "jester", "小丑", "弄臣", "littlewitch", "little_witch" };
         static readonly string[] MonsterKeys = { "skeleton", "骷髅", "skull", "undead", "zombie", "尸", "demon", "恶魔", "ghoul", "lich", "monster", "怪" };
         /* 英雄池排序优先级（让常见职业形象排在前面，组合取模时更顺眼） */
         static readonly string[] HeroPriority = { "wukong", "悟空", "witch", "女巫", "cowboy", "sheriff", "牛仔", "trooper", "half_blood", "半血", "nun", "修女", "missionary", "传教士", "bunny", "兔" };
@@ -96,9 +96,19 @@ namespace DW.EditorTools
                 return 999;
             }).ToList();
 
-            // 世界BOSS（小丑）
+            // 世界BOSS（小丑）：小丑是 Generic 骨骼，用它自己包里的动作搭一个通用控制器
             if (bossSrcs.Count > 0)
-                SaveCharPrefab(bossSrcs[0], $"{ResDir}/mon_boss.prefab", ctrl, "世界BOSS(小丑)", log);
+            {
+                var bsrc = bossSrcs[0];
+                var bGo = AssetDatabase.LoadAssetAtPath<GameObject>(bsrc);
+                AnimatorController bctrl = ctrl; bool bGeneric = false;
+                if (!HasHumanAvatar(bGo))   // 小丑等 Generic：用自己包的动作
+                {
+                    bctrl = BuildGenericController(TopFolder(bsrc), "boss", log) ?? ctrl;
+                    bGeneric = bctrl != ctrl;
+                }
+                SaveCharPrefab(bsrc, $"{ResDir}/mon_boss.prefab", bctrl, "世界BOSS(小丑)", log, genericCtrl: bGeneric);
+            }
             else log.AppendLine("未发现小丑模型，世界BOSS沿用怪物模型");
 
             // 次元专属英雄：① 关键词精确匹配已知购买包 → ② 剩余次元从未占用英雄里各分一个（保证每次元外观不同）
@@ -171,10 +181,22 @@ namespace DW.EditorTools
             return parts.Length >= 2 ? parts[0] + "/" + parts[1] : p;
         }
 
+        /* 该排除的预制体：URP/HDRP 管线变体（内置渲染管线会粉红）、残缺部件/透明体 */
+        static bool BadPrefabVariant(string p)
+        {
+            var lp = Lower(p);
+            if (lp.Contains("/prefab_hdrp/") || lp.Contains("/prefab_urp/") || lp.Contains("_hdrp") || lp.Contains("_urp")) return true;
+            var n = Lower(Path.GetFileNameWithoutExtension(p));
+            if (n.Contains("censore")) return true;
+            // 残缺/透明工具体（但保留 *_full）
+            if (!n.EndsWith("_full") && (n.EndsWith("_body") || n.EndsWith("_opac") || n.EndsWith("_opacity") || n.EndsWith("_body_opac") || n.EndsWith("_body_opacity"))) return true;
+            return false;
+        }
+
         /* 把一个角色源复制成标准命名 Prefab 并挂动画控制器。
          * forceHuman：源若是 Generic 骨骼（如 Sci-Fi 士兵），自动把其 FBX 导入设置转 Humanoid
          * 并重导入，使其能重定向通用人形动作——否则站桩 T-Pose。 */
-        static void SaveCharPrefab(string src, string dst, AnimatorController ctrl, string label, StringBuilder log, bool forceHuman = false)
+        static void SaveCharPrefab(string src, string dst, AnimatorController ctrl, string label, StringBuilder log, bool forceHuman = false, bool genericCtrl = false)
         {
             AssetDatabase.DeleteAsset(dst);
             var srcGo = AssetDatabase.LoadAssetAtPath<GameObject>(src);
@@ -194,10 +216,12 @@ namespace DW.EditorTools
                 var av = FindHumanAvatar(srcGo);                          // 转换后头像在 FBX 子资源里
                 if (av != null) { animator.avatar = av; human = true; }
             }
-            if (ctrl != null && human) animator.runtimeAnimatorController = ctrl;
+            // 人形→共享人形控制器（重定向）；Generic→自己包的通用控制器（genericCtrl）
+            bool attached = ctrl != null && (human || genericCtrl);
+            if (attached) animator.runtimeAnimatorController = ctrl;
             PrefabUtility.SaveAsPrefabAsset(inst, dst);
             Object.DestroyImmediate(inst);
-            log.AppendLine($"{label} ← {src}  动画:{(ctrl != null && human ? "已挂" : "静态(无人形骨骼)")}");
+            log.AppendLine($"{label} ← {src}  动画:{(attached ? "已挂" : "静态(无人形骨骼)")}");
         }
 
         static bool HasHumanAvatar(GameObject go)
@@ -244,6 +268,7 @@ namespace DW.EditorTools
             return AssetDatabase.FindAssets("t:GameObject")
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where((p) => p.StartsWith("Assets/") && !p.StartsWith("Assets/Resources/"))
+                .Where((p) => !BadPrefabVariant(p))   // 排除 URP/HDRP（内置管线会变粉）与残缺部件
                 .Where((p) => {
                     var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
                     return go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
@@ -255,6 +280,25 @@ namespace DW.EditorTools
                 })
                 .ThenByDescending((p) => Lower(p).Contains("full") ? 1 : 0)
                 .ToList();
+        }
+
+        /* 用某个包自己的动作片段搭 Generic 控制器（如小丑：Generic 骨骼+自带动作） */
+        static AnimatorController BuildGenericController(string packFolder, string keySuffix, StringBuilder log)
+        {
+            var states = PickStates(AllClips(packFolder));
+            if (states.Count == 0) { log.AppendLine($"  ⚠ {packFolder} 无可用动作，BOSS 将静态展示"); return null; }
+            var path = $"{ResDir}/dw_gen_{keySuffix}.controller";
+            AssetDatabase.DeleteAsset(path);
+            var ctrl = AnimatorController.CreateAnimatorControllerAtPath(path);
+            var sm = ctrl.layers[0].stateMachine;
+            foreach (var kv in states)
+            {
+                var st = sm.AddState(kv.Key);
+                st.motion = kv.Value;
+                if (kv.Key == "Idle") sm.defaultState = st;
+                log.AppendLine($"  小丑动画 {kv.Key} ← {kv.Value.name}");
+            }
+            return ctrl;
         }
 
         /* 用某个包的人形动作片段搭通用控制器 */
