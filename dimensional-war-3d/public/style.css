@@ -430,3 +430,92 @@ body.touch #panel { right: 8px; top: 56px; max-height: 78vh; }
   border: 1px solid rgba(120, 180, 255, 0.45); border-radius: 10px;
   font-size: 15px; outline: none;
 }
+
+/* ============================================================
+ * 整体 UI 升级 · 统一"玻璃拟态"设计层（design-sync）
+ * 仅改视觉（背景/边框/阴影/模糊/圆角/字重），不动布局，安全可回退
+ * ============================================================ */
+:root {
+  --dw-glass: rgba(18, 20, 40, 0.66);
+  --dw-glass-strong: rgba(16, 18, 36, 0.86);
+  --dw-stroke: rgba(150, 170, 255, 0.18);
+  --dw-stroke-bright: rgba(160, 180, 255, 0.42);
+  --dw-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+  --dw-gold: #ffd166;
+  --dw-radius: 16px;
+}
+body { letter-spacing: .2px; }
+
+/* 通用玻璃面板 */
+#panel, #top-left, .death-box, #skill-intro,
+#war-banner, #boss-banner, #melee-banner, #invite-prompt, #ach-banner {
+  background: var(--dw-glass-strong) !important;
+  border: 1px solid var(--dw-stroke) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
+  box-shadow: var(--dw-shadow) !important;
+}
+#panel { border-radius: var(--dw-radius) !important; }
+#top-left {
+  border-radius: 14px !important; padding: 12px 14px !important;
+  background: linear-gradient(160deg, rgba(30,34,64,0.74), rgba(14,16,32,0.74)) !important;
+}
+
+/* 顶部条幅统一为胶囊玻璃 */
+#war-banner, #boss-banner, #melee-banner { border-radius: 13px !important; }
+
+/* 血条/经验条：内高光 + 柔光，更有质感 */
+.bar {
+  background: rgba(0,0,0,0.45) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+}
+#hp-fill {
+  background: linear-gradient(180deg, #43e07a, #1f9e4e) !important;
+  box-shadow: 0 0 10px rgba(46,204,113,0.55);
+}
+#exp-fill { background: linear-gradient(180deg, #c08be8, #8e44ad) !important; }
+
+/* 按钮：渐变 + 悬浮上浮发光，全站一致 */
+.btn {
+  background: linear-gradient(180deg, rgba(70,74,130,0.95), rgba(48,50,92,0.95)) !important;
+  border: 1px solid var(--dw-stroke-bright) !important;
+  border-radius: 10px !important;
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease !important;
+}
+.btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.12); box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.btn.primary {
+  background: linear-gradient(180deg, #5b6bff, #3b3df0) !important;
+  border-color: #8a92ff !important; box-shadow: 0 4px 18px rgba(74,74,255,0.45) !important;
+}
+.btn.war { background: linear-gradient(180deg, #d23a5a, #a01e3a) !important; border-color: #ff6b86 !important; }
+
+/* 技能格：玻璃 + 内描边，CD 半透明覆盖 */
+.skill-slot {
+  background: linear-gradient(160deg, rgba(40,44,80,0.7), rgba(18,20,40,0.7)) !important;
+  border: 1px solid var(--dw-stroke) !important;
+  border-radius: 12px !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.35);
+}
+.skill-slot:hover { border-color: var(--dw-stroke-bright) !important; }
+
+/* 选择界面卡片：玻璃 + 选中描边 */
+.dim-card, .class-card {
+  background: var(--dw-glass) !important;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-radius: 13px !important;
+}
+
+/* 面板标签高亮条 */
+.panel-tab.active { box-shadow: inset 0 -2px 0 var(--dw-gold); }
+
+/* 小地图玻璃边 */
+#minimap { border: 1px solid var(--dw-stroke) !important; box-shadow: var(--dw-shadow); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+
+/* 信息流：每条胶囊底 */
+.feed-item {
+  background: rgba(10,12,26,0.5); border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 8px; padding: 3px 9px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+
+/* 标题更有冲击力 */
+.title { letter-spacing: 1px; filter: drop-shadow(0 2px 10px rgba(90,110,255,0.35)); }
