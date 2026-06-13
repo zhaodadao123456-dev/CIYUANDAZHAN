@@ -32,10 +32,10 @@ namespace DW
         void EnsureStyles()
         {
             if (_label != null) return;
-            _label = new GUIStyle(GUI.skin.label) { fontSize = 15, richText = true };
-            _title = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            _btn = new GUIStyle(GUI.skin.button) { fontSize = 15 };
-            _box = new GUIStyle(GUI.skin.box) { fontSize = 14 };
+            _label = new GUIStyle(GUI.skin.label) { fontSize = 17, richText = true };
+            _title = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            _btn = new GUIStyle(GUI.skin.button) { fontSize = 18 };
+            _box = new GUIStyle(GUI.skin.box) { fontSize = 16 };
             if (cjkFont != null)
             {
                 GUI.skin.font = cjkFont;
@@ -45,7 +45,7 @@ namespace DW
 
         void OnGUI()
         {
-            uiScale = Mathf.Max(1f, Screen.height / 900f);
+            uiScale = Mathf.Max(1f, Screen.height / 700f);   // 整体 UI 放大（手机更明显）
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(uiScale, uiScale, 1f));
             EnsureStyles();
             guiRects.Clear();
@@ -321,12 +321,19 @@ namespace DW
         void GuiSkillBar()
         {
             var keys = new[] { "basic", "q", "e", "r" };
-            var keyLabels = new[] { "左键", "Q", "E", "R" };
-            float slotW = 86, gap = 8;
+            var keyLabels = new[] { "攻击", "Q", "E", "R" };
+            float slotW = 116, gap = 10;   // 放大技能格
             int extra = 2;   // 翻滚 + 次元技能
             float total = (keys.Length + extra) * (slotW + gap);
-            float x0 = (SW - total) / 2, y0 = SH - 92;
+            float x0 = (SW - total) / 2, y0 = SH - 116;
             var def = Data.Cls(myCls);
+
+            // 触屏大攻击键（右下，醒目）
+            var atkR = new Rect(SW - 150, SH - 150, 110, 110);
+            guiRects.Add(atkR);
+            GUI.backgroundColor = new Color(1f, 0.5f, 0.3f, 0.9f);
+            if (GUI.Button(atkR, "⚔\n攻击", new GUIStyle(_btn) { fontSize = 24, fontStyle = FontStyle.Bold })) Cast("basic");
+            GUI.backgroundColor = Color.white;
 
             for (int i = 0; i < keys.Length; i++)
             {

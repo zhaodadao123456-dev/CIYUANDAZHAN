@@ -72,7 +72,7 @@ namespace DW
         readonly Dictionary<string, Proj> projs = new Dictionary<string, Proj>();
 
         // 相机
-        float camYaw, camPitch = 0.55f, camDist = 11f;
+        float camYaw, camPitch = 0.78f, camDist = 9f;   // 更俯视、更近
 
         // 技能冷却（Time.time 秒）
         readonly Dictionary<string, float> readyAt = new Dictionary<string, float>();
@@ -95,6 +95,13 @@ namespace DW
         void Awake()
         {
             Application.targetFrameRate = 60;
+            // 固定横屏
+            Screen.orientation = ScreenOrientation.AutoRotation;
+            Screen.autorotateToLandscapeLeft = true;
+            Screen.autorotateToLandscapeRight = true;
+            Screen.autorotateToPortrait = false;
+            Screen.autorotateToPortraitUpsideDown = false;
+            Screen.orientation = ScreenOrientation.LandscapeLeft;
             DWAudio.Music("bgm_menu");   // 登录界面背景音乐
             serverIp = PlayerPrefs.GetString("dw_ip", serverIp);
             playerName = PlayerPrefs.GetString("dw_name", "");
@@ -603,7 +610,7 @@ namespace DW
             var root = new GameObject("Hero");
             var inst = Instantiate(prefab, root.transform);
             var b = CalcBounds(inst);
-            float target = clsId == "tank" ? 2.0f : 1.85f;
+            float target = clsId == "tank" ? 2.7f : 2.4f;   // 放大英雄
             float scale = target / Mathf.Max(0.1f, b.size.y);
             inst.transform.localScale = Vector3.one * scale;
             b = CalcBounds(inst);
@@ -714,8 +721,8 @@ namespace DW
         {
             tm.anchor = TextAnchor.MiddleCenter;
             tm.alignment = TextAlignment.Center;
-            tm.characterSize = 0.11f;
-            tm.fontSize = 56;
+            tm.characterSize = 0.05f;   // 头顶名字缩小
+            tm.fontSize = 60;
             tm.fontStyle = FontStyle.Bold;
             if (cjkFont != null)
             {
@@ -739,7 +746,7 @@ namespace DW
             };
             e.go = MakeHero(e.cls, dim);
             e.go.transform.position = e.target;
-            e.label = MakeLabel(e.go, 2.6f);
+            e.label = MakeLabel(e.go, 3.0f);
             players[id] = e;
             UpdateLabel(e, dim == myDim ? "#7CFC9A" : "#ff7788");
         }
@@ -749,7 +756,7 @@ namespace DW
             var e = new Ent { name = name, tier = tier, level = level, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
             e.go = MakeCreature(tier, id);
             e.go.transform.position = e.target;
-            e.label = MakeLabel(e.go, 1.1f + tier * 0.45f);
+            e.label = MakeLabel(e.go, 2.1f + tier * 0.55f);
             monsters[id] = e;
             e.dead = mstate == "dead";
             e.go.SetActive(!e.dead);
@@ -775,7 +782,7 @@ namespace DW
                 var root = new GameObject("Monster");
                 var inst = Instantiate(prefab, root.transform);
                 var b = CalcBounds(inst);
-                float target = 1.2f + tier * 0.45f;
+                float target = 1.6f + tier * 0.55f;   // 放大怪物（BOSS tier5 更大）
                 inst.transform.localScale = Vector3.one * (target / Mathf.Max(0.1f, b.size.y));
                 b = CalcBounds(inst);
                 inst.transform.localPosition = new Vector3(0, -b.min.y, 0);
@@ -1005,8 +1012,8 @@ namespace DW
                     if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled) lookTouchId = -1;
                     else if (t.phase == TouchPhase.Moved)
                     {
-                        camYaw -= t.deltaPosition.x * 0.006f;
-                        camPitch = Mathf.Clamp(camPitch + t.deltaPosition.y * 0.005f, 0.12f, 1.25f);
+                        camYaw -= t.deltaPosition.x * 0.004f;
+                        camPitch = Mathf.Clamp(camPitch + t.deltaPosition.y * 0.003f, 0.55f, 1.4f);
                     }
                 }
             }
@@ -1025,10 +1032,10 @@ namespace DW
             bool touching = Input.touchCount > 0;  // 触屏时屏蔽模拟出来的鼠标事件
             if (!touching && Input.GetMouseButton(1))
             {
-                camYaw -= Input.GetAxis("Mouse X") * 0.05f;
-                camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.04f, 0.12f, 1.25f);
+                camYaw -= Input.GetAxis("Mouse X") * 0.03f;
+                camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.022f, 0.55f, 1.4f);
             }
-            camDist = Mathf.Clamp(camDist - Input.GetAxis("Mouse ScrollWheel") * 6f, 6f, 20f);
+            camDist = Mathf.Clamp(camDist - Input.GetAxis("Mouse ScrollWheel") * 6f, 5f, 16f);
 
             if (meDead)
             {
