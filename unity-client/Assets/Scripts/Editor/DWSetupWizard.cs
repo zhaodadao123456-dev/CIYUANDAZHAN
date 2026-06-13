@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -163,22 +164,55 @@ namespace DW.EditorTools
             AssetDatabase.Refresh();
         }
 
-        /* 同一资源包只取最佳代表：若包内有「full」完整版则只取 full，否则全取（最多4个，防部件刷屏） */
+        /* 按「角色」去重：每个角色只取一个最佳代表（优先 .prefab 而非裸 .fbx，优先 full，
+         * 折叠颜色变体）。骷髅合集的 4 个子角色各在子目录 → 各算一个角色，都能用上。 */
         static List<string> DedupePacks(List<string> paths)
         {
             var res = new List<string>();
-            foreach (var g in paths.GroupBy(TopFolder))
+            foreach (var g in paths.GroupBy(CharFolder))
             {
                 var items = g.ToList();
-                var fulls = items.Where((p) => Lower(p).Contains("full")).ToList();
-                res.AddRange((fulls.Count > 0 ? fulls : items).Take(4));
+                var prefabs = items.Where((p) => Lower(p).EndsWith(".prefab")).ToList();
+                var pool = prefabs.Count > 0 ? prefabs : items;   // 有 prefab 就不要裸模型（裸模型常缺材质）
+                var seen = new HashSet<string>();
+                foreach (var p in pool.OrderByDescending((x) => Lower(x).Contains("full") ? 1 : 0))
+                    if (seen.Add(NormBase(p))) res.Add(p);          // 同一角色的颜色变体只留一个
             }
             return res;
         }
+
         static string TopFolder(string p)
         {
             var parts = p.Split('/');
             return parts.Length >= 2 ? parts[0] + "/" + parts[1] : p;
+        }
+
+        /* 角色目录：去掉末级的 Prefab / Base Mesh / Meshes / Model / Animations 等，
+         * 使「同一角色的 fbx 与 prefab」「不同管线变体」归到同一组，而不同子角色各自成组。 */
+        static string CharFolder(string p)
+        {
+            int slash = p.LastIndexOf('/');
+            var dir = slash > 0 ? p.Substring(0, slash) : p;
+            var low = Lower(dir);
+            foreach (var lf in new[] { "/prefab_urp", "/prefab_hdrp", "/prefab", "/prefabs", "/base mesh", "/base_mesh", "/basemesh", "/meshes", "/mesh", "/models", "/model", "/animations", "/anim" })
+                if (low.EndsWith(lf)) return dir.Substring(0, dir.Length - lf.Length);
+            return dir;
+        }
+
+        /* 去掉颜色/编号/管线/部件后缀，得到角色基名，用于折叠同角色的变体 */
+        static string NormBase(string p)
+        {
+            var n = Lower(Path.GetFileNameWithoutExtension(p));
+            for (int i = 0; i < 6; i++)
+            {
+                var before = n;
+                n = Regex.Replace(n, @"\s*\(\d+\)$", "");          // " (1)"
+                n = Regex.Replace(n, @"[ _]?\d+$", "");            // 结尾编号
+                foreach (var s in new[] { "_full", "_unity", "_body", "_opac", "_opacity", "_skin", " skin" })
+                    if (n.EndsWith(s)) n = n.Substring(0, n.Length - s.Length);
+                if (n == before) break;
+            }
+            return n.Trim('_', ' ');
         }
 
         /* 该排除的预制体：URP/HDRP 管线变体（内置渲染管线会粉红）、残缺部件/透明体 */

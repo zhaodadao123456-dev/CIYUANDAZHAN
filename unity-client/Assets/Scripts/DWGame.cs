@@ -435,24 +435,28 @@ namespace DW
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogStartDistance = 35;
-            RenderSettings.fogEndDistance = 150;
+            RenderSettings.fogStartDistance = 50;
+            RenderSettings.fogEndDistance = 240;
             RenderSettings.fogColor = theme.fog;
-            RenderSettings.ambientLight = theme.ground * 1.6f;
+            // 关掉默认天空盒漏光，用受控的平面环境光，避免整场过曝发白
+            RenderSettings.skybox = null;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = Color.Lerp(theme.ground, new Color(0.5f, 0.52f, 0.58f), 0.55f);
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = theme.fog;
-            cam.farClipPlane = 300;
+            cam.farClipPlane = 400;
 
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             float gscale = (Data.MapHalf * 2f + 40f) / 10f;   // Plane 原始 10×10，铺满整张地图
             ground.transform.localScale = new Vector3(gscale, 1, gscale);
-            Tint(ground, theme.ground);
+            Matte(ground, theme.ground);   // 哑光地面，去掉中央高光白斑
             worldObjs.Add(ground);
 
             var sun = new GameObject("Sun").AddComponent<Light>();
             sun.type = LightType.Directional;
-            sun.intensity = 1.1f;
-            sun.transform.rotation = Quaternion.Euler(50, -30, 0);
+            sun.intensity = 0.85f;
+            sun.color = new Color(1f, 0.97f, 0.9f);
+            sun.transform.rotation = Quaternion.Euler(52, -30, 0);
             worldObjs.Add(sun.gameObject);
 
             // 场景摆件：优先用 KayKit 真模型（按文件名精确加载），否则方块占位
@@ -530,6 +534,19 @@ namespace DW
         {
             var r = go.GetComponent<Renderer>();
             if (r != null) r.material.color = c;
+        }
+
+        /* 哑光：去掉高光/金属感，避免地面中央出现刺眼白斑 */
+        static void Matte(GameObject go, Color c)
+        {
+            var r = go.GetComponent<Renderer>();
+            if (r == null) return;
+            var m = r.material;
+            m.color = c;
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0f);
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+            if (m.HasProperty("_SpecularHighlights")) m.SetFloat("_SpecularHighlights", 0f);
         }
 
         /* 把整个模型的材质颜色朝某色混合（用于怪物按次元染色） */
