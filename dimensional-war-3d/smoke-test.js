@@ -138,6 +138,9 @@ function client(name, dim, cls) {
     check('BOSS伤害贡献结算', !!settle, settle && settle.msg.slice(0, 40));
     const mvp = D.got('feed', (m) => /MVP奖励|MVP/.test(m.msg));
     check('MVP史诗奖励发放', !!mvp, mvp && mvp.msg.slice(0, 36));
+    const achBoss = D.got('ach', (m) => m.id === 'boss1');
+    const achMvp = D.got('ach', (m) => m.id === 'mvp1');
+    check('成就解锁(屠灭者+MVP)', !!(achBoss && achMvp), [achBoss, achMvp].filter(Boolean).map((a) => a.name).join('+'));
     D.ws.close();
   }
 

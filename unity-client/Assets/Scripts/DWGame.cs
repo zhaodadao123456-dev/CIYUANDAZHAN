@@ -300,6 +300,10 @@ namespace DW
                 }
                 case "feed": Feed((string)m["msg"]); break;
                 case "chat": Feed($"💬 {(string)m["name"]}：{(string)m["msg"]}"); break;
+                case "ach":
+                    Toast($"{(string)m["icon"]} 成就解锁：【{(string)m["name"]}】");
+                    Feed($"{(string)m["icon"]} 达成成就【{(string)m["name"]}】：{(string)m["desc"]}");
+                    break;
                 case "err": Toast("⚠ " + (string)m["msg"]); break;
             }
         }

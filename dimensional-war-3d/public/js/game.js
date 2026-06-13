@@ -291,6 +291,8 @@ function onMsg(m) {
       myDim = m.you.dim;
       if (m.you.cls) myCls = m.you.cls;
       if (m.shop) shopData = m.shop;
+      if (m.achDefs) achDefs = m.achDefs;
+      if (m.ach) myAch = new Set(m.ach);
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       enterRoom(m.room, m);
       setBoss(m.boss);
@@ -416,6 +418,13 @@ function onMsg(m) {
       renderPartyHud();
       if (panelTab === 'party') renderPanel();
       break;
+    case 'ach': {
+      myAch.add(m.id);
+      feed(`${m.icon} 达成成就【${m.name}】：${m.desc}`);
+      toast(`${m.icon} 成就解锁：【${m.name}】`);
+      if (panelTab === 'ach') renderPanel();
+      break;
+    }
     case 'pinvite': {
       pendingInviteFrom = m.from;
       $('invite-text').textContent = `👥 ${m.from} 邀请你组队（共享经验）`;
@@ -1312,6 +1321,16 @@ function renderPanel() {
     body.querySelectorAll('.btn-pinv').forEach((b) => b.onclick = () => {
       net({ t: 'party', op: 'invite', name: b.dataset.name });
     });
+  } else if (panelTab === 'ach') {
+    body.innerHTML = `
+      <div class="panel-sub">🏅 成就（${myAch.size}/${achDefs.length}）</div>
+      ${achDefs.map((a) => {
+        const got = myAch.has(a.id);
+        return `<div class="inv-row" style="${got ? '' : 'opacity:0.45'}">
+          <span>${a.icon} <b>${a.name}</b> <small class="dim-text">${a.desc}</small></span>
+          <small>${got ? '<span style="color:#ffd166">✔ 已达成</span>' : '<span class="dim-text">未达成</span>'}</small>
+        </div>`;
+      }).join('')}`;
   } else if (panelTab === 'rank') {
     const dimIcon2 = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.icon : '❔'; };
     body.innerHTML = `
@@ -1321,7 +1340,7 @@ function renderPanel() {
           <span>${i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.'} ${dimIcon2(r.dim)} <b>${r.name}</b>
             ${r.online ? '<span style="color:#2ecc71;font-size:10px">●在线</span>' : ''}
             ${(CLASS_NAMES[r.dim] || {})[r.cls] ? `<small class="dim-text">${CLASS_NAMES[r.dim][r.cls]}</small>` : ''}</span>
-          <small class="dim-text">Lv.${r.level} ｜ PvP ${r.pvpKills} ｜ 击杀 ${r.kills}</small>
+          <small class="dim-text">Lv.${r.level} ｜ PvP ${r.pvpKills} ｜ 击杀 ${r.kills}${r.ach ? ` ｜ 🏅×${r.ach}` : ''}</small>
         </div>`).join('')}`;
   } else {
     body.innerHTML = `
@@ -1364,6 +1383,8 @@ setInterval(renderWarBanner, 1000);
 let partyMembers = [];
 let pendingInviteFrom = null;
 let inviteTimer;
+let achDefs = [];
+let myAch = new Set();
 
 function renderPartyHud() {
   const el = $('party-hud');

@@ -134,6 +134,7 @@ function newPlayer(ws, name, dimId, clsId) {
     x: rnd(-4, 4), z: rnd(-4, 4), ry: 0, anim: 'idle',
     level: rec.level || 1, exp: rec.exp || 0, gold: rec.gold || 0,
     kills: rec.kills || 0, pvpKills: rec.pvpKills || 0,
+    ach: { ...(rec.ach || {}) },
     hp: 0, dead: false, dieT: 0,
     cds: { basic: 0, q: 0, e: 0, r: 0 },
     pet: null, capCd: 0,
@@ -180,10 +181,49 @@ function persist(p) {
   saved[p.name] = {
     level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills,
     cls: p.cls, dim: p.dim, sk: p.sk, skPts: p.skPts, inv: p.inv, equip: p.equip,
-    daily: p.daily, dailyStreak: p.dailyStreak,
+    daily: p.daily, dailyStreak: p.dailyStreak, ach: p.ach || {},
     pet: p.pet ? { name: p.pet.name, tier: p.pet.tier, maxHp: p.pet.maxHp, atk: p.pet.atk } : null,
   };
   saveDirty = true;
+}
+
+/* ---------- 成就系统 ---------- */
+const ACHIEVEMENTS = [
+  { id: 'lv5',     name: '初露锋芒', icon: '⭐', desc: '达到 5 级' },
+  { id: 'lv10',    name: '次元强者', icon: '🌟', desc: '达到 10 级' },
+  { id: 'lv20',    name: '位面传说', icon: '💫', desc: '达到 20 级', bc: 1 },
+  { id: 'kill100', name: '百兽屠戮', icon: '🗡', desc: '累计击杀 100 只野怪' },
+  { id: 'kill500', name: '千军辟易', icon: '⚔️', desc: '累计击杀 500 只野怪', bc: 1 },
+  { id: 'pvp10',   name: '次元猎手', icon: '🎯', desc: '重叠战场击杀 10 名玩家' },
+  { id: 'pvp50',   name: '战场死神', icon: '💀', desc: '重叠战场击杀 50 名玩家', bc: 1 },
+  { id: 'rich5k',  name: '富甲一方', icon: '💰', desc: '持有金币达到 5000' },
+  { id: 'pet1',    name: '驯兽师',   icon: '🐾', desc: '捕捉第一只宝宝' },
+  { id: 'boss1',   name: '屠灭者',   icon: '👑', desc: '参与讨伐世界BOSS' },
+  { id: 'mvp1',    name: '讨伐MVP', icon: '🏅', desc: '在BOSS战中输出第一', bc: 1 },
+];
+const ACH_MAP = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
+
+function unlock(p, id) {
+  if (!p || !ACH_MAP[id]) return;
+  p.ach = p.ach || {};
+  if (p.ach[id]) return;
+  p.ach[id] = 1;
+  const a = ACH_MAP[id];
+  send(p.ws, { t: 'ach', id: a.id, name: a.name, icon: a.icon, desc: a.desc });
+  if (a.bc) allCast({ t: 'feed', msg: `${a.icon} 【${dimName(p.dim)}】${p.name} 达成成就【${a.name}】！` });
+  persist(p);
+}
+
+/* 数值类成就统一检查（升级/击杀/金币变化后调用） */
+function checkAch(p) {
+  if (p.level >= 5) unlock(p, 'lv5');
+  if (p.level >= 10) unlock(p, 'lv10');
+  if (p.level >= 20) unlock(p, 'lv20');
+  if (p.kills >= 100) unlock(p, 'kill100');
+  if (p.kills >= 500) unlock(p, 'kill500');
+  if (p.pvpKills >= 10) unlock(p, 'pvp10');
+  if (p.pvpKills >= 50) unlock(p, 'pvp50');
+  if (p.gold >= 5000) unlock(p, 'rich5k');
 }
 
 function gainExp(p, n) {
@@ -198,6 +238,7 @@ function gainExp(p, n) {
   }
   sendYou(p);
   persist(p);
+  checkAch(p);
 }
 
 /* ---------- 装备与商店 ---------- */
@@ -500,10 +541,10 @@ function handle(ws, m) {
       // 全服排行榜：含离线玩家（存档）+ 在线实时数据
       const all = new Map();
       for (const [name, rec] of Object.entries(saved)) {
-        all.set(name, { name, level: rec.level || 1, kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, gold: rec.gold || 0, dim: rec.dim || '', cls: rec.cls || '', online: false });
+        all.set(name, { name, level: rec.level || 1, kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, gold: rec.gold || 0, dim: rec.dim || '', cls: rec.cls || '', ach: Object.keys(rec.ach || {}).length, online: false });
       }
       for (const op of conns.values()) {
-        all.set(op.name, { name: op.name, level: op.level, kills: op.kills, pvpKills: op.pvpKills, gold: op.gold, dim: op.dim, cls: op.cls, online: true });
+        all.set(op.name, { name: op.name, level: op.level, kills: op.kills, pvpKills: op.pvpKills, gold: op.gold, dim: op.dim, cls: op.cls, ach: Object.keys(op.ach || {}).length, online: true });
       }
       const list = [...all.values()]
         .sort((a, b) => b.level - a.level || b.pvpKills - a.pvpKills || b.kills - a.kills)
@@ -599,6 +640,7 @@ function capturePet(p) {
     };
     persist(p);
     roomCast(p.room, { t: 'feed', msg: `🐾 ${p.name} 成功捕捉【${best.name}】当宝宝，它将替主人战斗！` });
+    unlock(p, 'pet1');
   } else {
     send(p.ws, { t: 'err', msg: `💨 【${best.name}】挣脱了捕捉！（成功率${Math.round(chance * 100)}%，血越少越容易抓）` });
   }
@@ -631,6 +673,8 @@ function joinRoom(p, roomId, isFirst = false) {
     war: warState(),
     boss: worldBoss ? { alive: 1, dim: worldBoss.dim, name: worldBoss.name, x: worldBoss.x, z: worldBoss.z } : null,
     shop: isFirst ? SHOP : undefined,
+    achDefs: isFirst ? ACHIEVEMENTS : undefined,
+    ach: Object.keys(p.ach || {}),
     equip: p.equip, inv: p.inv,
     x: p.x, z: p.z,
   });
@@ -799,10 +843,12 @@ function killMonster(p, mo) {
         mvpGiven = true;
         giveItem(mem, rollDrop(4, mem.dim, 3), `世界BOSS【${mo.name}】MVP奖励`);
         allCast({ t: 'feed', msg: `🏅 本场BOSS战MVP：【${dimName(mem.dim)}】${mem.name}，史诗战利品到手！` });
+        unlock(mem, 'mvp1');
       } else if (d / total >= 0.1) {
         giveItem(mem, rollDrop(4, mem.dim, 2), `世界BOSS【${mo.name}】贡献奖励`);
         if (mem !== p) gainExp(mem, Math.round(mo.exp * 0.5));
       }
+      unlock(mem, 'boss1');
     }
     if (!mvpGiven) giveItem(p, rollDrop(4, p.dim, 3), `世界BOSS【${mo.name}】掉落`);
     allCast({ t: 'boss', alive: 0 });
@@ -832,6 +878,7 @@ function killPlayer(killer, victim) {
   victim.gold -= loot;
   killer.gold += loot;
   killer.pvpKills++;
+  checkAch(killer);
   if (war.active) {
     if (killer.dim === war.a) war.killsA++;
     else if (killer.dim === war.b) war.killsB++;
