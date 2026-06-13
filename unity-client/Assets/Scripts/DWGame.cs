@@ -616,7 +616,7 @@ namespace DW
             b = CalcBounds(inst);
             inst.transform.localPosition = new Vector3(0, -b.min.y, 0);   // 脚踩地面
             root.AddComponent<DWAnimDriver>();
-            AttachWeapon(inst, clsId);
+            // 占位武器姿态别扭，暂不挂；以后用真武器模型+实测偏移再绑（AttachWeapon 保留备用）
             return root;
         }
 
