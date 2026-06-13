@@ -594,7 +594,8 @@ namespace DW
         /* 怪物：优先用接入的正式模型（Resources/DW/mon_t*），否则生成敌对小怪占位 */
         GameObject MakeCreature(int tier)
         {
-            var prefab = Resources.Load<GameObject>("DWMon/mon_t" + Mathf.Clamp(tier, 1, 4));
+            int t = Mathf.Clamp(tier, 1, 4);
+            var prefab = Resources.Load<GameObject>("DW/mon_t" + t) ?? Resources.Load<GameObject>("DWMon/mon_t" + t);
             if (prefab != null)
             {
                 var root = new GameObject("Monster");

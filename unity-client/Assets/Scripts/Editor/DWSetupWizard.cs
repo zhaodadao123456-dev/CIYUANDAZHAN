@@ -16,43 +16,27 @@ namespace DW.EditorTools
     {
         const string ResDir = "Assets/Resources/DW";
 
-        /* 各职业的模型键位（与网页版 CLASSES.model 一致） */
-        static readonly (string key, string cls)[] HeroKeys =
-        {
-            ("tech", "坦克"), ("xiuxian", "刺客"), ("cyber", "射手"),
-            ("magic", "奶妈"), ("hunter", "战士"),
-        };
-
         [MenuItem("次元大战/① 生成资源清单(发给Claude)")]
         public static void MakeReport()
         {
             var sb = new StringBuilder();
-            sb.AppendLine("===== 次元大战 资源清单 =====");
-            foreach (var folder in PackFolders())
+            sb.AppendLine("===== 次元大战 资源清单（全项目角色）=====");
+            foreach (var path in AllCharacterPrefabs())
             {
-                sb.AppendLine($"\n## 包目录: {folder}");
-                foreach (var guid in AssetDatabase.FindAssets("t:Prefab", new[] { folder }))
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var anim = go != null ? go.GetComponentInChildren<Animator>(true) : null;
+                var human = anim != null && anim.avatar != null && anim.avatar.isHuman;
+                sb.AppendLine($"[角色] {path}  人形骨骼:{(human ? "是" : "否")}");
+            }
+            sb.AppendLine("\n--- 动画片段 ---");
+            foreach (var guid in AssetDatabase.FindAssets("t:AnimationClip"))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!path.StartsWith("Assets/")) continue;
+                foreach (var clip in AssetDatabase.LoadAllAssetsAtPath(path).OfType<AnimationClip>())
                 {
-                    var path = AssetDatabase.GUIDToAssetPath(guid);
-                    var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                    var skin = go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
-                    var anim = go != null ? go.GetComponentInChildren<Animator>(true) : null;
-                    var human = anim != null && anim.avatar != null && anim.avatar.isHuman;
-                    sb.AppendLine($"[Prefab] {path}  蒙皮:{(skin ? "有" : "无")}  人形骨骼:{(human ? "是" : "否")}");
-                }
-                foreach (var guid in AssetDatabase.FindAssets("t:Model", new[] { folder }))
-                {
-                    var path = AssetDatabase.GUIDToAssetPath(guid);
-                    sb.AppendLine($"[模型] {path}");
-                }
-                foreach (var guid in AssetDatabase.FindAssets("t:AnimationClip", new[] { folder }))
-                {
-                    var path = AssetDatabase.GUIDToAssetPath(guid);
-                    foreach (var clip in AssetDatabase.LoadAllAssetsAtPath(path).OfType<AnimationClip>())
-                    {
-                        if (clip.name.StartsWith("__preview")) continue;
-                        sb.AppendLine($"[动画] {clip.name}  时长:{clip.length:0.00}s  人形:{(clip.isHumanMotion ? "是" : "否")}  来自:{path}");
-                    }
+                    if (clip.name.StartsWith("__preview")) continue;
+                    sb.AppendLine($"[动画] {clip.name}  时长:{clip.length:0.00}s  人形:{(clip.isHumanMotion ? "是" : "否")}  来自:{path}");
                 }
             }
             var outPath = "Assets/DW_资源清单.txt";
@@ -60,8 +44,21 @@ namespace DW.EditorTools
             AssetDatabase.Refresh();
             Debug.Log(sb.ToString());
             EditorUtility.DisplayDialog("次元大战",
-                $"清单已生成：{outPath}\n\n把这个文件内容发给 Claude，即可精确接入。\n（也可以先试菜单②自动接入）", "好");
+                $"清单已生成：{outPath}\n\n把这个文件内容发给 Claude，即可精确分配每个角色。", "好");
         }
+
+        /* 各职业候选关键词（按优先级；匹配资源路径，命中即选，且不重复使用） */
+        static readonly (string key, string cls, string[] keys)[] HeroRules =
+        {
+            ("xiuxian", "刺客", new[] { "wukong", "悟空", "monkey", "ninja", "assassin", "rogue", "samurai" }),
+            ("magic",   "奶妈", new[] { "witch", "女巫", "nun", "修女", "priest", "cleric", "missionary", "传教士", "mage", "heal" }),
+            ("cyber",   "射手", new[] { "cowboy", "sheriff", "牛仔", "archer", "ranger", "gun", "trooper_girl", "girl_v" }),
+            ("tech",    "坦克", new[] { "trooper", "sci-fi", "scifi", "knight", "armor", "guard", "robot", "mech", "heavy", "lord" }),
+            ("hunter",  "战士", new[] { "half_blood", "halfblood", "半血", "warrior", "sword", "fighter", "barbarian", "man", "cowboy" }),
+        };
+
+        /* 怪物候选关键词（骷髅/亡灵/恶魔类做怪物） */
+        static readonly string[] MonsterKeys = { "skeleton", "骷髅", "skull", "undead", "zombie", "demon", "恶魔", "monster", "怪", "ghoul", "clown", "小丑", "jester" };
 
         [MenuItem("次元大战/② 一键接入已购模型(自动)")]
         public static void AutoWire()
@@ -69,97 +66,112 @@ namespace DW.EditorTools
             Directory.CreateDirectory(ResDir);
             var log = new StringBuilder("===== 自动接入结果 =====\n");
 
+            // 全项目扫描所有「角色」预制体（带蒙皮网格）
+            var allChars = AllCharacterPrefabs();
+            log.AppendLine($"扫描到角色预制体 {allChars.Count} 个\n");
+
+            // 1. 通用动画控制器：优先用悟空包的人形动作片段
             string wukong = FindFolder("wukong", "悟空");
-            string halfBlood = FindFolder("half_blood", "halfblood", "half blood");
-            string sciFi = FindFolder("sci-fi", "scifi", "troopers");
+            AnimatorController ctrl = BuildController(wukong, log);
 
-            // 1. 选角色 Prefab：悟空→修仙(刺客)；科幻士兵→科技(坦克)+赛博(射手)；半血男女→猎人(战士,男)+魔法(奶妈,女)
-            var picks = new Dictionary<string, string>();   // heroKey -> assetPath
-            if (wukong != null)
-                Assign(picks, "xiuxian", CharacterAssets(wukong).FirstOrDefault());
-            if (sciFi != null)
+            // 2. 英雄分配：按关键词从全项目角色池里挑，已用过的不再选
+            var used = new HashSet<string>();
+            foreach (var (key, cls, keys) in HeroRules)
             {
-                var troopers = CharacterAssets(sciFi).ToList();
-                Assign(picks, "tech", troopers.ElementAtOrDefault(0));
-                Assign(picks, "cyber", troopers.ElementAtOrDefault(1) ?? troopers.ElementAtOrDefault(0));
-            }
-            if (halfBlood != null)
-            {
-                var chars = CharacterAssets(halfBlood).ToList();
-                var female = chars.FirstOrDefault((p) => Lower(p).Contains("female") || Lower(p).Contains("girl") || Lower(p).Contains("woman"));
-                var male = chars.FirstOrDefault((p) => p != female);
-                Assign(picks, "magic", female ?? chars.ElementAtOrDefault(1));
-                Assign(picks, "hunter", male ?? chars.ElementAtOrDefault(0));
+                var src = PickByKeywords(allChars, keys, used)
+                          ?? allChars.FirstOrDefault((p) => !used.Contains(p));   // 兜底：随便给个没用过的
+                if (src == null) { log.AppendLine($"hero_{key}（{cls}）：无可用角色，保留占位"); continue; }
+                used.Add(src);
+                SaveCharPrefab(src, $"{ResDir}/hero_{key}.prefab", ctrl, $"hero_{key}（{cls}）", log);
             }
 
-            // 2. 用悟空包的动作片段搭一个通用动画控制器（Quaternius CC0 人形动画）
-            AnimatorController ctrl = null;
-            bool clipsHuman = false;
-            if (wukong != null)
+            // 3. 怪物分配：把骷髅/亡灵类角色做成 mon_t1~t4
+            var monsters = allChars.Where((p) => MonsterKeys.Any((k) => Lower(p).Contains(k))).ToList();
+            if (monsters.Count > 0)
             {
-                var clips = AllClips(wukong);
-                var states = PickStates(clips);
-                if (states.Count > 0)
+                for (int i = 0; i < 4; i++)
                 {
-                    clipsHuman = states.Values.First().isHumanMotion;
-                    var ctrlPath = ResDir + "/dw_hero_anim.controller";
-                    AssetDatabase.DeleteAsset(ctrlPath);
-                    ctrl = AnimatorController.CreateAnimatorControllerAtPath(ctrlPath);
-                    var sm = ctrl.layers[0].stateMachine;
-                    foreach (var kv in states)
-                    {
-                        var st = sm.AddState(kv.Key);
-                        st.motion = kv.Value;
-                        if (kv.Key == "Idle") sm.defaultState = st;
-                        log.AppendLine($"动画状态 {kv.Key} ← {kv.Value.name}（人形:{kv.Value.isHumanMotion}）");
-                    }
+                    var src = monsters[i % monsters.Count];   // 不足4个就循环复用
+                    SaveCharPrefab(src, $"{ResDir}/mon_t{i + 1}.prefab", ctrl, $"mon_t{i + 1}", log);
                 }
-                else log.AppendLine("⚠ 悟空包里没有识别出可用动作片段");
             }
-
-            // 3. 复制成标准命名 Prefab 并挂控制器
-            foreach (var (key, cls) in HeroKeys)
-            {
-                string src;
-                if (!picks.TryGetValue(key, out src) || src == null)
-                {
-                    log.AppendLine($"hero_{key}（{cls}）：未找到候选模型，保留占位小人");
-                    continue;
-                }
-                var dst = $"{ResDir}/hero_{key}.prefab";
-                AssetDatabase.DeleteAsset(dst);
-                var srcGo = AssetDatabase.LoadAssetAtPath<GameObject>(src);
-                var inst = (GameObject)Object.Instantiate(srcGo);
-                var animator = inst.GetComponentInChildren<Animator>();
-                if (animator == null) animator = inst.AddComponent<Animator>();
-                bool avatarHuman = animator.avatar != null && animator.avatar.isHuman;
-                bool sameAsClipPack = wukong != null && src.StartsWith(wukong);
-                if (ctrl != null && ((avatarHuman && clipsHuman) || sameAsClipPack))
-                    animator.runtimeAnimatorController = ctrl;
-                PrefabUtility.SaveAsPrefabAsset(inst, dst);
-                Object.DestroyImmediate(inst);
-                log.AppendLine($"hero_{key}（{cls}）← {src}  动画:{(ctrl != null && ((avatarHuman && clipsHuman) || sameAsClipPack) ? "已挂" : "暂无(人形骨骼不匹配)")}");
-            }
+            else log.AppendLine("未发现骷髅/怪物类角色，怪物沿用 KayKit 默认模型");
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log(log.ToString());
             File.WriteAllText("Assets/DW_接入结果.txt", log.ToString());
-            EditorUtility.DisplayDialog("次元大战", log + "\n\n点 ▶ 运行即可看到新模型。\n效果不满意就把 Assets/DW_资源清单.txt 发给 Claude 精调。", "好");
+            EditorUtility.DisplayDialog("次元大战", log + "\n\n点 ▶ 运行即可看到新模型。\n效果不满意把 Assets/DW_接入结果.txt 发给 Claude 精调。", "好");
+        }
+
+        /* 把一个角色源复制成标准命名 Prefab 并挂动画控制器 */
+        static void SaveCharPrefab(string src, string dst, AnimatorController ctrl, string label, StringBuilder log)
+        {
+            AssetDatabase.DeleteAsset(dst);
+            var srcGo = AssetDatabase.LoadAssetAtPath<GameObject>(src);
+            if (srcGo == null) { log.AppendLine($"{label}：加载失败 {src}"); return; }
+            var inst = (GameObject)Object.Instantiate(srcGo);
+            var animator = inst.GetComponentInChildren<Animator>();
+            if (animator == null) animator = inst.AddComponent<Animator>();
+            bool human = animator.avatar != null && animator.avatar.isHuman;
+            if (ctrl != null && human) animator.runtimeAnimatorController = ctrl;
+            PrefabUtility.SaveAsPrefabAsset(inst, dst);
+            Object.DestroyImmediate(inst);
+            log.AppendLine($"{label} ← {src}  动画:{(ctrl != null && human ? "已挂" : "静态(非人形骨骼)")}");
+        }
+
+        /* 从角色池里按关键词优先级挑一个未使用的 */
+        static string PickByKeywords(List<string> pool, string[] keys, HashSet<string> used)
+        {
+            foreach (var k in keys)
+            {
+                var hit = pool.FirstOrDefault((p) => !used.Contains(p) && Lower(p).Contains(k));
+                if (hit != null) return hit;
+            }
+            return null;
+        }
+
+        /* 全项目角色预制体（带蒙皮网格、人形优先、完整版优先、排除自己生成的 Resources/DW） */
+        static List<string> AllCharacterPrefabs()
+        {
+            return AssetDatabase.FindAssets("t:Prefab")
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Where((p) => p.StartsWith("Assets/") && !p.StartsWith("Assets/Resources/"))
+                .Where((p) => {
+                    var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
+                    return go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
+                })
+                .OrderByDescending((p) => {
+                    var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
+                    var an = go.GetComponentInChildren<Animator>(true);
+                    return (an != null && an.avatar != null && an.avatar.isHuman) ? 1 : 0;   // 人形优先
+                })
+                .ThenByDescending((p) => Lower(p).Contains("full") ? 1 : 0)
+                .ToList();
+        }
+
+        /* 用某个包的人形动作片段搭通用控制器 */
+        static AnimatorController BuildController(string clipFolder, StringBuilder log)
+        {
+            if (clipFolder == null) { log.AppendLine("⚠ 未找到悟空动画包，角色将静态展示"); return null; }
+            var states = PickStates(AllClips(clipFolder));
+            if (states.Count == 0) { log.AppendLine("⚠ 未识别出可用动作片段"); return null; }
+            var ctrlPath = ResDir + "/dw_hero_anim.controller";
+            AssetDatabase.DeleteAsset(ctrlPath);
+            var ctrl = AnimatorController.CreateAnimatorControllerAtPath(ctrlPath);
+            var sm = ctrl.layers[0].stateMachine;
+            foreach (var kv in states)
+            {
+                var st = sm.AddState(kv.Key);
+                st.motion = kv.Value;
+                if (kv.Key == "Idle") sm.defaultState = st;
+                log.AppendLine($"动画 {kv.Key} ← {kv.Value.name}");
+            }
+            return ctrl;
         }
 
         /* ---------- 工具函数 ---------- */
         static string Lower(string s) => s.ToLowerInvariant();
-
-        static IEnumerable<string> PackFolders()
-        {
-            foreach (var d in Directory.GetDirectories("Assets"))
-            {
-                var n = Lower(Path.GetFileName(d));
-                if (n.Contains("wukong") || n.Contains("悟空") || n.Contains("half") || n.Contains("sci") || n.Contains("trooper"))
-                    yield return d.Replace('\\', '/');
-            }
-        }
 
         static string FindFolder(params string[] keys)
         {
@@ -170,33 +182,6 @@ namespace DW.EditorTools
                     if (n.Contains(k.Replace("-", "_").Replace(" ", "_"))) return d.Replace('\\', '/');
             }
             return null;
-        }
-
-        /* 角色候选：带蒙皮网格的 Prefab 优先，其次 FBX 模型 */
-        static IEnumerable<string> CharacterAssets(string folder)
-        {
-            var prefabs = AssetDatabase.FindAssets("t:Prefab", new[] { folder })
-                .Select(AssetDatabase.GUIDToAssetPath)
-                .Where((p) => {
-                    var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
-                    return go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
-                })
-                // 优先「完整」版角色（带 full），避免选到只有局部部件的变体
-                .OrderByDescending((p) => Lower(p).Contains("full") ? 1 : 0)
-                .ThenBy((p) => Lower(p)).ToList();
-            if (prefabs.Count > 0) return prefabs;
-            return AssetDatabase.FindAssets("t:Model", new[] { folder })
-                .Select(AssetDatabase.GUIDToAssetPath)
-                .Where((p) => {
-                    var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
-                    return go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
-                })
-                .OrderBy((p) => Lower(p));
-        }
-
-        static void Assign(Dictionary<string, string> picks, string key, string path)
-        {
-            if (path != null) picks[key] = path;
         }
 
         static List<AnimationClip> AllClips(string folder)
