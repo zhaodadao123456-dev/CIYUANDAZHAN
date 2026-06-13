@@ -170,6 +170,17 @@ namespace DW
                 GUI.Label(new Rect(br.x + 10, br.y + 4, 464, 22), $"<color=#ff7766>{btxt}</color>", _label);
             }
 
+            // 五次元大混战横幅 + 进入/撤离按钮
+            if (meleeInfo != null && (bool?)meleeInfo["active"] == true)
+            {
+                var mr = new Rect(SW / 2f - 230, 86, 460, 30);
+                guiRects.Add(mr);
+                GUI.Box(mr, "", _box);
+                GUI.Label(new Rect(mr.x + 10, mr.y + 4, 320, 22), "<color=#ff7fd0>🔥 五次元大混战进行中！存活最多次元大胜</color>", _label);
+                if (GUI.Button(new Rect(mr.xMax - 120, mr.y + 3, 112, 24), curRoom == "melee" ? "↩ 撤离" : "⚔ 杀入混战", _btn))
+                    Send(new { t = "melee", enter = curRoom == "melee" ? 0 : 1 });
+            }
+
             // 虚拟摇杆（触屏）
             if (moveTouchId >= 0)
             {

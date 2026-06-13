@@ -18,6 +18,10 @@ const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, RARITIES } = require
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const WAR_INTERVAL = (parseFloat(process.env.WAR_INTERVAL_MINUTES) || 12) * 60000;
 const WAR_DURATION = (parseFloat(process.env.WAR_DURATION_MINUTES) || 5) * 60000;
+// 五次元大混战：每晚 MELEE_HOUR 点开战，到 MELEE_END_HOUR 点或只剩一个次元存活
+const MELEE_HOUR = parseInt(process.env.DW_MELEE_HOUR || '21', 10);
+const MELEE_END_HOUR = parseInt(process.env.DW_MELEE_END_HOUR || '23', 10);
+const MELEE_MS = parseInt(process.env.DW_MELEE_MS || '0', 10);  // >0：固定时长（测试用）
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const SAVE_FILE = path.join(__dirname, 'players.json');
 
@@ -51,6 +55,7 @@ setInterval(() => {
 const rooms = {};
 for (const d of DIMENSIONS) rooms[d.id] = makeRoom(d.id);
 rooms.war = makeRoom('war');
+rooms.melee = makeRoom('melee');
 
 function makeRoom(id) {
   return { id, players: new Map(), monsters: new Map(), projectiles: new Map() };
@@ -210,6 +215,7 @@ const ACHIEVEMENTS = [
   { id: 'pet1',    name: '驯兽师',   icon: '🐾', desc: '捕捉第一只宝宝' },
   { id: 'boss1',   name: '屠灭者',   icon: '👑', desc: '参与讨伐世界BOSS' },
   { id: 'mvp1',    name: '讨伐MVP', icon: '🏅', desc: '在BOSS战中输出第一', bc: 1 },
+  { id: 'melee_win', name: '混战之王', icon: '🏆', desc: '赢得五次元大混战', bc: 1 },
 ];
 const ACH_MAP = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
 
@@ -526,6 +532,16 @@ function handle(ws, m) {
       }
       return;
     }
+    case 'melee': {
+      if (!melee.active) return send(p.ws, { t: 'err', msg: '五次元大混战未开启（每晚开战）' });
+      if (m.enter) {
+        if (meleeEliminated.has(p.name)) return send(p.ws, { t: 'err', msg: '你已被淘汰，下次大混战再来！' });
+        if (p.room !== 'melee') { joinRoom(p, 'melee'); melee.participants.add(p.name); }
+      } else if (p.room === 'melee') {
+        joinRoom(p, p.dim);
+      }
+      return;
+    }
     case 'respawn': {
       if (!p.dead || now() - p.dieT < PLAYER_RESPAWN_MS) return;
       p.dead = false;
@@ -762,8 +778,8 @@ function dimSkill(p) {
       mo.rootUntil = t + 2800;
       applyDamage(p, mo, dmg, 'magic');
     }
-    // 战场内冻结敌方玩家（通知其客户端短暂禁足）
-    if (p.room === 'war')
+    // 战场/混战内冻结敌方玩家（通知其客户端短暂禁足）
+    if (p.room === 'war' || p.room === 'melee')
       for (const o of room.players.values()) {
         if (o.dead || o.dim === p.dim) continue;
         if (dist2(p.x, p.z, o.x, o.z) > R * R) continue;
@@ -814,6 +830,11 @@ function spawnPoint(p) {
     const side = p.dim === war.a ? -1 : 1;
     return { x: side * 60 + rnd(-3, 3), z: rnd(-10, 10) };
   }
+  if (p.room === 'melee') {   // 五次元各占一角
+    const i = Math.max(0, DIMENSIONS.findIndex((d) => d.id === p.dim));
+    const ang = (i / DIMENSIONS.length) * Math.PI * 2;
+    return { x: Math.cos(ang) * 42 + rnd(-5, 5), z: Math.sin(ang) * 42 + rnd(-5, 5) };
+  }
   return { x: rnd(-4, 4), z: rnd(-4, 4) };
 }
 
@@ -834,6 +855,7 @@ function joinRoom(p, roomId, isFirst = false) {
     you: { name: p.name, dim: p.dim, cls: p.cls, level: p.level, exp: p.exp, expNeed: expNeed(p.level), gold: p.gold, hp: Math.round(p.hp), maxHp: maxHp(p), kills: p.kills, pvpKills: p.pvpKills },
     players: [...rooms[roomId].players.values()].filter((o) => o.id !== p.id).map(publicP),
     war: warState(),
+    melee: meleeState(),
     boss: worldBoss ? { alive: 1, dim: worldBoss.dim, name: worldBoss.name, x: worldBoss.x, z: worldBoss.z } : null,
     shop: isFirst ? SHOP : undefined,
     achDefs: isFirst ? ACHIEVEMENTS : undefined,
@@ -952,7 +974,7 @@ function applyHeal(healer, tgt, pct) {
 function targetsOf(p) {
   const room = rooms[p.room];
   const list = [...room.monsters.values()].filter((mo) => mo.state !== 'dead');
-  if (p.room === 'war') {
+  if (p.room === 'war' || p.room === 'melee') {   // 混战场：所有异次元玩家皆为敌
     for (const o of room.players.values()) {
       if (o.id !== p.id && !o.dead && o.dim !== p.dim) list.push(o);
     }
@@ -1044,13 +1066,15 @@ function killPlayer(killer, victim) {
   killer.gold += loot;
   killer.pvpKills++;
   checkAch(killer);
-  if (war.active) {
+  if (war.active && victim.room === 'war') {
     if (killer.dim === war.a) war.killsA++;
     else if (killer.dim === war.b) war.killsB++;
     allCast({ t: 'war', state: warState() });
   }
+  if (victim.room === 'melee') meleeEliminated.add(victim.name);   // 混战：阵亡即淘汰
   roomCast(victim.room, { t: 'pdie', id: victim.id, by: killer.id });
-  allCast({ t: 'feed', msg: `⚔️ 【${dimName(killer.dim)}】${killer.name} 在重叠战场击杀了 【${dimName(victim.dim)}】${victim.name}，掠夺 ${loot} 金币！` });
+  const arena = victim.room === 'melee' ? '五次元大混战' : '重叠战场';
+  allCast({ t: 'feed', msg: `⚔️ 【${dimName(killer.dim)}】${killer.name} 在${arena}击杀了 【${dimName(victim.dim)}】${victim.name}，掠夺 ${loot} 金币！` });
   sendYou(victim);
   gainExp(killer, 30 + victim.level * 10);
   persist(victim);
@@ -1058,7 +1082,7 @@ function killPlayer(killer, victim) {
 
 const dimName = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.name : id; };
 
-const inSafeZone = (room, x, z) => room.id !== 'war' && x * x + z * z < SAFE_R * SAFE_R;
+const inSafeZone = (room, x, z) => room.id !== 'war' && room.id !== 'melee' && x * x + z * z < SAFE_R * SAFE_R;
 
 /* ---------- 重叠战场 ---------- */
 const war = { active: false, a: null, b: null, endsAt: 0, nextAt: now() + WAR_INTERVAL, killsA: 0, killsB: 0 };
@@ -1104,6 +1128,77 @@ function endWar() {
     ? `🏁 重叠战场结束：【${dimName(winner)}】以 ${Math.max(killsA, killsB)}:${Math.min(killsA, killsB)} 击杀获胜！`
     : `🏁 重叠战场结束：双方 ${killsA}:${killsB} 战平！` });
 }
+
+/* ---------- 五次元大混战 ---------- */
+const melee = { active: false, endsAt: 0, day: null, startedAt: 0, participants: new Set() };
+const meleeEliminated = new Set();
+function meleeState() { return { active: melee.active, endsAt: melee.endsAt }; }
+
+function startMelee() {
+  melee.active = true;
+  melee.day = new Date().toDateString();
+  melee.startedAt = now();
+  melee.endsAt = now() + (MELEE_MS > 0 ? MELEE_MS : Math.max(1, MELEE_END_HOUR - MELEE_HOUR) * 3600000);
+  melee.participants.clear();
+  meleeEliminated.clear();
+  rooms.melee.monsters.clear();
+  rooms.melee.projectiles.clear();
+  allCast({ t: 'melee', state: meleeState() });
+  allCast({ t: 'feed', msg: '🔥🔥🔥 【五次元大混战】开战！所有次元的降临者可进入混战场，存活玩家最多的次元大胜，独享传说奖励！点顶部横幅进入！' });
+}
+
+function endMelee() {
+  const aliveByDim = {};
+  for (const p of rooms.melee.players.values()) {
+    if (p.dead) continue;
+    aliveByDim[p.dim] = (aliveByDim[p.dim] || 0) + 1;
+  }
+  let winner = null, best = -1;
+  for (const [dim, n] of Object.entries(aliveByDim)) if (n > best) { best = n; winner = dim; }
+  melee.active = false; melee.endsAt = 0;
+  for (const p of [...rooms.melee.players.values()]) {
+    const win = winner && p.dim === winner && !p.dead;
+    if (win) {
+      giveItem(p, rollDrop(4, p.dim, 4), '五次元大混战·大胜');   // 传说装备
+      p.gold += 2000; unlock(p, 'melee_win');
+      send(p.ws, { t: 'feed', msg: `👑 你所在的【${dimName(winner)}】赢得五次元大混战！传说装备 + 2000 金币到手！` });
+    } else {
+      p.gold += 200;
+      send(p.ws, { t: 'feed', msg: '🏁 大混战结束，参与奖励 200 金币。' });
+    }
+    persist(p);
+    joinRoom(p, p.dim);
+  }
+  allCast({ t: 'melee', state: meleeState() });
+  allCast({ t: 'feed', msg: winner ? `🏆 五次元大混战落幕：【${dimName(winner)}】以 ${best} 名存活者大胜！` : '🏆 五次元大混战落幕。' });
+}
+
+// 每 15 秒：到点开战 / 判断结束 / 清理已阵亡的淘汰者
+setInterval(() => {
+  const d = new Date();
+  if (!melee.active) {
+    const today = d.toDateString();
+    if (melee.day !== today && conns.size > 0 &&
+        (process.env.DW_MELEE_NOW === '1' || d.getHours() === MELEE_HOUR)) startMelee();
+    return;
+  }
+  // 阵亡者超过 3 秒 → 淘汰并送回本次元
+  for (const p of [...rooms.melee.players.values()]) {
+    if (p.dead && now() - p.dieT > 3000) {
+      meleeEliminated.add(p.name);
+      p.dead = false; p.hp = maxHp(p);
+      joinRoom(p, p.dim);
+      send(p.ws, { t: 'feed', msg: '💀 你已在大混战中被淘汰，下次再战！' });
+      sendYou(p);
+    }
+  }
+  const alive = [...rooms.melee.players.values()].filter((p) => !p.dead);
+  const dims = new Set(alive.map((p) => p.dim));
+  const elapsed = now() - melee.startedAt;
+  if (now() > melee.endsAt) return endMelee();
+  if (elapsed > 60000 && melee.participants.size >= 2 && alive.length >= 1 && dims.size <= 1) return endMelee();
+  if (elapsed > 60000 && melee.participants.size >= 2 && alive.length <= 1) return endMelee();
+}, 15000);
 
 /* ---------- 世界模拟主循环 ---------- */
 function tickRoom(room) {
@@ -1304,7 +1399,7 @@ function snapshot(room) {
 
 setInterval(() => {
   for (const room of Object.values(rooms)) {
-    if (room.players.size > 0 || room.id === 'war') tickRoom(room);
+    if (room.players.size > 0 || room.id === 'war' || room.id === 'melee') tickRoom(room);
   }
   // 战场开关
   const t = now();

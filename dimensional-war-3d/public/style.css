@@ -103,6 +103,16 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
   display: flex; align-items: center; gap: 14px; white-space: nowrap;
 }
 
+#melee-banner {
+  position: absolute; top: 92px; left: 50%; transform: translateX(-50%);
+  background: rgba(50, 10, 40, 0.9); border: 1px solid #ff4db8;
+  border-radius: 10px; padding: 6px 14px; font-size: 13px; color: #ffd5f0;
+  display: flex; align-items: center; gap: 12px; white-space: nowrap;
+  animation: bosspulse 1.4s ease-in-out infinite;
+}
+#melee-banner .btn { padding: 4px 12px; font-size: 13px; }
+#melee-banner.hidden { display: none; }
+
 #boss-banner {
   position: absolute; top: 58px; left: 50%; transform: translateX(-50%);
   background: rgba(50, 8, 8, 0.85); border: 1px solid #ff5544;

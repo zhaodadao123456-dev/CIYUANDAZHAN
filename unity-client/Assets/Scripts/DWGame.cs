@@ -45,6 +45,7 @@ namespace DW
         JObject you;            // 服务器下发的完整属性
         JObject warInfo;
         protected JObject bossInfo;
+        protected JObject meleeInfo;
         protected JArray partyMembers;
         string inviteFrom;
         float inviteUntil;
@@ -223,6 +224,7 @@ namespace DW
                     }
                     EnterRoom((string)m["room"], m);
                     if (m["war"] != null) warInfo = (JObject)m["war"];
+                    if (m["melee"] != null) meleeInfo = ((bool?)m["melee"]["active"] ?? false) ? (JObject)m["melee"] : null;
                     state = State.Playing;
                     break;
                 }
@@ -314,6 +316,9 @@ namespace DW
                     break;
                 case "boss":
                     bossInfo = ((int?)m["alive"] ?? 0) == 1 ? m : null;
+                    break;
+                case "melee":
+                    meleeInfo = ((bool?)m["state"]?["active"] ?? false) ? (JObject)m["state"] : null;
                     break;
                 case "party":
                     partyMembers = (JArray)m["members"];

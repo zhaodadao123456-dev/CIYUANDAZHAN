@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = 34567;
-const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 12 }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 12, DW_MELEE_NOW: '1', DW_MELEE_MS: 90000 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvErr = '';
 srv.stdout.on('data', (d) => process.stdout.write('[srv] ' + d));
 srv.stderr.on('data', (d) => { srvErr += d; process.stderr.write('[srv-err] ' + d); });
@@ -172,6 +172,24 @@ function client(name, dim, cls) {
   // 10.95 每日签到（首次上线必触发）
   const daily = A.got('feed', (m) => /每日签到/.test(m.msg));
   check('每日签到奖励', !!daily, daily && daily.msg.slice(0, 30));
+
+  // 10.96 五次元大混战：等待开战(15s调度) → 进入混战场
+  let meleeOn = false;
+  for (let i = 0; i < 24 && !meleeOn; i++) {
+    meleeOn = !!(A.got('melee', (m) => m.state && m.state.active) || A.got('feed', (m) => /五次元大混战/.test(m.msg)));
+    if (!meleeOn) await sleep(1000);
+  }
+  check('五次元大混战开战', meleeOn);
+  if (meleeOn) {
+    const M = client(); await M.open;
+    M.send({ t: 'join', name: '混战勇士', dim: 'tech', cls: 'warrior' });
+    await sleep(300);
+    M.send({ t: 'melee', enter: 1 });
+    await sleep(400);
+    const meleeWelcome = [...M.msgs].reverse().find((x) => x.t === 'welcome' && x.room === 'melee');
+    check('进入大混战场', !!meleeWelcome, meleeWelcome && `room=${meleeWelcome.room}`);
+    M.ws.close();
+  }
 
   // 10.9 组队：A 邀请 B → B 收到邀请并接受 → 双方收到队伍名单 → B 退队解散
   A.send({ t: 'party', op: 'invite', name: '测试奶妈' });

@@ -301,6 +301,7 @@ function onMsg(m) {
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       enterRoom(m.room, m);
       setBoss(m.boss);
+      if (m.melee) { meleeInfo = m.melee; renderMeleeBanner(); }
       if (m.first && !joined) {
         joined = true;
         $('join-screen').classList.add('hidden');
@@ -418,6 +419,7 @@ function onMsg(m) {
     case 'you': updateYou(m); break;
     case 'war': setWar(m.state); break;
     case 'boss': setBoss(m); break;
+    case 'melee': meleeInfo = m.state; renderMeleeBanner(); break;
     case 'party':
       partyMembers = m.members || [];
       renderPartyHud();
@@ -1437,6 +1439,21 @@ function updatePartyHud() {
 }
 
 function playerName() { return (lastJoin && lastJoin.name) || ''; }
+
+/* ---------- 五次元大混战横幅 ---------- */
+let meleeInfo = null;
+function renderMeleeBanner() {
+  const el = $('melee-banner'), btn = $('btn-melee');
+  if (!el || !joined) { if (el) el.classList.add('hidden'); return; }
+  if (!meleeInfo || !meleeInfo.active) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const remain = Math.max(0, Math.ceil((meleeInfo.endsAt - Date.now()) / 1000));
+  const mm = Math.floor(remain / 60), ss = String(remain % 60).padStart(2, '0');
+  el.querySelector('#melee-text').textContent = `🔥 五次元大混战进行中！存活最多的次元大胜 ｜ 剩余 ${mm}:${ss}`;
+  btn.textContent = curRoom === 'melee' ? '↩️ 撤离' : '⚔️ 杀入混战';
+  btn.onclick = () => { AUDIO.sfx('click', 0.6); net({ t: 'melee', enter: curRoom === 'melee' ? 0 : 1 }); };
+}
+setInterval(() => { if (meleeInfo && meleeInfo.active) renderMeleeBanner(); }, 1000);
 
 /* ---------- 世界BOSS横幅 ---------- */
 let bossInfo = null;
