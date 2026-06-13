@@ -253,7 +253,7 @@ namespace DW
             var keys = new[] { "basic", "q", "e", "r" };
             var keyLabels = new[] { "左键", "Q", "E", "R" };
             float slotW = 86, gap = 8;
-            int extra = myDim == "hunter" ? 2 : 1;
+            int extra = 2;   // 翻滚 + 次元技能
             float total = (keys.Length + extra) * (slotW + gap);
             float x0 = (SW - total) / 2, y0 = SH - 92;
             var def = Data.Cls(myCls);
@@ -291,15 +291,14 @@ namespace DW
             GUI.Label(new Rect(dr.x + 6, dr.y + 4, slotW, 18), "<size=11><color=#ffd166>空格</color></size>", _label);
             GUI.Label(new Rect(dr.x + 6, dr.y + 22, slotW, 20), "翻滚", _label);
             if (dRemain > 0) GUI.Label(new Rect(dr.x + 6, dr.y + 44, slotW, 20), $"<color=#aaa>{dRemain:0.0}s</color>", _label);
-            // 捕捉（猎人）
-            if (myDim == "hunter")
+            // 次元专属技能（每个次元都有，F 键）
             {
                 var cr = new Rect(x0 + (keys.Length + 1) * (slotW + gap), y0, slotW, 76);
                 guiRects.Add(cr);
                 GUI.Box(cr, "", _box);
                 float cRemain = Mathf.Max(0, captureReadyAt - Time.time);
-                GUI.Label(new Rect(cr.x + 6, cr.y + 4, slotW, 18), "<size=11><color=#ffd166>F</color></size>", _label);
-                GUI.Label(new Rect(cr.x + 6, cr.y + 22, slotW, 20), "🐾捕捉", _label);
+                GUI.Label(new Rect(cr.x + 6, cr.y + 4, slotW, 18), "<size=11><color=#ffd166>F 次元</color></size>", _label);
+                GUI.Label(new Rect(cr.x + 6, cr.y + 22, slotW, 20), dimSkillName, _label);
                 if (cRemain > 0) GUI.Label(new Rect(cr.x + 6, cr.y + 44, slotW, 20), $"<color=#aaa>{cRemain:0.0}s</color>", _label);
             }
         }

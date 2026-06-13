@@ -293,6 +293,7 @@ function onMsg(m) {
       if (m.shop) shopData = m.shop;
       if (m.achDefs) achDefs = m.achDefs;
       if (m.ach) myAch = new Set(m.ach);
+      if (m.dimSkill) { dimSkillDef = m.dimSkill; updateDimSkillSlot(); }
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       enterRoom(m.room, m);
       setBoss(m.boss);
@@ -304,7 +305,7 @@ function onMsg(m) {
         toast(`🌌 欢迎降临【${dimName(myDim)}】！你是一名${cn}，打怪升级，等待次元重叠！`);
       }
       setupSkillBar();
-      $('sk-pet').classList.toggle('hidden', myDim !== 'hunter');
+      updateDimSkillSlot();
       AUDIO.setMusic(m.room === 'war' ? 'war' : 'world');
       updateYou(m.you);
       setWar(m.war);
@@ -425,6 +426,8 @@ function onMsg(m) {
       if (panelTab === 'ach') renderPanel();
       break;
     }
+    case 'dimfx': onDimFx(m); break;
+    case 'rooted': rootedUntil = performance.now() + (m.ms || 2000); toast('🔮 你被禁锢了！'); break;
     case 'pinvite': {
       pendingInviteFrom = m.from;
       $('invite-text').textContent = `👥 ${m.from} 邀请你组队（共享经验）`;
@@ -913,12 +916,12 @@ function bindInput() {
   $('btn-panel-close').onclick = togglePanel;
 }
 
-function capturePet() {
-  if (!joined || myDim !== 'hunter') return;
+function capturePet() {   // 现为「次元专属技能」F 键，按当前次元触发
+  if (!joined || rootedUntil > performance.now()) return;
   const t = performance.now();
   if (t < capCdEnd) return;
-  capCdEnd = t + 3000;
-  net({ t: 'capture' });
+  capCdEnd = t + ((dimSkillDef && dimSkillDef.cd) || 3000);
+  net({ t: 'dimskill' });
 }
 function togglePanel() {
   if (!joined) return;
@@ -938,6 +941,7 @@ function moveVec() {
     if (keys.KeyD) fx += 1;
   }
   if (!fx && !fz) return null;
+  if (rootedUntil > performance.now()) return null;   // 被禁锢无法移动
   const l = Math.hypot(fx, fz); fx /= l; fz /= l;
   const s = Math.sin(camYaw), c = Math.cos(camYaw);
   // 相机指向玩家的前方 = (-sin(yaw), -cos(yaw))；fx为左右分量
@@ -1236,7 +1240,7 @@ function updateYou(y) {
     if (y[k] != null) HUD[k] = y[k];
   }
   $('hp-fill').style.width = Math.max(0, y.hp / y.maxHp * 100) + '%';
-  $('hp-text').textContent = `${y.hp}/${y.maxHp}`;
+  $('hp-text').textContent = (y.shield ? `🛡${y.shield} ` : '') + `${y.hp}/${y.maxHp}`;
   $('exp-fill').style.width = (y.exp / y.expNeed * 100) + '%';
   $('stat-line').textContent = `Lv.${y.level} ｜ 💰${y.gold} ｜ 击杀${y.kills} ｜ PvP${y.pvpKills}` + (HUD.skPts > 0 ? ` ｜ ✨技能点×${HUD.skPts}` : '');
   if (me) me.hp = y.hp;
@@ -1485,11 +1489,48 @@ function renderSkillBar() {
   $('sk-dodge').querySelector('.cd').style.height = (dPct * 100) + '%';
   const cap = $('sk-pet');
   if (cap && !cap.classList.contains('hidden')) {
+    const cd = (dimSkillDef && dimSkillDef.cd) || 3000;
     const remain = Math.max(0, (capCdEnd || 0) - t);
-    cap.querySelector('.cd').style.height = (remain / 3000 * 100) + '%';
+    cap.querySelector('.cd').style.height = (remain / cd * 100) + '%';
   }
 }
 let capCdEnd = 0;
+let dimSkillDef = null;
+let rootedUntil = 0;
+
+/* 次元技能视觉特效 */
+function dimEntPos(id) {
+  if (id === myId) return me && me.obj && me.obj.position;
+  const r = remotes.get(id);
+  return r && r.obj && r.obj.position;
+}
+function onDimFx(m) {
+  const p = dimEntPos(m.id);
+  if (m.kind === 'shield') {
+    if (!p) return;
+    const sph = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0x00a8ff, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+    sph.position.copy(p); sph.position.y += 1;
+    scene.add(sph);
+    fxList.push({ obj: sph, age: 0, life: 6, update(dt) { this.age += dt; sph.position.copy(dimEntPos(m.id) || sph.position); sph.position.y += 1; sph.material.opacity = 0.32 * (1 - this.age / 6) + 0.08; } });
+  } else if (m.kind === 'heal') {
+    if (p) { ringFx(p.x, p.z, 2.5, 0x2ecc71); flashLight(p.x, 1.5, p.z, 0x2ecc71, 2.5, 8, 0.5); }
+  } else if (m.kind === 'blink') {
+    if (p) burstFx(p.x, 1.1, p.z, 0xe84393);
+    burstFx(m.x, 1.1, m.z, 0xe84393);
+    flashLight(m.x, 1.2, m.z, 0xe84393, 3, 9, 0.4);
+  } else if (m.kind === 'field') {
+    ringFx(m.x, m.z, (m.r || 6) * 1.1, 0x9b59b6);
+    flashLight(m.x, 1.5, m.z, 0x9b59b6, 3.5, 14, 0.5);
+  }
+}
+
+function updateDimSkillSlot() {
+  const cap = $('sk-pet');
+  if (!cap) return;
+  cap.classList.remove('hidden');   // 每个次元都有专属技能
+  cap.querySelector('.sk-name').textContent = dimSkillDef ? dimSkillDef.name : '次元';
+}
 
 /* ============================================================
  * 主循环

@@ -76,6 +76,9 @@ namespace DW
         // 技能冷却（Time.time 秒）
         readonly Dictionary<string, float> readyAt = new Dictionary<string, float>();
         float dodgeReadyAt, captureReadyAt;
+        protected string dimSkillName = "捕捉";
+        protected float dimSkillCd;
+        float rootedUntil;
         float burstUntil, burstSpeed;
         Vector3 burstDir;
         float lastMvSent;
@@ -193,6 +196,11 @@ namespace DW
                     if (m["shop"] != null && m["shop"].Type == JTokenType.Array) shopData = (JArray)m["shop"];
                     if (m["equip"] != null) equipData = (JObject)m["equip"];
                     if (m["inv"] != null) invData = (JArray)m["inv"];
+                    if (m["dimSkill"] != null)
+                    {
+                        dimSkillName = (string)m["dimSkill"]["name"] ?? "技能";
+                        dimSkillCd = ((float?)m["dimSkill"]["cd"] ?? 3000) / 1000f;
+                    }
                     EnterRoom((string)m["room"], m);
                     if (m["war"] != null) warInfo = (JObject)m["war"];
                     state = State.Playing;
@@ -298,6 +306,18 @@ namespace DW
                     if ((at - pos).sqrMagnitude < 14f * 14f) Shake(0.45f, 0.5f);
                     break;
                 }
+                case "dimfx":
+                {
+                    var kind = (string)m["kind"];
+                    Vector3 at = m["x"] != null ? new Vector3((float)m["x"], 0.2f, (float)m["z"]) : EntPos((string)m["id"]);
+                    Color c = kind == "shield" ? new Color(0f, 0.66f, 1f)
+                        : kind == "heal" ? new Color(0.18f, 0.8f, 0.44f)
+                        : kind == "blink" ? new Color(0.91f, 0.27f, 0.58f)
+                        : new Color(0.6f, 0.35f, 0.71f);
+                    SpawnShockwave(at, kind == "field" ? ((float?)m["r"] ?? 6f) : 2.5f, c);
+                    break;
+                }
+                case "rooted": rootedUntil = Time.time + ((float?)m["ms"] ?? 2000) / 1000f; Toast("🔮 你被禁锢了！"); break;
                 case "feed": Feed((string)m["msg"]); break;
                 case "chat": Feed($"💬 {(string)m["name"]}：{(string)m["msg"]}"); break;
                 case "ach":
@@ -432,7 +452,7 @@ namespace DW
                 var rm = rod.GetComponent<Renderer>().material;
                 rm.color = gold; rm.EnableKeyword("_EMISSION");
                 rm.SetColor("_EmissionColor", gold * 0.35f);
-                Object.Destroy(rod.GetComponent<Collider>());
+                Destroy(rod.GetComponent<Collider>());
                 // 两端红铜箍
                 foreach (var yy in new[] { 0.95f, -0.95f })
                 {
@@ -441,7 +461,7 @@ namespace DW
                     cap.transform.localScale = new Vector3(0.05f, 0.06f, 0.05f);
                     cap.transform.localPosition = new Vector3(0, yy, 0);
                     Tint(cap, new Color(0.55f, 0.2f, 0.1f));
-                    Object.Destroy(cap.GetComponent<Collider>());
+                    Destroy(cap.GetComponent<Collider>());
                 }
             }
             else if (clsId == "warrior")      // 半血男 → 剑
@@ -452,13 +472,13 @@ namespace DW
                 sword.transform.localScale = new Vector3(0.05f, 0.9f, 0.012f);
                 sword.transform.localPosition = new Vector3(0.02f, 0.45f, 0f);
                 Tint(sword, new Color(0.8f, 0.85f, 0.9f));
-                Object.Destroy(sword.GetComponent<Collider>());
+                Destroy(sword.GetComponent<Collider>());
                 var guard = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 guard.transform.SetParent(hand, false);
                 guard.transform.localScale = new Vector3(0.18f, 0.04f, 0.04f);
                 guard.transform.localPosition = new Vector3(0.02f, 0.04f, 0f);
                 Tint(guard, new Color(0.5f, 0.4f, 0.15f));
-                Object.Destroy(guard.GetComponent<Collider>());
+                Destroy(guard.GetComponent<Collider>());
             }
         }
 
@@ -803,10 +823,10 @@ namespace DW
             if (Input.GetKeyDown(KeyCode.E)) Cast("e");
             if (Input.GetKeyDown(KeyCode.R)) Cast("r");
             if (Input.GetKeyDown(KeyCode.B)) panelOpen = !panelOpen;
-            if (Input.GetKeyDown(KeyCode.F) && myDim == "hunter" && Time.time > captureReadyAt)
+            if (Input.GetKeyDown(KeyCode.F) && Time.time > captureReadyAt)
             {
-                captureReadyAt = Time.time + 3f;
-                Send(new { t = "capture" });
+                captureReadyAt = Time.time + (dimSkillCd > 0 ? dimSkillCd : 3f);
+                Send(new { t = "dimskill" });   // 各次元专属技能（猎人=捕捉）
             }
             if (Input.GetKeyDown(KeyCode.Space) && Time.time > dodgeReadyAt)
             {
@@ -818,8 +838,17 @@ namespace DW
             }
         }
 
+        Vector3 EntPos(string id)
+        {
+            if (id == myId) return pos;
+            Ent e;
+            if (players.TryGetValue(id, out e) && e.go != null) return e.go.transform.position;
+            return pos;
+        }
+
         Vector3 MoveVec()
         {
+            if (Time.time < rootedUntil) return Vector3.zero;   // 被魔法禁锢
             float fx = moveTouchVec.x, fz = moveTouchVec.y;
             if (Input.GetKey(KeyCode.W)) fz += 1;
             if (Input.GetKey(KeyCode.S)) fz -= 1;

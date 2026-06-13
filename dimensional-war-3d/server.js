@@ -365,6 +365,7 @@ function sendYou(p) {
     gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, room: p.room, dim: p.dim,
     patk: Math.round(st.patk), matk: Math.round(st.matk), armor: Math.round(st.armor), mres: Math.round(st.mres),
     spd: +st.spd.toFixed(2), skPts: p.skPts, sk: p.sk,
+    shield: (p.shield > 0 && now() < p.shieldUntil) ? p.shield : 0,
   });
 }
 
@@ -526,7 +527,8 @@ function handle(ws, m) {
       sendYou(p);
       return;
     }
-    case 'capture': return capturePet(p);
+    case 'capture': return capturePet(p);   // 兼容旧客户端
+    case 'dimskill': return dimSkill(p);
     case 'party': return handleParty(p, m);
     case 'chat': {
       const msg = String(m.msg || '').trim().slice(0, 60);
@@ -611,6 +613,81 @@ function handle(ws, m) {
 }
 
 /* ---------- 猎人专属：捕捉宝宝 ---------- */
+/* ---------- 次元专属技能（F 键，各次元独有） ---------- */
+const DIM_SKILL = {
+  tech:    { name: '能量护盾', cd: 18000, desc: '展开纳米护盾，6秒内吸收伤害' },
+  xiuxian: { name: '吐纳回春', cd: 20000, desc: '运转真气，瞬间回复大量生命' },
+  cyber:   { name: '相位闪现', cd: 11000, desc: '瞬间相位移动一段距离' },
+  magic:   { name: '禁锢领域', cd: 14000, desc: '冻结周围敌人并造成法术伤害' },
+  hunter:  { name: '捕捉宝宝', cd: 3000,  desc: '将虚弱的野怪收为宝宝' },
+};
+
+/* 玩家受伤时先扣护盾，返回穿透到生命的伤害（被多处伤害入口调用） */
+function absorbShield(p, dmg) {
+  if (p && p.shield > 0 && now() < p.shieldUntil) {
+    const a = Math.min(p.shield, dmg);
+    p.shield -= a; dmg -= a;
+    if (p.shield <= 0) { p.shield = 0; p.shieldUntil = 0; }
+  }
+  return dmg;
+}
+
+function dimSkill(p) {
+  if (p.dead) return;
+  if (p.dim === 'hunter') return capturePet(p);
+  const t = now();
+  const def = DIM_SKILL[p.dim];
+  if (!def) return;
+  if (t < (p.dimCd || 0)) return;
+  const room = rooms[p.room];
+
+  if (p.dim === 'tech') {
+    p.dimCd = t + def.cd;
+    p.shield = Math.round(maxHp(p) * 0.45);
+    p.shieldUntil = t + 6000;
+    roomCast(p.room, { t: 'dimfx', kind: 'shield', id: p.id });
+    send(p.ws, { t: 'feed', msg: `🛡 能量护盾展开，吸收 ${p.shield} 点伤害（6秒）` });
+    sendYou(p);
+  } else if (p.dim === 'xiuxian') {
+    p.dimCd = t + def.cd;
+    const heal = Math.round(maxHp(p) * 0.45);
+    p.hp = Math.min(maxHp(p), p.hp + heal);
+    roomCast(p.room, { t: 'heal', id: p.id, amt: heal, hp: Math.round(p.hp), by: p.id });
+    roomCast(p.room, { t: 'dimfx', kind: 'heal', id: p.id });
+    send(p.ws, { t: 'feed', msg: `☯ 吐纳回春，恢复 ${heal} 点生命` });
+    sendYou(p);
+  } else if (p.dim === 'cyber') {
+    p.dimCd = t + def.cd;
+    const dist = 9;
+    p.x = clamp(p.x + Math.sin(p.ry) * dist, -MAP_HALF, MAP_HALF);
+    p.z = clamp(p.z + Math.cos(p.ry) * dist, -MAP_HALF, MAP_HALF);
+    p.lastMoveT = t;   // 防被测速踢回
+    roomCast(p.room, { t: 'dimfx', kind: 'blink', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2) });
+    send(p.ws, { t: 'feed', msg: '⚡ 相位闪现' });
+    sendYou(p);
+  } else if (p.dim === 'magic') {
+    p.dimCd = t + def.cd;
+    const R = 6, dmg = Math.round(atkOf(p) * 1.2);
+    roomCast(p.room, { t: 'dimfx', kind: 'field', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: R });
+    // 冻结范围内野怪 + 造成法术伤害
+    for (const mo of room.monsters.values()) {
+      if (mo.state === 'dead') continue;
+      if (dist2(p.x, p.z, mo.x, mo.z) > R * R) continue;
+      mo.rootUntil = t + 2800;
+      applyDamage(p, mo, dmg, 'magic');
+    }
+    // 战场内冻结敌方玩家（通知其客户端短暂禁足）
+    if (p.room === 'war')
+      for (const o of room.players.values()) {
+        if (o.dead || o.dim === p.dim) continue;
+        if (dist2(p.x, p.z, o.x, o.z) > R * R) continue;
+        send(o.ws, { t: 'rooted', ms: 2200 });
+        applyDamage(p, o, dmg, 'magic');
+      }
+    send(p.ws, { t: 'feed', msg: '🔮 禁锢领域展开' });
+  }
+}
+
 function capturePet(p) {
   if (p.dead) return;
   if (p.dim !== 'hunter') return send(p.ws, { t: 'err', msg: '只有猎人世界的降临者拥有捕捉天赋' });
@@ -675,6 +752,7 @@ function joinRoom(p, roomId, isFirst = false) {
     shop: isFirst ? SHOP : undefined,
     achDefs: isFirst ? ACHIEVEMENTS : undefined,
     ach: Object.keys(p.ach || {}),
+    dimSkill: { ...DIM_SKILL[p.dim], dim: p.dim },
     equip: p.equip, inv: p.inv,
     x: p.x, z: p.z,
   });
@@ -805,6 +883,7 @@ function applyDamage(attacker, tgt, dmg, dmgType = 'phys') {
   dmg = dmg * 100 / (100 + def);
   if (!isMonster) dmg *= clsOf(tgt).dmgTakenMul;
   dmg = Math.max(1, Math.round(dmg));
+  if (!isMonster) dmg = absorbShield(tgt, dmg);   // 科技护盾吸收
   tgt.hp -= dmg;
   roomCast(attacker.room, { t: 'dmg', kind: isMonster ? 'm' : 'p', id: tgt.id, amt: dmg, hp: Math.max(0, Math.round(tgt.hp)), by: attacker.id });
   if (isMonster && tgt.boss && attacker.name) {
@@ -985,6 +1064,7 @@ function tickRoom(room) {
       }
       continue;
     }
+    if (mo.rootUntil && t < mo.rootUntil) continue;   // 魔法禁锢：定身
     let tgt = mo.targetId ? room.players.get(mo.targetId) : null;
     if (tgt && (tgt.dead || inSafeZone(room, tgt.x, tgt.z) || dist2(mo.x, mo.z, tgt.x, tgt.z) > 26 * 26)) { tgt = null; mo.targetId = null; }
     if (!tgt) {
@@ -1016,6 +1096,7 @@ function tickRoom(room) {
           const pst = statsOf(pl);
           let adm = mo.atk * 1.6 * 100 / (100 + pst.armor) * clsOf(pl).dmgTakenMul;
           adm = Math.max(1, Math.round(adm));
+          adm = absorbShield(pl, adm);
           pl.hp -= adm;
           roomCast(room.id, { t: 'dmg', kind: 'p', id: pl.id, amt: adm, hp: Math.max(0, Math.round(pl.hp)), by: mo.id });
           sendYou(pl);
@@ -1056,6 +1137,7 @@ function tickRoom(room) {
           const st = statsOf(tgt);
           dmg = dmg * 100 / (100 + st.armor) * clsOf(tgt).dmgTakenMul;
           dmg = Math.max(1, Math.round(dmg));
+          dmg = absorbShield(tgt, dmg);
           tgt.hp -= dmg;
           roomCast(room.id, { t: 'dmg', kind: 'p', id: tgt.id, amt: dmg, hp: Math.max(0, Math.round(tgt.hp)), by: mo.id });
           sendYou(tgt);

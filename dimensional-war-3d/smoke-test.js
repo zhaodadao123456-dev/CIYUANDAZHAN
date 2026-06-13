@@ -79,6 +79,28 @@ function client(name, dim, cls) {
   await sleep(200);
   check('非猎人捕捉被拒绝', !!C.got('err', (m) => m.msg.includes('猎人')));
 
+  // 9.5 次元专属技能（F键 dimskill）
+  C.send({ t: 'dimskill' });   // C 是 tech
+  await sleep(200);
+  const techShield = C.got('you', (m) => m.shield > 0);
+  check('科技次元技能·能量护盾', !!techShield, techShield && `护盾=${techShield.shield}`);
+  const X = client(); await X.open;
+  X.send({ t: 'join', name: '测试剑修', dim: 'xiuxian', cls: 'assassin' });
+  await sleep(300); X.send({ t: 'dimskill' }); await sleep(200);
+  check('修仙次元技能·吐纳回春', !!X.got('dimfx', (m) => m.kind === 'heal'));
+  const Y = client(); await Y.open;
+  Y.send({ t: 'join', name: '测试黑客', dim: 'cyber', cls: 'ranger' });
+  await sleep(300);
+  Y.send({ t: 'mv', x: 0, z: 0, ry: 0, anim: 'idle' }); await sleep(80);
+  Y.send({ t: 'dimskill' }); await sleep(200);
+  const blink = Y.got('dimfx', (m) => m.kind === 'blink');
+  check('赛博次元技能·相位闪现', !!(blink && (Math.abs(blink.x) > 1 || Math.abs(blink.z) > 1)), blink && `→(${blink.x},${blink.z})`);
+  const Z = client(); await Z.open;
+  Z.send({ t: 'join', name: '测试法师', dim: 'magic', cls: 'healer' });
+  await sleep(300); Z.send({ t: 'dimskill' }); await sleep(200);
+  check('魔法次元技能·禁锢领域', !!Z.got('dimfx', (m) => m.kind === 'field'));
+  X.ws.close(); Y.ws.close(); Z.ws.close();
+
   // 10. 快照包含 pets 字段 + 怪物数量（5次元 × 4层 × 6只 = 120）
   await sleep(300);
   const snapA = A.got('snap');
