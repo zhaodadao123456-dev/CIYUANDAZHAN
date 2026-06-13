@@ -95,6 +95,7 @@ namespace DW
         void Awake()
         {
             Application.targetFrameRate = 60;
+            DWAudio.Music("bgm_menu");   // 登录界面背景音乐
             serverIp = PlayerPrefs.GetString("dw_ip", serverIp);
             playerName = PlayerPrefs.GetString("dw_name", "");
             dimIdx = PlayerPrefs.GetInt("dw_dim", 1);
@@ -174,6 +175,7 @@ namespace DW
 
         void Update()
         {
+            if (Input.GetKeyDown(KeyCode.M)) Toast(DWAudio.ToggleMute() ? "🔇 已静音" : "🔊 已开启声音");
             // 处理网络消息
             if (net != null)
             {
@@ -298,6 +300,7 @@ namespace DW
                         levelUpLevel = (int)m["level"];
                         levelUpUntil = Time.time + 2.6f;
                         Shake(0.15f, 0.2f);
+                        DWAudio.Sfx("levelup", 0.8f);
                     }
                     break;
                 case "cast":
@@ -308,6 +311,8 @@ namespace DW
                         e.tRy = Mathf.Atan2((float)m["dx"], (float)m["dz"]);
                         var drv = e.go != null ? e.go.GetComponent<DWAnimDriver>() : null;
                         if (drv != null) drv.PlayOnce((string)m["k"] == "basic" ? "Attack1" : "Skill", 0.6f);
+                        var kk = (string)m["kk"];
+                        DWAudio.SfxAt(kk == "proj" ? "laser" : (kk == "aoe" ? "explosion" : "swing"), e.target, pos, 0.6f);
                     }
                     break;
                 }
@@ -316,6 +321,7 @@ namespace DW
                     break;
                 case "boss":
                     bossInfo = ((int?)m["alive"] ?? 0) == 1 ? m : null;
+                    if (bossInfo != null) DWAudio.Sfx("warhorn", 0.7f);
                     break;
                 case "melee":
                     meleeInfo = ((bool?)m["state"]?["active"] ?? false) ? (JObject)m["state"] : null;
@@ -333,6 +339,7 @@ namespace DW
                     // 世界BOSS震地：红色冲击波 + 若我在范围附近则镜头震动
                     var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
                     SpawnShockwave(at, (float?)m["r"] ?? 7f, new Color(1f, 0.2f, 0.27f));
+                    DWAudio.SfxAt("explosion", at, pos, 0.9f);
                     if ((at - pos).sqrMagnitude < 14f * 14f) Shake(0.45f, 0.5f);
                     break;
                 }
@@ -341,6 +348,7 @@ namespace DW
                     // 精英怪范围震击：紫色冲击波
                     var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
                     SpawnShockwave(at, (float?)m["r"] ?? 4.5f, new Color(0.69f, 0.31f, 1f));
+                    DWAudio.SfxAt("explosion", at, pos, 0.6f);
                     if ((at - pos).sqrMagnitude < 9f * 9f) Shake(0.25f, 0.3f);
                     break;
                 }
@@ -350,6 +358,7 @@ namespace DW
                     var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
                     float r = (float?)m["r"] ?? 16f;
                     SpawnShockwave(at, r, new Color(0.8f, 0.27f, 1f));
+                    DWAudio.SfxAt("explosion", at, pos, 1f);
                     if ((at - pos).sqrMagnitude < r * r) Shake(0.6f, 0.7f);
                     break;
                 }
@@ -361,7 +370,8 @@ namespace DW
                         : kind == "heal" ? new Color(0.18f, 0.8f, 0.44f)
                         : kind == "blink" ? new Color(0.91f, 0.27f, 0.58f)
                         : new Color(0.6f, 0.35f, 0.71f);
-                    SpawnShockwave(at, kind == "field" ? ((float?)m["r"] ?? 6f) : 2.5f, c);
+                    SpawnShockwave(at, kind == "field" || kind == "emp" ? ((float?)m["r"] ?? 6f) : 2.5f, c);
+                    DWAudio.SfxAt(kind == "blink" ? "dodge" : kind == "heal" ? "coin" : "explosion", at, pos, 0.6f);
                     break;
                 }
                 case "rooted": rootedUntil = Time.time + ((float?)m["ms"] ?? 2000) / 1000f; Toast("🔮 你被禁锢了！"); break;
@@ -370,6 +380,7 @@ namespace DW
                 case "ach":
                     Toast($"{(string)m["icon"]} 成就解锁：【{(string)m["name"]}】");
                     Feed($"{(string)m["icon"]} 达成成就【{(string)m["name"]}】：{(string)m["desc"]}");
+                    DWAudio.Sfx("coin", 0.7f);
                     break;
                 case "err": Toast("⚠ " + (string)m["msg"]); break;
             }
@@ -393,6 +404,7 @@ namespace DW
                 foreach (JObject o in (JArray)m["obstacles"])
                     obstacles.Add(new Vector4((float)o["x"], (float)o["z"], (float)o["r"], (int?)o["t"] ?? 0));
             BuildWorld(roomId == "war" ? Data.WarDim : Data.Dim(myDim));
+            DWAudio.Music(roomId == "war" || roomId == "melee" ? "bgm_war" : "bgm_world");
 
             pos = new Vector3((float?)m["x"] ?? 0, 0, (float?)m["z"] ?? 0);
             meDead = false;
@@ -889,7 +901,9 @@ namespace DW
                 if (monsters.TryGetValue(id, out e))
                 {
                     e.hp = hp; UpdateLabel(e, "#ffaa33");
-                    FloatText(amt.ToString(), e.target, (string)m["by"] == myId ? Color.yellow : Color.white);
+                    bool crit = (int?)m["crit"] == 1;
+                    FloatText((crit ? amt + " 暴击!" : amt.ToString()), e.target, (string)m["by"] == myId ? Color.yellow : Color.white);
+                    if ((string)m["by"] == myId) DWAudio.SfxAt("hit", e.target, pos, crit ? 0.85f : 0.6f);
                 }
             }
             else if (kind == "pet")
@@ -899,7 +913,7 @@ namespace DW
             }
             else
             {
-                if (id == myId) { FloatText("-" + amt, pos, Color.red); Shake(0.2f, 0.18f); }
+                if (id == myId) { FloatText("-" + amt, pos, Color.red); Shake(0.2f, 0.18f); DWAudio.Sfx("hurt", 0.7f); }
                 else
                 {
                     Ent e;
@@ -1021,6 +1035,7 @@ namespace DW
                 burstDir = mv.sqrMagnitude > 0.01f ? mv.normalized : new Vector3(Mathf.Sin(ry), 0, Mathf.Cos(ry));
                 burstSpeed = 21f;
                 burstUntil = Time.time + 0.24f;
+                DWAudio.Sfx("dodge", 0.6f);
             }
         }
 
@@ -1114,6 +1129,7 @@ namespace DW
                 burstUntil = Time.time + 0.18f;
             }
             if (meDrv != null) meDrv.PlayOnce(key == "basic" ? "Attack1" : "Skill", 0.6f);
+            DWAudio.Sfx(def.kind == "proj" ? "laser" : (def.kind == "aoe" ? "explosion" : "swing"), 0.7f);
             Send(new { t = "cast", k = key, dx = Math.Round(dx, 3), dz = Math.Round(dz, 3) });
         }
 
