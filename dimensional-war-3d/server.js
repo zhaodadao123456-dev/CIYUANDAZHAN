@@ -91,14 +91,14 @@ function addMonster(room, { name, tier, x, z }) {
   if (tier === 2) skill = 'ranged';
   else if (tier === 3) skill = 'aoe';
   else if (tier >= 4) skill = Math.random() < 0.5 ? 'ranged' : 'aoe';
-  // 数值随等级成长
-  const hp = Math.round((60 + tier * 70) * (1 + level * 0.08));
+  // 数值随等级大幅成长（Lv10 怪 ≈ 基础的 ~2.6 倍血、~2.3 倍攻）
+  const hp = Math.round((60 + tier * 70) * (1 + level * 0.18));
   room.monsters.set(id, {
     id, name, tier, level, skill,
     x, z, spawnX: x, spawnZ: z, ry: rnd(0, 6.28),
     hp, maxHp: hp,
-    atk: Math.round((8 + tier * 7) * (1 + level * 0.06)), speed: 3.0 + tier * 0.35,
-    exp: Math.round((22 + tier * 20) * (1 + level * 0.05)), gold: 8 + tier * 12,
+    atk: Math.round((8 + tier * 7) * (1 + level * 0.14)), speed: 3.0 + tier * 0.35,
+    exp: Math.round((22 + tier * 20) * (1 + level * 0.12)), gold: Math.round((8 + tier * 12) * (1 + level * 0.1)),
     state: 'idle', targetId: null, atkT: 0, skillT: 0, dieT: 0, wanderT: 0, wx: x, wz: z,
   });
 }
@@ -122,7 +122,7 @@ function spawnWorldBoss() {
   room.monsters.set(id, {
     id, name, tier: 5, boss: true, level: 10, skill: 'none', skillT: 0,
     x: bx, z: bz, spawnX: bx, spawnZ: bz, ry: 0,
-    hp: +process.env.DW_BOSS_HP || 3200, maxHp: +process.env.DW_BOSS_HP || 3200, atk: 46, speed: 4.4,
+    hp: +process.env.DW_BOSS_HP || 6000, maxHp: +process.env.DW_BOSS_HP || 6000, atk: 58, speed: 4.6,
     exp: 900, gold: 600,
     state: 'idle', targetId: null, atkT: 0, aoeT: now(), dieT: 0, wanderT: 0, wx: bx, wz: bz,
   });
@@ -642,6 +642,61 @@ function absorbShield(p, dmg) {
   return dmg;
 }
 
+/* 世界BOSS 五大技能轮换（含大范围魔法风暴） */
+function bossCast(room, mo, tgt) {
+  const t = now();
+  mo.skIdx = ((mo.skIdx || 0) + 1) % 5;
+  const alive = [...room.players.values()].filter((p) => !p.dead && !inSafeZone(room, p.x, p.z));
+  const A = mo.atk;
+  switch (mo.skIdx) {
+    case 0: { // ① 震地轰击：7米物理
+      roomCast(room.id, { t: 'baoe', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 7 });
+      for (const pl of alive) if (dist2(mo.x, mo.z, pl.x, pl.z) <= 49)
+        hurtPlayer(room, mo, pl, A * 1.7, 'phys', (l) => `💀 你被【${mo.name}】震地轰击粉碎，丢失 ${l} 金币。`);
+      break;
+    }
+    case 1: { // ② 大范围魔法风暴：16米法术（招牌技能）
+      allCast({ t: 'feed', msg: `🌪️ 世界BOSS【${mo.name}】释放【毁灭魔法风暴】，全场范围法术轰炸！` });
+      roomCast(room.id, { t: 'bstorm', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 16 });
+      for (const pl of alive) if (dist2(mo.x, mo.z, pl.x, pl.z) <= 16 * 16)
+        hurtPlayer(room, mo, pl, A * 1.6, 'magic', (l) => `💀 你被【${mo.name}】的魔法风暴吞没，丢失 ${l} 金币。`);
+      break;
+    }
+    case 2: { // ③ 弹幕扇射：朝最近玩家扇形 5 连发
+      const near = alive.sort((a, b) => dist2(mo.x, mo.z, a.x, a.z) - dist2(mo.x, mo.z, b.x, b.z))[0] || tgt;
+      const base = Math.atan2(near.x - mo.x, near.z - mo.z);
+      for (let k = -2; k <= 2; k++) {
+        const ang = base + k * 0.2;
+        const ux = Math.sin(ang), uz = Math.cos(ang);
+        const pid = 'j' + nextMid++;
+        room.projectiles.set(pid, {
+          id: pid, owner: mo.id, fromMonster: true,
+          x: mo.x + ux * 0.6, z: mo.z + uz * 0.6, dx: ux, dz: uz,
+          speed: 17, born: t, life: 2.6, hitR: 1.5, dmg: A * 1.1, dmgType: 'magic',
+        });
+        roomCast(room.id, { t: 'proj', id: pid, owner: mo.id, x: +mo.x.toFixed(2), z: +mo.z.toFixed(2), dx: +ux.toFixed(3), dz: +uz.toFixed(3), speed: 17, dim: 'mon' });
+      }
+      break;
+    }
+    case 3: { // ④ 召唤爪牙：3 只精英小弟
+      allCast({ t: 'feed', msg: `👹 世界BOSS【${mo.name}】召唤了爪牙助战！` });
+      for (let i = 0; i < 3; i++) {
+        const ang = rnd(0, Math.PI * 2);
+        addMonster(room, { name: mo.name + '·爪牙', tier: 3, x: mo.x + Math.cos(ang) * 4, z: mo.z + Math.sin(ang) * 4 });
+      }
+      break;
+    }
+    case 4: { // ⑤ 天降陨石：在最多 3 名玩家脚下落下 5 米法术圈
+      for (const pl of alive.slice(0, 3)) {
+        roomCast(room.id, { t: 'baoe', x: +pl.x.toFixed(1), z: +pl.z.toFixed(1), r: 5 });
+        for (const o of alive) if (dist2(pl.x, pl.z, o.x, o.z) <= 25)
+          hurtPlayer(room, mo, o, A * 1.3, 'magic', (l) => `💀 你被【${mo.name}】的陨石砸中，丢失 ${l} 金币。`);
+      }
+      break;
+    }
+  }
+}
+
 /* 怪物对玩家造成伤害（近战/范围/远程统一入口），含护盾、死亡结算 */
 function hurtPlayer(room, mo, pl, rawDmg, dmgType, deathNote) {
   if (pl.dead) return;
@@ -1113,25 +1168,20 @@ function tickRoom(room) {
       }
       if (best) { mo.targetId = best.id; mo.state = 'chase'; tgt = best; }
     }
-    // 世界BOSS：半血狂暴
-    if (mo.boss && !mo.enraged && mo.hp < mo.maxHp * 0.5) {
+    // 世界BOSS：40% 血狂暴
+    if (mo.boss && !mo.enraged && mo.hp < mo.maxHp * 0.4) {
       mo.enraged = true;
       mo.atk = Math.round(mo.atk * 1.5);
       mo.speed *= 1.3;
-      allCast({ t: 'feed', msg: `💢 世界BOSS【${mo.name}】进入狂暴状态！攻速与移速大幅提升，小心走位！` });
+      allCast({ t: 'feed', msg: `💢 世界BOSS【${mo.name}】进入狂暴状态！技能更频繁、伤害更高，速速规避！` });
     }
     if (tgt) {
       const d = Math.sqrt(dist2(mo.x, mo.z, tgt.x, tgt.z));
       mo.ry = Math.atan2(tgt.x - mo.x, tgt.z - mo.z);
-      // 世界BOSS：周期性震地轰击（7米范围，伤害=1.6倍攻击）
-      if (mo.boss && d < 11 && t - mo.aoeT > 6000) {
+      // 世界BOSS：5 大技能轮换释放（狂暴后更频繁）
+      if (mo.boss && t - (mo.aoeT || 0) > (mo.enraged ? 2800 : 4500)) {
         mo.aoeT = t;
-        roomCast(room.id, { t: 'baoe', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 7 });
-        for (const pl of room.players.values()) {
-          if (pl.dead || dist2(mo.x, mo.z, pl.x, pl.z) > 7 * 7) continue;
-          hurtPlayer(room, mo, pl, mo.atk * 1.6, 'phys',
-            (lost) => `💀 你被世界BOSS【${mo.name}】的震地轰击粉碎，丢失 ${lost} 金币。`);
-        }
+        bossCast(room, mo, tgt);
       }
       // 精英怪技能：远程弹幕 / 范围震击（按怪物 skill 字段）
       if (!mo.boss && mo.skill && mo.skill !== 'none' && t - mo.skillT > 4200) {

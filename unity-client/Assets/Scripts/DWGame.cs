@@ -321,6 +321,15 @@ namespace DW
                     if ((at - pos).sqrMagnitude < 9f * 9f) Shake(0.25f, 0.3f);
                     break;
                 }
+                case "bstorm":
+                {
+                    // 世界BOSS大范围魔法风暴：超大紫色冲击波 + 强震
+                    var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
+                    float r = (float?)m["r"] ?? 16f;
+                    SpawnShockwave(at, r, new Color(0.8f, 0.27f, 1f));
+                    if ((at - pos).sqrMagnitude < r * r) Shake(0.6f, 0.7f);
+                    break;
+                }
                 case "dimfx":
                 {
                     var kind = (string)m["kind"];

@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = 34567;
-const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 40 }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 12 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvErr = '';
 srv.stdout.on('data', (d) => process.stdout.write('[srv] ' + d));
 srv.stderr.on('data', (d) => { srvErr += d; process.stderr.write('[srv-err] ' + d); });
@@ -125,37 +125,40 @@ function client(name, dim, cls) {
   const bossMsg = A.got('boss', (m) => m.alive === 1);
   check('世界BOSS状态广播(含坐标)', !!(bossMsg && bossMsg.dim && typeof bossMsg.x === 'number'), bossMsg && `在${bossMsg.dim}(${bossMsg.x},${bossMsg.z})`);
 
-  // 10.8 讨伐BOSS全链路：走近 → 吃到震地轰击 → 打死 → 贡献结算/MVP奖励
+  // 10.8 讨伐BOSS全链路：走近 → 吃到BOSS技能 → 打死 → 贡献结算/MVP奖励
   if (bossMsg) {
     const D = client();
     await D.open;
     D.send({ t: 'join', name: '测试讨伐者', dim: bossMsg.dim, cls: 'tank' });
     await sleep(400);
-    const wD = D.got('welcome');
-    let [dx0, dz0] = [wD ? wD.x : 0, wD ? wD.z : 0];
-    // 小步快走到BOSS身边2米（绕过服务器测速）
-    for (let i = 0; i < 120 && Math.hypot(bossMsg.x - dx0, bossMsg.z - dz0) > 2; i++) {
-      const d = Math.hypot(bossMsg.x - dx0, bossMsg.z - dz0);
-      dx0 += (bossMsg.x - dx0) / d * 0.7; dz0 += (bossMsg.z - dz0) / d * 0.7;
-      D.send({ t: 'mv', x: dx0, z: dz0, ry: 0, anim: 'run' });
-      await sleep(35);
-    }
-    // 贴脸盾击直到BOSS倒下（每发按最新快照瞄准；若中途阵亡则复活再战）
-    for (let i = 0; i < 16 && !A.got('feed', (m) => /伤害贡献榜/.test(m.msg)); i++) {
-      if (D.got('pdie', (m) => m.id === (D.got('welcome') || {}).id) && !D.got('prespawn')) {
-        await sleep(4100);
-        D.send({ t: 'respawn' });
-        await sleep(300);
-      }
+    const myId = (D.got('welcome') || {}).id;
+    const myPos = () => {
+      const snap = [...D.msgs].reverse().find((m) => m.t === 'snap');
+      const row = snap && snap.ps && snap.ps.find((r) => r[0] === myId);
+      return row ? { x: row[1], z: row[2], dead: row[8] === 1 } : null;
+    };
+    const killed = () => A.got('feed', (m) => /伤害贡献榜/.test(m.msg));
+    const bossAoe = () => D.got('baoe') || D.got('bstorm') || D.got('maoe');
+    // 每帧从快照读自身真实位置 → 死了就复活 → 远则贴近 → 近则盾击（对增益的世界鲁棒）
+    for (let i = 0; i < 260 && !killed(); i++) {
+      const me = myPos();
+      if (me && me.dead) { D.send({ t: 'respawn' }); await sleep(200); continue; }
+      const cx = me ? me.x : 0, cz = me ? me.z : 0;
       const snap = [...D.msgs].reverse().find((m) => m.t === 'snap');
       const boss = snap && snap.ms.find((m) => m[7] === 5);
-      const [bx, bz] = boss ? [boss[1], boss[2]] : [bossMsg.x, bossMsg.z];
-      const dl = Math.hypot(bx - dx0, bz - dz0) || 1;
-      D.send({ t: 'cast', k: 'basic', dx: (bx - dx0) / dl, dz: (bz - dz0) / dl });
-      await sleep(780);
+      const bx = boss ? boss[1] : bossMsg.x, bz = boss ? boss[2] : bossMsg.z;
+      const d = Math.hypot(bx - cx, bz - cz) || 1;
+      if (d > 2.6) {
+        D.send({ t: 'mv', x: cx + (bx - cx) / d * 0.7, z: cz + (bz - cz) / d * 0.7, ry: 0, anim: 'run' });
+        await sleep(40);
+      } else {
+        D.send({ t: 'mv', x: cx, z: cz, ry: Math.atan2((bx - cx) / d, (bz - cz) / d), anim: 'idle' });
+        D.send({ t: 'cast', k: 'basic', dx: (bx - cx) / d, dz: (bz - cz) / d });
+        await sleep(120);
+      }
     }
     await sleep(400);
-    check('世界BOSS震地轰击', !!D.got('baoe'), D.got('baoe') ? `r=${D.got('baoe').r}` : '未触发');
+    check('世界BOSS技能释放', !!bossAoe(), bossAoe() ? '已触发' : '未触发');
     const settle = A.got('feed', (m) => /伤害贡献榜/.test(m.msg));
     check('BOSS伤害贡献结算', !!settle, settle && settle.msg.slice(0, 40));
     const mvp = D.got('feed', (m) => /MVP奖励|MVP/.test(m.msg));

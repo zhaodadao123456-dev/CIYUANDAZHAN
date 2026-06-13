@@ -448,6 +448,13 @@ function onMsg(m) {
       flashLight(m.x, 1.3, m.z, 0xb050ff, 3, 10, 0.3);
       break;
     }
+    case 'bstorm': {
+      // 世界BOSS大范围魔法风暴：超大紫色冲击环 + 强光
+      ringFx(m.x, m.z, m.r || 16, 0xcc44ff);
+      ringFx(m.x, m.z, (m.r || 16) * 0.6, 0x8822ff);
+      flashLight(m.x, 2.0, m.z, 0xcc44ff, 6, 28, 0.6);
+      break;
+    }
     case 'feed': feed(m.msg); break;
     case 'chat': {
       const d = DIMENSIONS.find((x) => x.id === m.dim);
