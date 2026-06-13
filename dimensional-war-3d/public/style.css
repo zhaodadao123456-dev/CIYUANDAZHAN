@@ -1,18 +1,18 @@
 /* ===== 次元大战 3D ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a18; }
-body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: #e8e8f0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a34; }
+body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: #f1f1f8; }
 #c3d { position: fixed; inset: 0; display: block; }
 .hidden { display: none !important; }
-.dim-text { color: #9a9ab5; font-size: 12px; }
+.dim-text { color: #b8b8d6; font-size: 12px; }
 
 /* ---------- 加入界面 ---------- */
 #join-screen {
   position: fixed; inset: 0; z-index: 50;
-  /* 左侧深色、右侧透出英雄预览 */
+  /* 左侧半透蓝紫、右侧透出英雄预览（整体提亮，避免一片死黑） */
   background: linear-gradient(to right,
-    rgba(10,10,24,0.96) 0%, rgba(10,10,24,0.9) 34%,
-    rgba(10,10,24,0.4) 52%, rgba(10,10,24,0.05) 66%, rgba(10,10,24,0) 78%);
+    rgba(28,28,58,0.94) 0%, rgba(28,28,58,0.82) 34%,
+    rgba(28,28,58,0.38) 52%, rgba(28,28,58,0.05) 66%, rgba(28,28,58,0) 78%);
   display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
   padding: 14px clamp(16px, 5vw, 70px); overflow-y: auto;
 }
@@ -20,7 +20,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
   #join-screen {
     align-items: center; text-align: center;
     background: linear-gradient(to bottom,
-      rgba(10,10,24,0.95) 0%, rgba(10,10,24,0.7) 45%, rgba(10,10,24,0.2) 70%, rgba(10,10,24,0.6) 100%);
+      rgba(28,28,58,0.92) 0%, rgba(28,28,58,0.66) 45%, rgba(28,28,58,0.2) 70%, rgba(28,28,58,0.6) 100%);
   }
 }
 .title {
@@ -36,7 +36,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
 .preview-hint { color: #8a8aa3; font-size: 12px; margin-top: 10px; text-shadow: 0 1px 3px #000; }
 .join-box input {
   width: 100%; padding: 12px 16px; font-size: 16px;
-  background: #15152c; border: 1px solid #44447a; border-radius: 10px;
+  background: #26264a; border: 1px solid #44447a; border-radius: 10px;
   color: #fff; outline: none; margin-bottom: 14px;
 }
 .dim-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
@@ -54,7 +54,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
   position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
   width: min(860px, 92vw);
   font-size: 12px; line-height: 1.8; text-align: center;
-  color: #c8c8dd; background: rgba(14,14,32,0.72);
+  color: #c8c8dd; background: rgba(30,30,58,0.78);
   border: 1px solid #333355; border-radius: 12px; padding: 8px 18px;
 }
 
@@ -85,11 +85,11 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
 
 #top-left {
   position: absolute; top: 14px; left: 14px;
-  background: rgba(12,12,28,0.75); border: 1px solid #333355;
+  background: rgba(28,30,56,0.8); border: 1px solid #333355;
   border-radius: 12px; padding: 10px 14px; min-width: 250px;
 }
 #room-name { font-size: 15px; font-weight: bold; margin-bottom: 6px; }
-.bar { position: relative; height: 16px; border-radius: 8px; background: #11112a; overflow: hidden; border: 1px solid #333; margin: 4px 0; }
+.bar { position: relative; height: 16px; border-radius: 8px; background: #1e1e3c; overflow: hidden; border: 1px solid #333; margin: 4px 0; }
 .bar.expbar { height: 7px; }
 #hp-fill { height: 100%; background: linear-gradient(90deg,#27ae60,#2ecc71); transition: width .2s; }
 #exp-fill { height: 100%; background: linear-gradient(90deg,#8e44ad,#9b59b6); transition: width .2s; }
@@ -129,7 +129,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
   display: flex; flex-direction: column; gap: 5px; width: 170px;
 }
 .party-mem {
-  background: rgba(8, 14, 28, 0.72); border: 1px solid rgba(110, 170, 255, 0.3);
+  background: rgba(26, 30, 56, 0.72); border: 1px solid rgba(110, 170, 255, 0.3);
   border-radius: 8px; padding: 4px 8px; font-size: 11px;
 }
 .party-mem .pm-bar {
@@ -176,7 +176,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
 
 #minimap {
   position: absolute; right: 14px; bottom: 110px; width: 170px; height: 170px;
-  background: rgba(8,10,22,0.66); border: 1px solid rgba(120,170,255,0.45);
+  background: rgba(24,28,52,0.66); border: 1px solid rgba(120,170,255,0.45);
   border-radius: 10px; z-index: 18;
 }
 @media (max-width: 760px) { #minimap { width: 116px; height: 116px; bottom: 92px; } }
@@ -311,7 +311,7 @@ body.touch .controls-help { display: none; }
 #panel {
   position: fixed; right: 14px; top: 64px; z-index: 65;
   width: 360px; max-width: 92vw; max-height: 72vh;
-  background: rgba(13,13,32,0.97); border: 1px solid #44447a; border-radius: 14px;
+  background: rgba(30,30,58,0.97); border: 1px solid #44447a; border-radius: 14px;
   display: flex; flex-direction: column; overflow: hidden;
 }
 .panel-head { display: flex; border-bottom: 1px solid #33335a; }
@@ -412,7 +412,7 @@ body.touch #panel { right: 8px; top: 56px; max-height: 78vh; }
 #chatbar.hidden { display: none; }
 #chat-input {
   width: 100%; box-sizing: border-box; padding: 10px 14px;
-  background: rgba(10, 16, 30, 0.92); color: #eaf2ff;
+  background: rgba(28, 34, 60, 0.94); color: #eaf2ff;
   border: 1px solid rgba(120, 180, 255, 0.45); border-radius: 10px;
   font-size: 15px; outline: none;
 }

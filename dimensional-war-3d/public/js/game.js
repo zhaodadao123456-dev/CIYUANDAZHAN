@@ -210,24 +210,24 @@ function initTouch() {
  * ============================================================ */
 function initPreview() {
   preview.scene = new THREE.Scene();
-  preview.scene.background = new THREE.Color(0x0b0b1c);
-  preview.scene.fog = new THREE.Fog(0x0b0b1c, 8, 22);
+  preview.scene.background = new THREE.Color(0x1c1c38);
+  preview.scene.fog = new THREE.Fog(0x1c1c38, 10, 26);
   preview.camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 50);
-  // 宽屏时相机偏左、英雄显示在右侧，给左侧选择面板让位；窄屏居中
-  preview.camOffset = innerWidth > 760 ? -2.0 : 0;
-  preview.camera.position.set(preview.camOffset, 1.8, 5.2);
-  preview.camera.lookAt(0, 0.95, 0);
-  preview.scene.add(new THREE.HemisphereLight(0xccddff, 0x202035, 1.0));
-  const key = new THREE.DirectionalLight(0xffffff, 1.6);
+  // 宽屏时相机正对、视线偏左 → 英雄渲染在屏幕右侧，给左侧选择面板完整让位；窄屏居中
+  preview.lookX = innerWidth > 760 ? -2.6 : 0;
+  preview.camera.position.set(0, 1.7, 5.0);
+  preview.camera.lookAt(preview.lookX, 0.95, 0);
+  preview.scene.add(new THREE.HemisphereLight(0xdde8ff, 0x3a3a52, 1.35));
+  const key = new THREE.DirectionalLight(0xffffff, 2.0);
   key.position.set(2.5, 4, 3);
   preview.scene.add(key);
-  const rim = new THREE.DirectionalLight(0x8888ff, 1.2);
+  const rim = new THREE.DirectionalLight(0xaab0ff, 1.5);
   rim.position.set(-3, 2.5, -3);
   preview.scene.add(rim);
   window.addEventListener('resize', () => {
     preview.camera.aspect = innerWidth / innerHeight;
-    preview.camOffset = innerWidth > 760 ? -2.0 : 0;
-    preview.camera.position.x = preview.camOffset;
+    preview.lookX = innerWidth > 760 ? -2.6 : 0;
+    preview.camera.lookAt(preview.lookX, 0.95, 0);
     preview.camera.updateProjectionMatrix();
   });
 }
