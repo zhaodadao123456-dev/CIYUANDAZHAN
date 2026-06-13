@@ -711,24 +711,42 @@ function absorbShield(p, dmg) {
   return dmg;
 }
 
+/* 预警型地面AoE：先广播警示圈，delay 毫秒后才真正落地结算。
+ * 落地瞬间按玩家「当时」的位置判定——站在圈内才吃伤害，跑出去即可躲避，
+ * 让世界BOSS是技术战（看预警走位）而非纯数值硬吃。 */
+function bossAoE(room, mo, cx, cz, radius, opt) {
+  const { delay = 1100, dmgMul = 1.5, dmgType = 'magic', kind = 'baoe', note } = opt || {};
+  const A = mo.atk;
+  const r2 = radius * radius;
+  cx = +cx.toFixed(1); cz = +cz.toFixed(1);
+  // 预警圈：客户端依 delay 把危险区从中心填满，填满即落地
+  roomCast(room.id, { t: 'warn', x: cx, z: cz, r: radius, delay, kind });
+  setTimeout(() => {
+    roomCast(room.id, { t: kind, x: cx, z: cz, r: radius });      // 落地冲击特效
+    for (const pl of room.players.values()) {
+      if (pl.dead || inSafeZone(room, pl.x, pl.z)) continue;
+      if (dist2(cx, cz, pl.x, pl.z) <= r2) hurtPlayer(room, mo, pl, A * dmgMul, dmgType, note);
+    }
+  }, delay);
+}
+
 /* 世界BOSS 五大技能轮换（含大范围魔法风暴） */
 function bossCast(room, mo, tgt) {
   const t = now();
   mo.skIdx = ((mo.skIdx || 0) + 1) % 5;
   const alive = [...room.players.values()].filter((p) => !p.dead && !inSafeZone(room, p.x, p.z));
   const A = mo.atk;
+  const tele = mo.enraged ? 800 : 1150;   // 狂暴后预警更短，留给玩家的躲避窗口更紧
   switch (mo.skIdx) {
-    case 0: { // ① 震地轰击：7米物理
-      roomCast(room.id, { t: 'baoe', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 7 });
-      for (const pl of alive) if (dist2(mo.x, mo.z, pl.x, pl.z) <= 49)
-        hurtPlayer(room, mo, pl, A * 1.7, 'phys', (l) => `💀 你被【${mo.name}】震地轰击粉碎，丢失 ${l} 金币。`);
+    case 0: { // ① 震地轰击：7米物理（预警后落地）
+      bossAoE(room, mo, mo.x, mo.z, 7, { delay: tele, dmgMul: 1.7, dmgType: 'phys', kind: 'baoe',
+        note: (l) => `💀 你被【${mo.name}】震地轰击粉碎，丢失 ${l} 金币。` });
       break;
     }
-    case 1: { // ② 大范围魔法风暴：16米法术（招牌技能）
-      allCast({ t: 'feed', msg: `🌪️ 世界BOSS【${mo.name}】释放【毁灭魔法风暴】，全场范围法术轰炸！` });
-      roomCast(room.id, { t: 'bstorm', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 16 });
-      for (const pl of alive) if (dist2(mo.x, mo.z, pl.x, pl.z) <= 16 * 16)
-        hurtPlayer(room, mo, pl, A * 1.6, 'magic', (l) => `💀 你被【${mo.name}】的魔法风暴吞没，丢失 ${l} 金币。`);
+    case 1: { // ② 大范围魔法风暴：16米法术（招牌技能，预警后落地）
+      allCast({ t: 'feed', msg: `🌪️ 世界BOSS【${mo.name}】蓄力【毁灭魔法风暴】，速速逃离红圈！` });
+      bossAoE(room, mo, mo.x, mo.z, 16, { delay: tele + 350, dmgMul: 1.6, dmgType: 'magic', kind: 'bstorm',
+        note: (l) => `💀 你被【${mo.name}】的魔法风暴吞没，丢失 ${l} 金币。` });
       break;
     }
     case 2: { // ③ 弹幕扇射：朝最近玩家扇形 5 连发
@@ -755,11 +773,10 @@ function bossCast(room, mo, tgt) {
       }
       break;
     }
-    case 4: { // ⑤ 天降陨石：在最多 3 名玩家脚下落下 5 米法术圈
+    case 4: { // ⑤ 天降陨石：锁定最多 3 名玩家脚下落 5 米法术圈（预警后落地，走开即躲过）
       for (const pl of alive.slice(0, 3)) {
-        roomCast(room.id, { t: 'baoe', x: +pl.x.toFixed(1), z: +pl.z.toFixed(1), r: 5 });
-        for (const o of alive) if (dist2(pl.x, pl.z, o.x, o.z) <= 25)
-          hurtPlayer(room, mo, o, A * 1.3, 'magic', (l) => `💀 你被【${mo.name}】的陨石砸中，丢失 ${l} 金币。`);
+        bossAoE(room, mo, pl.x, pl.z, 5, { delay: tele, dmgMul: 1.3, dmgType: 'magic', kind: 'baoe',
+          note: (l) => `💀 你被【${mo.name}】的陨石砸中，丢失 ${l} 金币。` });
       }
       break;
     }

@@ -443,6 +443,11 @@ function onMsg(m) {
       inviteTimer = setTimeout(() => $('invite-prompt').classList.add('hidden'), 30000);
       break;
     }
+    case 'warn': {
+      // 世界BOSS技能预警：地面危险圈从中心填满，填满即落地——看圈走位躲技能
+      warnFx(m.x, m.z, m.r || 7, (m.delay || 1100) / 1000, m.kind);
+      break;
+    }
     case 'baoe': {
       // 世界BOSS震地轰击：红色冲击环 + 红光
       ringFx(m.x, m.z, m.r || 7, 0xff3344);
@@ -1227,6 +1232,29 @@ function ringFx(x, z, radius, color) {
   } });
 }
 
+/* BOSS技能预警：地面危险区。轮廓环常驻急闪标出最终半径，
+ * 内部填充盘随 delaySec 由中心扩张到满——填满瞬间即落地，玩家据此走位躲避。 */
+function warnFx(x, z, radius, delaySec, kind) {
+  const color = kind === 'bstorm' ? 0xcc44ff : 0xff3344;
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(radius, 48),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }));
+  fill.rotation.x = -Math.PI / 2;
+  fill.position.set(x, 0.08, z);
+  fill.scale.setScalar(0.001);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.93, radius, 56),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, 0.09, z);
+  scene.add(fill); scene.add(ring);
+  fxList.push({ obj: fill, age: 0, life: delaySec, update(dt) {
+    this.age += dt;
+    const k = Math.min(1, this.age / this.life);
+    fill.scale.setScalar(Math.max(0.001, k));
+    fill.material.opacity = 0.18 + 0.28 * k;                              // 越临近落地越红
+    ring.material.opacity = 0.5 + 0.45 * Math.abs(Math.sin(this.age * 13)); // 急促闪烁警示
+  }, done() { scene.remove(ring); ring.geometry.dispose(); ring.material.dispose(); fill.geometry.dispose(); fill.material.dispose(); } });
+}
+
 function burstFx(x, y, z, color) {
   const s = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 10),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 }));
@@ -1765,7 +1793,7 @@ function animate() {
   for (let i = fxList.length - 1; i >= 0; i--) {
     const fx = fxList[i];
     fx.update(dt);
-    if (fx.age >= fx.life) { scene.remove(fx.obj); fxList.splice(i, 1); }
+    if (fx.age >= fx.life) { scene.remove(fx.obj); if (fx.done) fx.done(); fxList.splice(i, 1); }
   }
   // 伤害数字
   for (let i = dmgSprites.length - 1; i >= 0; i--) {
