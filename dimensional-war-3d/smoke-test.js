@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = 34567;
-const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 45, DW_MELEE_NOW: '1', DW_MELEE_MS: 90000, DW_LAIR_R: 50, DW_MON_MAXLEVEL: 8 }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 45, DW_MELEE_NOW: '1', DW_MELEE_MS: 90000, DW_LAIR_R: 50, DW_MON_MAXLEVEL: 8, DW_MON_COUNT: 6 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvErr = '';
 srv.stdout.on('data', (d) => process.stdout.write('[srv] ' + d));
 srv.stderr.on('data', (d) => { srvErr += d; process.stderr.write('[srv-err] ' + d); });

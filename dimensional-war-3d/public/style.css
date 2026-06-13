@@ -397,6 +397,14 @@ body.touch .controls-help { display: none; }
 .ach-ds { font-size: 10px; color: #9a9ab5; }
 .ach-chk { position: absolute; top: 6px; right: 8px; font-size: 11px; }
 .ach-card.got .ach-chk { color: #2ecc71; }
+.ach-card.on { border-color: #7CFC9A; box-shadow: 0 0 0 1px rgba(124,252,154,0.4) inset; }
+.ach-eff { font-size: 10px; color: #7CFC9A; margin-top: 2px; }
+.ach-eqbtn { align-self: center; flex-shrink: 0; background: #2a4a2c; color: #cfe; border: 1px solid #3a7a45; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+.ach-eqbtn.on { background: #5a2a2c; border-color: #7a3a3a; color: #fdd; }
+.ach-equipped { font-size: 12px; margin: 2px 0 10px; padding: 7px 10px; border-radius: 8px; background: rgba(124,252,154,0.08); border: 1px solid #2c5a3a; }
+.bagmode-row { display: flex; gap: 6px; align-items: center; font-size: 11px; color: #b8b8d6; margin-bottom: 8px; flex-wrap: wrap; }
+.bagmode { background: rgba(40,40,72,0.6); color: #bcbce0; border: 1px solid #3a3a66; border-radius: 7px; padding: 5px 9px; font-size: 11px; cursor: pointer; }
+.bagmode.on { background: rgba(255,209,102,0.16); color: #ffd166; border-color: #ffd166; font-weight: bold; }
 
 /* ---------- 背包/聊天/退出按钮 ---------- */
 .bag-btn { top: 64px; }

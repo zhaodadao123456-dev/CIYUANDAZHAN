@@ -324,6 +324,8 @@ function onMsg(m) {
       if (m.shop) shopData = m.shop;
       if (m.achDefs) achDefs = m.achDefs;
       if (m.ach) myAch = new Set(m.ach);
+      if (m.achEquip !== undefined) achEquip = m.achEquip;
+      if (m.bagMode) bagMode = m.bagMode;
       if (m.dimSkill) { dimSkillDef = m.dimSkill; updateDimSkillSlot(); }
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       obstacles = m.obstacles || [];
@@ -1389,6 +1391,8 @@ function updateYou(y) {
   $('hp-text').textContent = (y.shield ? `🛡${y.shield} ` : '') + `${y.hp}/${y.maxHp}`;
   $('exp-fill').style.width = (y.exp / y.expNeed * 100) + '%';
   $('stat-line').textContent = `Lv.${y.level} ｜ 💰${y.gold} ｜ 击杀${y.kills} ｜ PvP${y.pvpKills}` + (HUD.skPts > 0 ? ` ｜ ✨技能点×${HUD.skPts}` : '');
+  if (y.achEquip !== undefined) achEquip = y.achEquip;
+  if (y.bagMode) bagMode = y.bagMode;
   if (me) me.hp = y.hp;
   if (!$('panel').classList.contains('hidden')) renderPanel();
 }
@@ -1477,11 +1481,16 @@ function renderPanel() {
           : '<span class="dim-text">空</span>'}</div>`;
       }).join('')}</div>
       <div class="panel-sub">背包（${(invData.inv || []).length}/24）</div>
+      <div class="bagmode-row">背包满时：
+        <button class="bagmode ${bagMode === 'sell' ? 'on' : ''}" data-bm="sell">💰 自动卖低品质</button>
+        <button class="bagmode ${bagMode === 'enhance' ? 'on' : ''}" data-bm="enhance">🔨 自动强化穿戴</button>
+      </div>
       ${(invData.inv || []).map((it, i) => `
         <div class="inv-row">
           <span>${itemName(it)} <small class="dim-text">${itemFullText(it)}</small></span>
           <span class="inv-btns"><button data-eq="${i}">装备</button>${enhBtn(it, `data-enh-i="${i}"`)}<button data-sell="${i}">卖${Math.round(it.val * 0.4)}金</button></span>
         </div>`).join('') || '<div class="dim-text">背包空空如也，去打怪掉装备或商店购买吧</div>'}`;
+    body.querySelectorAll('[data-bm]').forEach((b) => b.onclick = () => { if (bagMode !== b.dataset.bm) net({ t: 'bagmode', mode: b.dataset.bm }); });
     body.querySelectorAll('[data-enh-i]').forEach((b) => b.onclick = () => net({ t: 'enhance', i: +b.dataset.enhI }));
     body.querySelectorAll('[data-enh-slot]').forEach((b) => b.onclick = () => net({ t: 'enhance', slot: b.dataset.enhSlot }));
     body.querySelectorAll('[data-eq]').forEach((b) => b.onclick = () => net({ t: 'equip', i: +b.dataset.eq }));
@@ -1507,18 +1516,26 @@ function renderPanel() {
     });
   } else if (panelTab === 'ach') {
     const pct = achDefs.length ? Math.round(myAch.size / achDefs.length * 100) : 0;
+    const cur = achDefs.find((a) => a.id === achEquip);
     body.innerHTML = `
-      <div class="panel-sub">🏅 成就 ${myAch.size}/${achDefs.length}（${pct}%）</div>
+      <div class="panel-sub">🏅 成就 ${myAch.size}/${achDefs.length}（${pct}%）｜ 每次可装备 1 个，享其专属增益</div>
       <div class="ach-bar"><span style="width:${pct}%"></span></div>
+      <div class="ach-equipped">当前装备：${cur ? `${cur.icon} <b>${cur.name}</b> <span style="color:#7CFC9A">${cur.effText || ''}</span>` : '<span class="dim-text">无（点已解锁成就「装备」生效）</span>'}</div>
       <div class="ach-grid">
       ${achDefs.map((a) => {
         const got = myAch.has(a.id);
-        return `<div class="ach-card ${got ? 'got' : 'locked'}">
+        const on = a.id === achEquip;
+        return `<div class="ach-card ${got ? 'got' : 'locked'} ${on ? 'on' : ''}">
           <div class="ach-ic">${got ? a.icon : '🔒'}</div>
-          <div class="ach-info"><div class="ach-nm">${a.name}</div><div class="ach-ds">${a.desc}</div></div>
-          <span class="ach-chk">${got ? '✔' : ''}</span>
+          <div class="ach-info">
+            <div class="ach-nm">${a.name}</div>
+            <div class="ach-ds">${a.desc}</div>
+            ${a.effText ? `<div class="ach-eff">⚡ ${a.effText}</div>` : ''}
+          </div>
+          ${got ? `<button class="ach-eqbtn ${on ? 'on' : ''}" data-achid="${a.id}">${on ? '卸下' : '装备'}</button>` : '<span class="ach-chk">🔒</span>'}
         </div>`;
       }).join('')}</div>`;
+    body.querySelectorAll('[data-achid]').forEach((b) => b.onclick = () => net({ t: 'achequip', id: b.dataset.achid }));
   } else if (panelTab === 'rank') {
     const dimIcon2 = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.icon : '❔'; };
     const dimAcc = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.color : '#aab'; };
@@ -1592,6 +1609,8 @@ let pendingInviteFrom = null;
 let inviteTimer;
 let achDefs = [];
 let myAch = new Set();
+let achEquip = null;
+let bagMode = 'sell';
 
 function renderPartyHud() {
   const el = $('party-hud');

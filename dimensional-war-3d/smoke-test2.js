@@ -7,7 +7,7 @@ const PORT = 34568;
 // 预置一个5级猎人射手：带技能点和金币
 fs.writeFileSync('players.json', JSON.stringify({
   // daily 预置为今日，避免上线签到 +200 金币干扰精确金币断言
-  '测试猎人2': { level: 18, exp: 0, gold: 5000, kills: 0, pvpKills: 0, cls: 'ranger', sk: { basic: 1, q: 1, e: 1, r: 1 }, skPts: 4, inv: [], equip: {}, daily: new Date().toISOString().slice(0, 10) },
+  '测试猎人2': { level: 18, exp: 0, gold: 5000, kills: 0, pvpKills: 0, cls: 'ranger', sk: { basic: 1, q: 1, e: 1, r: 1 }, skPts: 4, inv: [], equip: {}, ach: { lv10: 1 }, daily: new Date().toISOString().slice(0, 10) },
 }));
 
 const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -76,6 +76,16 @@ const check = (name, ok, extra = '') => { results.push([name, ok]); console.log(
   inv = lastInv(); you = lastYou();
   check('装备强化(+1)生效', inv.equip.weapon.enh === 1 && you.patk > patkEq && you.gold < goldB,
     `enh=${inv.equip.weapon.enh} patk ${patkEq}→${you.patk} gold ${goldB}→${you.gold}`);
+
+  // 2.6 装备成就（lv10「次元强者」攻击+7%）→ 物攻提升；卸下还原
+  const patkBefore = lastYou().patk;
+  send({ t: 'achequip', id: 'lv10' });
+  await sleep(250);
+  const patkAch = lastYou().patk;
+  check('装备成就增益生效(攻击+7%)', patkAch > patkBefore, `patk ${patkBefore}→${patkAch}`);
+  send({ t: 'achequip', id: 'lv10' });   // 再次=卸下
+  await sleep(250);
+  check('卸下成就还原属性', lastYou().patk === patkBefore, `patk=${lastYou().patk}`);
 
   // 3. 走向最近的T1怪并打残
   let snap = lastSnap();
