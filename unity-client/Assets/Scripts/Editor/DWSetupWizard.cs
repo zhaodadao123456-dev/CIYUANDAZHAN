@@ -66,6 +66,8 @@ namespace DW.EditorTools
             ("cyber",   (p) => Has(p, "trooper") && Has(p, "v.2", "v2")),
         };
         static bool Has(string p, params string[] keys) { var l = Lower(p); foreach (var k in keys) if (l.Contains(k)) return true; return false; }
+        /* 五次元顺序（与 DWData.Dims 一致），用于把多余角色补满每个次元 */
+        static readonly string[] DimOrder = { "tech", "xiuxian", "cyber", "magic", "hunter" };
 
         const string HeroDir = "Assets/Resources/DWHeroes";
         const string MobDir = "Assets/Resources/DWMobs";
@@ -99,23 +101,26 @@ namespace DW.EditorTools
                 SaveCharPrefab(bossSrcs[0], $"{ResDir}/mon_boss.prefab", ctrl, "世界BOSS(小丑)", log);
             else log.AppendLine("未发现小丑模型，世界BOSS沿用怪物模型");
 
-            // 次元专属英雄（依据真实购买包精确分配，写 Resources/DW/hero_{dim}，运行时优先级最高）
+            // 次元专属英雄：① 关键词精确匹配已知购买包 → ② 剩余次元从未占用英雄里各分一个（保证每次元外观不同）
+            // 写 Resources/DW/hero_{dim}，运行时优先级最高。角色越多分配越精确。
             log.AppendLine("\n--- 次元专属英雄分配 ---");
             var usedForDim = new HashSet<string>();
-            foreach (var (dim, match) in DimHeroRules)
+            string PickDim(string dim, System.Func<string, bool> match, string note)
             {
-                var src = heroSrcs.FirstOrDefault(match);
-                if (src == null) { log.AppendLine($"[{dim}] 未匹配到专属购买包 → 运行时回退角色池"); continue; }
-                SaveCharPrefab(src, $"{ResDir}/hero_{dim}.prefab", ctrl, $"次元英雄[{dim}]", log, forceHuman: true);
+                var src = heroSrcs.FirstOrDefault((p) => !usedForDim.Contains(p) && match(p));
+                if (src == null) return null;
+                SaveCharPrefab(src, $"{ResDir}/hero_{dim}.prefab", ctrl, $"次元英雄[{dim}]{note}", log, forceHuman: true);
                 usedForDim.Add(src);
+                return src;
             }
-            // 猎人无专属购买包：复用一个尚未占用的人形英雄（偏好男性形象），让其也有稳定外观
-            if (AssetDatabase.LoadAssetAtPath<GameObject>($"{ResDir}/hero_hunter.prefab") == null)
+            // ① 已知包按主题精确分配
+            foreach (var (dim, match) in DimHeroRules) PickDim(dim, match, "");
+            // ② 其余次元：从尚未占用的英雄里各取一个不同形象（用上更多角色）
+            foreach (var dim in DimOrder)
             {
-                var hunterSrc = heroSrcs.FirstOrDefault((p) => !usedForDim.Contains(p) && Has(p, "man", "boy", "male"))
-                             ?? heroSrcs.FirstOrDefault((p) => !usedForDim.Contains(p));
-                if (hunterSrc != null)
-                    SaveCharPrefab(hunterSrc, $"{ResDir}/hero_hunter.prefab", ctrl, "次元英雄[hunter] (借用人形)", log, forceHuman: true);
+                if (AssetDatabase.LoadAssetAtPath<GameObject>($"{ResDir}/hero_{dim}.prefab") != null) continue;
+                if (PickDim(dim, (p) => true, " (自动分配)") == null)
+                    log.AppendLine($"[{dim}] 可用角色已分完 → 运行时回退共享角色池");
             }
 
             // 英雄池 DWHeroes/h_XX（运行时按「次元×职业」组合取用的兜底，用上全部人物 + 未来未知购买包）
