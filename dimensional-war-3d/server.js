@@ -1717,15 +1717,30 @@ function tickRoom(room) {
   }
 }
 
+const VIEW_R2 = 95 * 95;   // 兴趣范围：只把该范围内的怪物下发给玩家（地图大、怪多时大幅省带宽与客户端渲染）
+function snapRow(mo) {
+  return [mo.id, +mo.x.toFixed(2), +mo.z.toFixed(2), +mo.ry.toFixed(2), mo.state, Math.max(0, Math.round(mo.hp)), mo.maxHp, mo.tier, mo.name, mo.level || 1];
+}
 function snapshot(room) {
   if (room.players.size === 0) return;
+  // 玩家与宝宝数量少，整体下发；怪物按各玩家兴趣范围裁剪
   const ps = [...room.players.values()].map((p) => [p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.ry.toFixed(2), p.anim, Math.round(p.hp), maxHp(p), p.level, p.dead ? 1 : 0]);
-  const ms = [...room.monsters.values()].map((mo) => [mo.id, +mo.x.toFixed(2), +mo.z.toFixed(2), +mo.ry.toFixed(2), mo.state, Math.max(0, Math.round(mo.hp)), mo.maxHp, mo.tier, mo.name, mo.level || 1]);
   const pets = [...room.players.values()].filter((p) => p.pet).map((p) => {
     const pe = p.pet;
     return [p.id, pe.tier, +pe.x.toFixed(2), +pe.z.toFixed(2), +pe.ry.toFixed(2), pe.state, Math.max(0, Math.round(pe.hp)), pe.maxHp, pe.name];
   });
-  roomCast(room.id, { t: 'snap', ps, ms, pets });
+  const mons = [...room.monsters.values()];
+  // 怪物少时无需逐人裁剪，整体下发省 CPU
+  if (mons.length <= 40) {
+    roomCast(room.id, { t: 'snap', ps, ms: mons.map(snapRow), pets });
+    return;
+  }
+  for (const p of room.players.values()) {
+    if (p.ws.readyState !== 1) continue;
+    const ms = [];
+    for (const mo of mons) if (dist2(p.x, p.z, mo.x, mo.z) <= VIEW_R2 || mo.boss) ms.push(snapRow(mo));
+    send(p.ws, { t: 'snap', ps, ms, pets });
+  }
 }
 
 setInterval(() => {

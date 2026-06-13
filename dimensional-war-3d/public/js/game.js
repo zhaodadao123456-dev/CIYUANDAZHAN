@@ -1357,14 +1357,24 @@ function drawBar(ent) {
   const { cv, tex, color } = ent.bar;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, 256, 64);
-  const label = ent.isMonster ? `${ent.name} Lv.${ent.level || 1}` : `${ent.name} Lv.${ent.level}`;
+  let label = ent.isMonster ? `${ent.name} Lv.${ent.level || 1}` : `${ent.name} Lv.${ent.level}`;
+  let nameColor = ent.isMonster ? '#ffd56b' : '#fff';
+  if (ent.isMonster) {
+    // 按与玩家的等级差着色，一眼看出危险程度（配合 1-100 等级梯度）
+    const d = (ent.level || 1) - (HUD.level || 1);
+    if (d >= 10) { nameColor = '#ff3b3b'; label = '☠ ' + label; }   // 致命
+    else if (d >= 5) nameColor = '#ff8a33';                          // 危险
+    else if (d >= -2) nameColor = '#ffd56b';                         // 相当
+    else if (d >= -6) nameColor = '#9be36b';                         // 轻松
+    else nameColor = '#9a9ab5';                                      // 碾压
+  }
   ctx.font = 'bold 30px sans-serif';
   ctx.textAlign = 'center';
   ctx.lineJoin = 'round';
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 7;
   ctx.strokeText(label, 128, 26);
-  ctx.fillStyle = ent.isMonster ? '#ffd56b' : '#fff';
+  ctx.fillStyle = nameColor;
   ctx.fillText(label, 128, 26);
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(46, 40, 164, 14);
