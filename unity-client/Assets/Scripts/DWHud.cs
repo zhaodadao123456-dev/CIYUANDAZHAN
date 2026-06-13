@@ -53,8 +53,15 @@ namespace DW
             {
                 case State.Menu: GuiMenu(); break;
                 case State.Connecting:
-                    GUI.Label(new Rect(0, SH / 2f - 20, SW, 40), "🌌 正在连接次元…", _title);
+                {
+                    GUI.Label(new Rect(0, SH / 2f - 40, SW, 40), "🌌 正在连接次元…", _title);
+                    GUI.Label(new Rect(0, SH / 2f + 2, SW, 24),
+                        $"<size=13>{serverIp}</size>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
+                    var cancelR = new Rect(SW / 2f - 70, SH / 2f + 36, 140, 34);
+                    guiRects.Add(cancelR);
+                    if (GUI.Button(cancelR, "✕ 取消", _btn)) { net?.Close(); state = State.Menu; }
                     break;
+                }
                 case State.Playing: GuiHud(); break;
             }
             if (Time.time < toastUntil)

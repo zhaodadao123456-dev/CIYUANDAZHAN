@@ -30,7 +30,14 @@ namespace DW
                 LastError = "";
                 cts = new CancellationTokenSource();
                 ws = new ClientWebSocket();
-                await ws.ConnectAsync(new Uri(url), cts.Token);
+                // 连接超时：8 秒连不上就放弃，避免界面无限「降临中」
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
+                using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, timeout.Token))
+                {
+                    try { await ws.ConnectAsync(new Uri(url), linked.Token); }
+                    catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+                    { throw new Exception("连接超时：服务器无响应，请检查 IP/端口、服务器是否已启动、安全组是否放行 80 端口"); }
+                }
                 Connected = true;
                 _ = Task.Run(RecvLoop);
             }
