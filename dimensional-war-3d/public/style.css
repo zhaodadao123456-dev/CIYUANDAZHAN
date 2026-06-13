@@ -125,6 +125,19 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
 }
 #invite-prompt.hidden { display: none; }
 
+#levelup-banner {
+  position: absolute; top: 30%; left: 50%; transform: translateX(-50%);
+  padding: 14px 40px; border-radius: 16px; z-index: 50; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255,180,40,0.95), rgba(255,90,40,0.95));
+  color: #fff; font-size: 34px; font-weight: 900; text-align: center;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6); box-shadow: 0 0 30px rgba(255,180,40,0.7);
+  display: flex; flex-direction: column; gap: 2px;
+}
+#levelup-banner small { font-size: 15px; font-weight: 600; }
+#levelup-banner.hidden { display: none; }
+#levelup-banner.show { animation: lvlpop 0.5s ease-out; }
+@keyframes lvlpop { 0% { transform: translateX(-50%) scale(0.4); opacity: 0; } 60% { transform: translateX(-50%) scale(1.15); opacity: 1; } 100% { transform: translateX(-50%) scale(1); } }
+
 #feed {
   position: absolute; top: 70px; right: 14px; width: 330px;
   display: flex; flex-direction: column; gap: 4px;

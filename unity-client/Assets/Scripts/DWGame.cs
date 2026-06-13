@@ -88,6 +88,8 @@ namespace DW
         readonly List<float> feedAt = new List<float>();
         string toastMsg = "";
         float toastUntil;
+        protected int levelUpLevel;
+        protected float levelUpUntil;
 
         void Awake()
         {
@@ -216,7 +218,7 @@ namespace DW
                 case "pleave": RemoveEnt(players, (string)m["id"]); break;
                 case "proj":
                 {
-                    var color = Data.Dim((string)m["dim"]).accent;
+                    var color = (string)m["dim"] == "mon" ? new Color(1f, 0.27f, 0.27f) : Data.Dim((string)m["dim"]).accent;
                     SpawnProj((string)m["id"], (float)m["x"], (float)m["z"],
                         (float)m["dx"], (float)m["dz"], (float)m["speed"], color);
                     break;
@@ -271,7 +273,12 @@ namespace DW
                     break;
                 }
                 case "lvl":
-                    if ((string)m["id"] == myId) Toast($"🆙 升级到 Lv.{(int)m["level"]}！获得技能点");
+                    if ((string)m["id"] == myId)
+                    {
+                        levelUpLevel = (int)m["level"];
+                        levelUpUntil = Time.time + 2.6f;
+                        Shake(0.15f, 0.2f);
+                    }
                     break;
                 case "cast":
                 {
@@ -304,6 +311,14 @@ namespace DW
                     var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
                     SpawnShockwave(at, (float?)m["r"] ?? 7f, new Color(1f, 0.2f, 0.27f));
                     if ((at - pos).sqrMagnitude < 14f * 14f) Shake(0.45f, 0.5f);
+                    break;
+                }
+                case "maoe":
+                {
+                    // 精英怪范围震击：紫色冲击波
+                    var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
+                    SpawnShockwave(at, (float?)m["r"] ?? 4.5f, new Color(0.69f, 0.31f, 1f));
+                    if ((at - pos).sqrMagnitude < 9f * 9f) Shake(0.25f, 0.3f);
                     break;
                 }
                 case "dimfx":
@@ -430,6 +445,19 @@ namespace DW
         {
             var r = go.GetComponent<Renderer>();
             if (r != null) r.material.color = c;
+        }
+
+        /* 把整个模型的材质颜色朝某色混合（用于怪物按次元染色） */
+        static void TintHierarchy(GameObject go, Color c, float amount)
+        {
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = r.materials;   // 实例化材质，不影响共享资源
+                for (int i = 0; i < mats.Length; i++)
+                    if (mats[i] != null && mats[i].HasProperty("_Color"))
+                        mats[i].color = Color.Lerp(mats[i].color, c, amount);
+                r.materials = mats;
+            }
         }
 
         // 英雄模型池（向导生成于 Resources/DWHeroes），按名字排序保证各端一致
@@ -563,17 +591,33 @@ namespace DW
             var go = new GameObject("Label");
             go.transform.SetParent(parent.transform, false);
             go.transform.localPosition = new Vector3(0, height, 0);
+            // 黑色描边（背后4个偏移副本，子物体），文字在 UpdateLabel 同步
+            foreach (var off in new[] { new Vector2(1, 0), new Vector2(-1, 0), new Vector2(0, 1), new Vector2(0, -1) })
+            {
+                var sgo = new GameObject("Outline");
+                sgo.transform.SetParent(go.transform, false);
+                sgo.transform.localPosition = new Vector3(off.x * 0.012f, off.y * 0.012f, 0.002f);
+                var stm = sgo.AddComponent<TextMesh>();
+                ConfigLabel(stm, sgo);
+                stm.color = Color.black;
+            }
             var tm = go.AddComponent<TextMesh>();
+            ConfigLabel(tm, go);
+            return tm;
+        }
+
+        void ConfigLabel(TextMesh tm, GameObject go)
+        {
             tm.anchor = TextAnchor.MiddleCenter;
             tm.alignment = TextAlignment.Center;
-            tm.characterSize = 0.085f;
-            tm.fontSize = 48;
+            tm.characterSize = 0.11f;
+            tm.fontSize = 56;
+            tm.fontStyle = FontStyle.Bold;
             if (cjkFont != null)
             {
                 tm.font = cjkFont;
                 go.GetComponent<MeshRenderer>().material = cjkFont.material;
             }
-            return tm;
         }
 
         void AddPlayer(JObject p)
@@ -596,9 +640,9 @@ namespace DW
             UpdateLabel(e, dim == myDim ? "#7CFC9A" : "#ff7788");
         }
 
-        void AddMonster(string id, float x, float z, string mstate, int hp, int maxHp, int tier, string name)
+        void AddMonster(string id, float x, float z, string mstate, int hp, int maxHp, int tier, string name, int level = 1)
         {
-            var e = new Ent { name = name, tier = tier, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
+            var e = new Ent { name = name, tier = tier, level = level, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
             e.go = MakeCreature(tier, id);
             e.go.transform.position = e.target;
             e.label = MakeLabel(e.go, 1.1f + tier * 0.45f);
@@ -632,6 +676,7 @@ namespace DW
                 b = CalcBounds(inst);
                 inst.transform.localPosition = new Vector3(0, -b.min.y, 0);
                 root.AddComponent<DWAnimDriver>();
+                if (tier < 5) TintHierarchy(inst, Data.Dim(curRoom == "war" ? "war" : myDim).accent, 0.28f);  // 按次元染色，BOSS保持原色
                 return root;
             }
             // 占位：身子+头+獠牙状，统一敌对橙红色，避免和地面同色糊成团
@@ -685,8 +730,13 @@ namespace DW
             Color c;
             ColorUtility.TryParseHtmlString(colorHex, out c);
             e.label.color = c;
-            string title = e.isMonster ? $"{e.name} T{e.tier}" : e.isPet ? e.name : $"{e.name} Lv.{e.level}";
+            string title = e.isPet ? e.name : $"{e.name} Lv.{e.level}";
             e.label.text = $"{title}\n{e.hp}/{e.maxHp}";
+            foreach (Transform ch in e.label.transform)   // 同步描边副本文字
+            {
+                var ot = ch.GetComponent<TextMesh>();
+                if (ot != null) ot.text = e.label.text;
+            }
         }
 
         void RemoveEnt(Dictionary<string, Ent> dict, string id)
@@ -722,7 +772,7 @@ namespace DW
                 Ent e;
                 if (!monsters.TryGetValue(id, out e))
                 {
-                    AddMonster(id, (float)a[1], (float)a[2], (string)a[4], (int)a[5], (int)a[6], (int)a[7], (string)a[8]);
+                    AddMonster(id, (float)a[1], (float)a[2], (string)a[4], (int)a[5], (int)a[6], (int)a[7], (string)a[8], a.Count > 9 ? (int)a[9] : 1);
                     continue;
                 }
                 e.target = new Vector3((float)a[1], 0, (float)a[2]);

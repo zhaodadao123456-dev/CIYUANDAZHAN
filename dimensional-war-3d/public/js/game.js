@@ -399,7 +399,7 @@ function onMsg(m) {
     }
     case 'lvl': {
       if (m.id === myId) {
-        toast(`🆙 升级到 Lv.${m.level}！${m.level === 3 ? 'E技能解锁！' : m.level === 5 ? 'R技能解锁！' : ''}`);
+        levelUpBanner(m.level);
         AUDIO.sfx('levelup', 0.9);
         sparks(me.x, 0.3, me.z, 0xffd166, { count: 40, speed: 7, life: 1.0, gravity: -4, up: 2.0 });
         flashLight(me.x, 1.8, me.z, 0xffd166, 4, 12, 0.5);
@@ -440,6 +440,12 @@ function onMsg(m) {
       // 世界BOSS震地轰击：红色冲击环 + 红光
       ringFx(m.x, m.z, m.r || 7, 0xff3344);
       flashLight(m.x, 1.5, m.z, 0xff3344, 4, 14, 0.35);
+      break;
+    }
+    case 'maoe': {
+      // 精英怪范围震击：紫色冲击环
+      ringFx(m.x, m.z, m.r || 4.5, 0xb050ff);
+      flashLight(m.x, 1.3, m.z, 0xb050ff, 3, 10, 0.3);
       break;
     }
     case 'feed': feed(m.msg); break;
@@ -772,11 +778,11 @@ function removeRemote(id) {
   const r = remotes.get(id);
   if (r) { disposeEntity(r); remotes.delete(id); }
 }
-function addMonsterEnt(id, x, z, ry, state, hp, maxHp, tier, name) {
+function addMonsterEnt(id, x, z, ry, state, hp, maxHp, tier, name, level) {
   const obj = MODELS.makeMonster(tier, THEMES[curRoom === 'war' ? 'war' : myDim].accent);
   obj.position.set(x, 0, z);
   scene.add(obj);
-  const mo = { id, obj, tx: x, tz: z, try_: ry, state, hp, maxHp, tier, name, isMonster: true };
+  const mo = { id, obj, tx: x, tz: z, try_: ry, state, hp, maxHp, tier, name, level: level || 1, isMonster: true };
   mo.bar = makeBar(mo, '#ffaa33');
   monsters.set(id, mo);
 }
@@ -800,12 +806,12 @@ function onSnap(m) {
   updatePartyHud();
 
   const seenM = new Set();
-  for (const [id, x, z, ry, state, hp, maxHp, tier, name] of m.ms) {
+  for (const [id, x, z, ry, state, hp, maxHp, tier, name, level] of m.ms) {
     seenM.add(id);
     let mo = monsters.get(id);
-    if (!mo) { addMonsterEnt(id, x, z, ry, state, hp, maxHp, tier, name); continue; }
+    if (!mo) { addMonsterEnt(id, x, z, ry, state, hp, maxHp, tier, name, level); continue; }
     mo.tx = x; mo.tz = z; mo.try_ = ry; mo.state = state;
-    if (mo.hp !== hp) { mo.hp = hp; drawBar(mo); }
+    if (mo.hp !== hp || mo.level !== level) { mo.hp = hp; mo.level = level || mo.level; drawBar(mo); }
   }
   for (const id of [...monsters.keys()]) if (!seenM.has(id)) { disposeEntity(monsters.get(id)); monsters.delete(id); }
 
@@ -1126,7 +1132,7 @@ function flashLight(x, y, z, color, intensity = 3, dist = 9, life = 0.25) {
  * 弹道 & 特效
  * ============================================================ */
 function spawnProj(m) {
-  const color = dimAccent(m.dim);
+  const color = m.dim === 'mon' ? 0xff4444 : dimAccent(m.dim);   // 怪物弹幕=红色
   const obj = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 10),
     new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2 }));
   obj.position.set(m.x, 1.1, m.z);
@@ -1211,18 +1217,19 @@ function drawBar(ent) {
   const { cv, tex, color } = ent.bar;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, 256, 64);
-  const label = ent.isMonster ? `${ent.name} T${ent.tier}` : `${ent.name} Lv.${ent.level}`;
-  ctx.font = 'bold 22px sans-serif';
+  const label = ent.isMonster ? `${ent.name} Lv.${ent.level || 1}` : `${ent.name} Lv.${ent.level}`;
+  ctx.font = 'bold 30px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff';
+  ctx.lineJoin = 'round';
   ctx.strokeStyle = '#000';
-  ctx.lineWidth = 4;
-  ctx.strokeText(label, 128, 24);
-  ctx.fillText(label, 128, 24);
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.fillRect(48, 34, 160, 14);
+  ctx.lineWidth = 7;
+  ctx.strokeText(label, 128, 26);
+  ctx.fillStyle = ent.isMonster ? '#ffd56b' : '#fff';
+  ctx.fillText(label, 128, 26);
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(46, 40, 164, 14);
   ctx.fillStyle = color;
-  ctx.fillRect(50, 36, 156 * Math.max(0, ent.hp / ent.maxHp), 10);
+  ctx.fillRect(48, 42, 160 * Math.max(0, ent.hp / ent.maxHp), 10);
   tex.needsUpdate = true;
 }
 function updateBar(ent) { drawBar(ent); }
@@ -1456,6 +1463,18 @@ function sendChat() {
   if (msg) net({ t: 'chat', msg });
   $('chat-input').value = '';
   closeChat();
+}
+
+let levelupTimer;
+function levelUpBanner(level) {
+  const el = $('levelup-banner');
+  if (!el) return;
+  const extra = level === 3 ? '　E技能解锁！' : level === 5 ? '　R技能解锁！' : '';
+  el.innerHTML = `🆙 升级！ Lv.${level}<small>获得技能点${extra}</small>`;
+  el.classList.remove('hidden');
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(levelupTimer);
+  levelupTimer = setTimeout(() => el.classList.add('hidden'), 2600);
 }
 
 let toastTimer;

@@ -83,13 +83,23 @@ function spawnMonsters(room, dimId) {
 
 function addMonster(room, { name, tier, x, z }) {
   const id = 'm' + nextMid++;
+  // 等级 1-10：按层级分布（T1:1-3 / T2:3-5 / T3:5-7 / T4:7-10）
+  const lvBase = { 1: 1, 2: 3, 3: 5, 4: 7 }[tier] || 1;
+  const level = Math.min(10, lvBase + Math.floor(rnd(0, 3)));
+  // 技能：T1纯近战；T2远程弹幕；T3范围震击；T4随机远程/范围
+  let skill = 'none';
+  if (tier === 2) skill = 'ranged';
+  else if (tier === 3) skill = 'aoe';
+  else if (tier >= 4) skill = Math.random() < 0.5 ? 'ranged' : 'aoe';
+  // 数值随等级成长
+  const hp = Math.round((60 + tier * 70) * (1 + level * 0.08));
   room.monsters.set(id, {
-    id, name, tier,
+    id, name, tier, level, skill,
     x, z, spawnX: x, spawnZ: z, ry: rnd(0, 6.28),
-    hp: 60 + tier * 70, maxHp: 60 + tier * 70,
-    atk: 8 + tier * 7, speed: 3.0 + tier * 0.35,
-    exp: 22 + tier * 20, gold: 8 + tier * 12,
-    state: 'idle', targetId: null, atkT: 0, dieT: 0, wanderT: 0, wx: x, wz: z,
+    hp, maxHp: hp,
+    atk: Math.round((8 + tier * 7) * (1 + level * 0.06)), speed: 3.0 + tier * 0.35,
+    exp: Math.round((22 + tier * 20) * (1 + level * 0.05)), gold: 8 + tier * 12,
+    state: 'idle', targetId: null, atkT: 0, skillT: 0, dieT: 0, wanderT: 0, wx: x, wz: z,
   });
 }
 for (const d of DIMENSIONS) spawnMonsters(rooms[d.id], d.id);
@@ -110,7 +120,7 @@ function spawnWorldBoss() {
   const bx = Math.cos(ang) * (LAIR_R - 8), bz = Math.sin(ang) * (LAIR_R - 8);
   const name = BOSS_NAMES[dim.id] || '次元主宰';
   room.monsters.set(id, {
-    id, name, tier: 5, boss: true,
+    id, name, tier: 5, boss: true, level: 10, skill: 'none', skillT: 0,
     x: bx, z: bz, spawnX: bx, spawnZ: bz, ry: 0,
     hp: +process.env.DW_BOSS_HP || 3200, maxHp: +process.env.DW_BOSS_HP || 3200, atk: 46, speed: 4.4,
     exp: 900, gold: 600,
@@ -632,6 +642,28 @@ function absorbShield(p, dmg) {
   return dmg;
 }
 
+/* 怪物对玩家造成伤害（近战/范围/远程统一入口），含护盾、死亡结算 */
+function hurtPlayer(room, mo, pl, rawDmg, dmgType, deathNote) {
+  if (pl.dead) return;
+  const st = statsOf(pl);
+  const def = dmgType === 'magic' ? st.mres : st.armor;
+  let dmg = rawDmg * 100 / (100 + def) * clsOf(pl).dmgTakenMul;
+  dmg = Math.max(1, Math.round(dmg));
+  dmg = absorbShield(pl, dmg);
+  pl.hp -= dmg;
+  roomCast(room.id, { t: 'dmg', kind: 'p', id: pl.id, amt: dmg, hp: Math.max(0, Math.round(pl.hp)), by: mo.id });
+  sendYou(pl);
+  if (pl.hp <= 0) {
+    pl.hp = 0; pl.dead = true; pl.dieT = now(); pl.anim = 'dead';
+    const lost = Math.floor(pl.gold * 0.05);
+    pl.gold -= lost;
+    roomCast(room.id, { t: 'pdie', id: pl.id, by: mo.id });
+    send(pl.ws, { t: 'feed', msg: deathNote ? deathNote(lost) : `💀 你被【${mo.name}】击杀，丢失 ${lost} 金币。` });
+    sendYou(pl); persist(pl);
+    if (mo.targetId === pl.id) { mo.targetId = null; mo.state = 'idle'; }
+  }
+}
+
 function dimSkill(p) {
   if (p.dead) return;
   if (p.dim === 'hunter') return capturePet(p);
@@ -1030,14 +1062,18 @@ function tickRoom(room) {
     const hr = pr.hitR || 1.6;
     const subs = Math.max(1, Math.ceil(step / Math.max(0.7, hr * 0.7)));
     let hitId = null;
-    const owner = [...room.players.values()].find((p) => p.id === pr.owner);
-    const targets = owner ? targetsOf(owner) : [];
+    const owner = pr.fromMonster ? null : [...room.players.values()].find((p) => p.id === pr.owner);
+    const mob = pr.fromMonster ? room.monsters.get(pr.owner) : null;
+    const targets = pr.fromMonster
+      ? [...room.players.values()].filter((p) => !p.dead && !inSafeZone(room, p.x, p.z))
+      : (owner ? targetsOf(owner) : []);
     for (let s = 0; s <= subs && !hitId; s++) {
       const px = pr.x + pr.dx * step * (s / subs);
       const pz = pr.z + pr.dz * step * (s / subs);
       for (const tgt of targets) {
         if (dist2(px, pz, tgt.x, tgt.z) < hr * hr) {
-          applyDamage(owner, tgt, pr.dmg, pr.dmgType);
+          if (pr.fromMonster) hurtPlayer(room, mob || { id: pr.owner, name: '怪物', targetId: null }, tgt, pr.dmg, pr.dmgType);
+          else applyDamage(owner, tgt, pr.dmg, pr.dmgType);
           hitId = tgt.id; pr.x = px; pr.z = pz;
           break;
         }
@@ -1093,22 +1129,30 @@ function tickRoom(room) {
         roomCast(room.id, { t: 'baoe', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 7 });
         for (const pl of room.players.values()) {
           if (pl.dead || dist2(mo.x, mo.z, pl.x, pl.z) > 7 * 7) continue;
-          const pst = statsOf(pl);
-          let adm = mo.atk * 1.6 * 100 / (100 + pst.armor) * clsOf(pl).dmgTakenMul;
-          adm = Math.max(1, Math.round(adm));
-          adm = absorbShield(pl, adm);
-          pl.hp -= adm;
-          roomCast(room.id, { t: 'dmg', kind: 'p', id: pl.id, amt: adm, hp: Math.max(0, Math.round(pl.hp)), by: mo.id });
-          sendYou(pl);
-          if (pl.hp <= 0) {
-            pl.hp = 0;
-            pl.dead = true; pl.dieT = t; pl.anim = 'dead';
-            const lost = Math.floor(pl.gold * 0.05);
-            pl.gold -= lost;
-            roomCast(room.id, { t: 'pdie', id: pl.id, by: mo.id });
-            send(pl.ws, { t: 'feed', msg: `💀 你被世界BOSS【${mo.name}】的震地轰击粉碎，丢失 ${lost} 金币。` });
-            sendYou(pl);
-            persist(pl);
+          hurtPlayer(room, mo, pl, mo.atk * 1.6, 'phys',
+            (lost) => `💀 你被世界BOSS【${mo.name}】的震地轰击粉碎，丢失 ${lost} 金币。`);
+        }
+      }
+      // 精英怪技能：远程弹幕 / 范围震击（按怪物 skill 字段）
+      if (!mo.boss && mo.skill && mo.skill !== 'none' && t - mo.skillT > 4200) {
+        if (mo.skill === 'ranged' && d > 3 && d < 18) {
+          mo.skillT = t; mo.atkT = t; mo.state = 'attack';
+          const pid = 'j' + nextMid++;
+          const ux = (tgt.x - mo.x) / d, uz = (tgt.z - mo.z) / d;
+          room.projectiles.set(pid, {
+            id: pid, owner: mo.id, fromMonster: true,
+            x: mo.x + ux * 0.6, z: mo.z + uz * 0.6, dx: ux, dz: uz,
+            speed: 15, born: t, life: 2.5, hitR: 1.4,
+            dmg: mo.atk * 1.3, dmgType: mo.tier >= 3 ? 'magic' : 'phys',
+          });
+          roomCast(room.id, { t: 'proj', id: pid, owner: mo.id, x: +mo.x.toFixed(2), z: +mo.z.toFixed(2), dx: +ux.toFixed(3), dz: +uz.toFixed(3), speed: 15, dim: 'mon' });
+        } else if (mo.skill === 'aoe' && d < 6) {
+          mo.skillT = t; mo.atkT = t; mo.state = 'attack';
+          roomCast(room.id, { t: 'maoe', x: +mo.x.toFixed(1), z: +mo.z.toFixed(1), r: 4.5 });
+          for (const pl of room.players.values()) {
+            if (pl.dead || dist2(mo.x, mo.z, pl.x, pl.z) > 4.5 * 4.5) continue;
+            hurtPlayer(room, mo, pl, mo.atk * 1.3, 'magic',
+              (lost) => `💀 你被【${mo.name}】的震击击倒，丢失 ${lost} 金币。`);
           }
         }
       }
@@ -1134,24 +1178,7 @@ function tickRoom(room) {
             persist(tgt);
           }
         } else {
-          const st = statsOf(tgt);
-          dmg = dmg * 100 / (100 + st.armor) * clsOf(tgt).dmgTakenMul;
-          dmg = Math.max(1, Math.round(dmg));
-          dmg = absorbShield(tgt, dmg);
-          tgt.hp -= dmg;
-          roomCast(room.id, { t: 'dmg', kind: 'p', id: tgt.id, amt: dmg, hp: Math.max(0, Math.round(tgt.hp)), by: mo.id });
-          sendYou(tgt);
-          if (tgt.hp <= 0) {
-            tgt.hp = 0;
-            tgt.dead = true; tgt.dieT = t; tgt.anim = 'dead';
-            const lost = Math.floor(tgt.gold * 0.05);
-            tgt.gold -= lost;
-            roomCast(room.id, { t: 'pdie', id: tgt.id, by: mo.id });
-            send(tgt.ws, { t: 'feed', msg: `💀 你被【${mo.name}】击杀，丢失 ${lost} 金币。` });
-            sendYou(tgt);
-            persist(tgt);
-            mo.targetId = null; mo.state = 'idle';
-          }
+          hurtPlayer(room, mo, tgt, dmg, 'phys');
         }
       }
     } else if (mo.state !== 'idle') {
@@ -1218,7 +1245,7 @@ function tickRoom(room) {
 function snapshot(room) {
   if (room.players.size === 0) return;
   const ps = [...room.players.values()].map((p) => [p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.ry.toFixed(2), p.anim, Math.round(p.hp), maxHp(p), p.level, p.dead ? 1 : 0]);
-  const ms = [...room.monsters.values()].map((mo) => [mo.id, +mo.x.toFixed(2), +mo.z.toFixed(2), +mo.ry.toFixed(2), mo.state, Math.max(0, Math.round(mo.hp)), mo.maxHp, mo.tier, mo.name]);
+  const ms = [...room.monsters.values()].map((mo) => [mo.id, +mo.x.toFixed(2), +mo.z.toFixed(2), +mo.ry.toFixed(2), mo.state, Math.max(0, Math.round(mo.hp)), mo.maxHp, mo.tier, mo.name, mo.level || 1]);
   const pets = [...room.players.values()].filter((p) => p.pet).map((p) => {
     const pe = p.pet;
     return [p.id, pe.tier, +pe.x.toFixed(2), +pe.z.toFixed(2), +pe.ry.toFixed(2), pe.state, Math.max(0, Math.round(pe.hp)), pe.maxHp, pe.name];

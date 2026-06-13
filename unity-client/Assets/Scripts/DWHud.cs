@@ -66,6 +66,14 @@ namespace DW
             }
             if (Time.time < toastUntil)
                 GUI.Label(new Rect(0, SH - 150, SW, 30), $"<b>{toastMsg}</b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 17 });
+            if (Time.time < levelUpUntil)
+            {
+                string extra = levelUpLevel == 3 ? "　E技能解锁！" : levelUpLevel == 5 ? "　R技能解锁！" : "";
+                var st = new GUIStyle(_title) { fontSize = 40, normal = { textColor = new Color(1f, 0.82f, 0.25f) } };
+                GUI.Label(new Rect(0, SH * 0.28f, SW, 56), $"🆙 升级！ Lv.{levelUpLevel}", st);
+                GUI.Label(new Rect(0, SH * 0.28f + 50, SW, 26), $"<color=#ffd166>获得技能点{extra}</color>",
+                    new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 16 });
+            }
         }
 
         void GuiMenu()
