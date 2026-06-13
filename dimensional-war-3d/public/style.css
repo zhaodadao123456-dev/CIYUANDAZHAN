@@ -405,6 +405,9 @@ body.touch .controls-help { display: none; }
 .bagmode-row { display: flex; gap: 6px; align-items: center; font-size: 11px; color: #b8b8d6; margin-bottom: 8px; flex-wrap: wrap; }
 .bagmode { background: rgba(40,40,72,0.6); color: #bcbce0; border: 1px solid #3a3a66; border-radius: 7px; padding: 5px 9px; font-size: 11px; cursor: pointer; }
 .bagmode.on { background: rgba(255,209,102,0.16); color: #ffd166; border-color: #ffd166; font-weight: bold; }
+.fuse-rows { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.fuse-btn { text-align: left; background: rgba(120,80,160,0.18); color: #e3d4ff; border: 1px solid #6a4a9a; border-radius: 8px; padding: 7px 10px; font-size: 12px; cursor: pointer; }
+.fuse-btn:hover { background: rgba(120,80,160,0.34); }
 
 /* ---------- 背包/聊天/退出按钮 ---------- */
 .bag-btn { top: 64px; }

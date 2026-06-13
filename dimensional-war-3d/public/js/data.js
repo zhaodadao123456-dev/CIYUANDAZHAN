@@ -139,6 +139,10 @@ const enhMul = (it) => 1 + ENH_STEP * ((it && it.enh) || 0);
 const enhCost = (it) => Math.round(50 * (((it && it.rar) || 0) + 1) * Math.pow(1.45, (it && it.enh) || 0));
 const enhRate = (enh) => (enh < 4 ? 1 : Math.max(0.3, 1 - (enh - 3) * 0.1));   // +3 内必成
 
+/* ---------- 装备合成（N 件同品质 → 1 件高一级；客户端/服务端共用） ---------- */
+const FUSE_N = 3;
+const fuseFee = (rar) => 120 * (rar + 1);
+
 /* ---------- PvP 段位赛（重叠战场/大混战击杀积累段位分） ---------- */
 const RANK_TIERS = [
   { name: '青铜', icon: '🥉', min: 0,    color: '#cd7f32' },
@@ -252,5 +256,5 @@ const CLASS_NAMES = {
   hunter:  { warrior: '兽刃猎手', assassin: '影爪猎手', ranger: '鹰眼猎手', tank: '巨盾猎手', healer: '灵兽驯师' },
 };
 
-return { DIMENSIONS, RARITIES, AFFIXES, AFFIX_COUNT, AFFIX_MAP, ENH_MAX, ENH_STEP, enhMul, enhCost, enhRate, RANK_TIERS, rankTier, rankDelta, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
+return { DIMENSIONS, RARITIES, AFFIXES, AFFIX_COUNT, AFFIX_MAP, ENH_MAX, ENH_STEP, enhMul, enhCost, enhRate, FUSE_N, fuseFee, RANK_TIERS, rankTier, rankDelta, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
 });

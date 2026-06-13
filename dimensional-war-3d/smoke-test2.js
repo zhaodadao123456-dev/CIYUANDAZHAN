@@ -87,6 +87,19 @@ const check = (name, ok, extra = '') => { results.push([name, ok]); console.log(
   await sleep(250);
   check('卸下成就还原属性', lastYou().patk === patkBefore, `patk=${lastYou().patk}`);
 
+  // 2.7 装备合成：买 3 件精良武器 → 合成 1 件稀有
+  send({ t: 'buy', id: 's_weapon_0' }); await sleep(120);
+  send({ t: 'buy', id: 's_weapon_0' }); await sleep(120);
+  send({ t: 'buy', id: 's_weapon_0' }); await sleep(150);
+  const goldPreFuse = lastYou().gold;
+  send({ t: 'fuse', rar: 1 });
+  await sleep(300);
+  inv = lastInv();
+  const rareItem = (inv.inv || []).find((it) => it.rar === 2);
+  check('装备合成(3精良→1稀有)',
+    !!rareItem && (inv.inv || []).filter((it) => it.rar === 1).length === 0 && lastYou().gold < goldPreFuse,
+    rareItem ? `得到 ${rareItem.name}` : '未产出');
+
   // 3. 走向最近的T1怪并打残
   let snap = lastSnap();
   let pos = { x: 0, z: 0 };

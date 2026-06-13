@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES, AFFIXES, AFFIX_COUNT, ENH_MAX, enhMul, enhCost, enhRate, rankTier, rankDelta } = require('./public/js/data.js');
+const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES, AFFIXES, AFFIX_COUNT, ENH_MAX, enhMul, enhCost, enhRate, FUSE_N, fuseFee, rankTier, rankDelta } = require('./public/js/data.js');
 const LAIR_R = +process.env.DW_LAIR_R || require('./public/js/data.js').LAIR_R;   // 可被测试覆盖
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -418,6 +418,18 @@ function rollDrop(tier, dimId, minRar = 0, affixBonus = 0) {
   const q = RARITIES[rar].mult * (0.7 + tier * 0.22);
   return makeItem(slot, name, rar, q, rar * 0.12, affixBonus);
 }
+
+/* 合成：按指定槽位与品质造一件装备（用于 3 合 1 升品） */
+function makeNamed(dimId, slot, rar) {
+  const dim = DIMENSIONS.find((d) => d.id === dimId) || DIMENSIONS[0];
+  const idx = Math.min(2, Math.max(0, rar - 1));
+  const name = slot === 'weapon' ? dim.weaponNames[idx]
+    : slot === 'armor' ? dim.armorNames[idx]
+    : slot === 'acc' ? dim.accNames[idx]
+    : slot === 'helmet' ? HELMET_NAMES[idx] : BOOTS_NAMES[idx];
+  return makeItem(slot, name, rar, RARITIES[rar].mult * 1.25, rar * 0.12);
+}
+/* 合成参数 FUSE_N / fuseFee 来自共享 data.js */
 
 /* 商店固定货架：每槽位 精良/稀有/史诗 三档 */
 const SHOP = [];
@@ -847,6 +859,26 @@ function handle(ws, m) {
       p.bagMode = m.mode === 'enhance' ? 'enhance' : 'sell';
       send(p.ws, { t: 'feed', msg: p.bagMode === 'enhance' ? '🔨 满包将自动强化穿戴装备' : '💰 满包将自动卖出低品质装备' });
       sendYou(p); persist(p);
+      return;
+    }
+    case 'fuse': {
+      // 合成：消耗 FUSE_N 件同品质装备（取该品质里价值最低的几件）+ 金币，产出高一级品质装备
+      const rar = m.rar | 0;
+      if (rar < 0 || rar >= 4) return send(p.ws, { t: 'err', msg: '该品质无法继续合成' });
+      const cand = p.inv.map((it, i) => ({ it, i })).filter((x) => (x.it.rar || 0) === rar && !x.it.relic);
+      if (cand.length < FUSE_N) return send(p.ws, { t: 'err', msg: `需要 ${FUSE_N} 件【${RARITIES[rar].name}】装备才能合成` });
+      const fee = fuseFee(rar);
+      if (p.gold < fee) return send(p.ws, { t: 'err', msg: `合成需要 ${fee} 金币` });
+      cand.sort((a, b) => (a.it.val || 0) - (b.it.val || 0));      // 优先消耗价值最低的
+      const use = cand.slice(0, FUSE_N);
+      const slot = use[use.length - 1].it.slot;                    // 产出沿用其中一件的槽位
+      p.gold -= fee;
+      for (const x of use.sort((a, b) => b.i - a.i)) p.inv.splice(x.i, 1);   // 从后往前删，索引不串位
+      const out = makeNamed(p.dim, slot, rar + 1);
+      p.inv.push(out);
+      send(p.ws, { t: 'feed', msg: `⚗️ 合成成功！${FUSE_N}×【${RARITIES[rar].name}】→【${out.name}】（花费 ${fee} 金）` });
+      roomCast(p.room, { t: 'dimfx', kind: 'heal', id: p.id });
+      sendInv(p); sendYou(p); persist(p);
       return;
     }
   }

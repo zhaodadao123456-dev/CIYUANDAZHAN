@@ -1495,12 +1495,21 @@ function renderPanel() {
         <button class="bagmode ${bagMode === 'sell' ? 'on' : ''}" data-bm="sell">💰 自动卖低品质</button>
         <button class="bagmode ${bagMode === 'enhance' ? 'on' : ''}" data-bm="enhance">🔨 自动强化穿戴</button>
       </div>
+      ${(() => {
+        const rows = [0, 1, 2, 3].map((rar) => {
+          const n = (invData.inv || []).filter((it) => (it.rar || 0) === rar && !it.relic).length;
+          if (n < FUSE_N) return '';
+          return `<button class="fuse-btn" data-fuse="${rar}">⚗️ ${FUSE_N}×<span style="color:${RAR_COLORS[rar]}">${RARITIES[rar].name}</span> → <span style="color:${RAR_COLORS[rar + 1]}">${RARITIES[rar + 1].name}</span> ｜${fuseFee(rar)}金（有 ${n} 件）</button>`;
+        }).filter(Boolean).join('');
+        return rows ? `<div class="bagmode-row">⚗️ 装备合成（${FUSE_N} 件同品质 → 升 1 级，消耗价值最低的）</div><div class="fuse-rows">${rows}</div>` : '';
+      })()}
       ${(invData.inv || []).map((it, i) => `
         <div class="inv-row">
           <span>${itemName(it)} <small class="dim-text">${itemFullText(it)}</small></span>
           <span class="inv-btns"><button data-eq="${i}">装备</button>${enhBtn(it, `data-enh-i="${i}"`)}<button data-sell="${i}">卖${Math.round(it.val * 0.4)}金</button></span>
         </div>`).join('') || '<div class="dim-text">背包空空如也，去打怪掉装备或商店购买吧</div>'}`;
     body.querySelectorAll('[data-bm]').forEach((b) => b.onclick = () => { if (bagMode !== b.dataset.bm) net({ t: 'bagmode', mode: b.dataset.bm }); });
+    body.querySelectorAll('[data-fuse]').forEach((b) => b.onclick = () => net({ t: 'fuse', rar: +b.dataset.fuse }));
     body.querySelectorAll('[data-enh-i]').forEach((b) => b.onclick = () => net({ t: 'enhance', i: +b.dataset.enhI }));
     body.querySelectorAll('[data-enh-slot]').forEach((b) => b.onclick = () => net({ t: 'enhance', slot: b.dataset.enhSlot }));
     body.querySelectorAll('[data-eq]').forEach((b) => b.onclick = () => net({ t: 'equip', i: +b.dataset.eq }));
