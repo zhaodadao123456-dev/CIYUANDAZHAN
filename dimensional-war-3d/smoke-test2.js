@@ -69,6 +69,14 @@ const check = (name, ok, extra = '') => { results.push([name, ok]); console.log(
   inv = lastInv(); you = lastYou();
   check('穿戴武器+物攻提升', inv.equip.weapon && you.patk > patk0, `patk ${patk0}→${you.patk}`);
 
+  // 2.5 强化已装备武器（+0→+1 必成）→ 物攻进一步提升、金币扣减
+  const patkEq = you.patk, goldB = you.gold;
+  send({ t: 'enhance', slot: 'weapon' });
+  await sleep(300);
+  inv = lastInv(); you = lastYou();
+  check('装备强化(+1)生效', inv.equip.weapon.enh === 1 && you.patk > patkEq && you.gold < goldB,
+    `enh=${inv.equip.weapon.enh} patk ${patkEq}→${you.patk} gold ${goldB}→${you.gold}`);
+
   // 3. 走向最近的T1怪并打残
   let snap = lastSnap();
   let pos = { x: 0, z: 0 };

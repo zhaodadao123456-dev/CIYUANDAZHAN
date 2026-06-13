@@ -132,6 +132,13 @@ const AFFIXES = [
 const AFFIX_COUNT = [0, 0, 1, 2, 3];
 const AFFIX_MAP = Object.fromEntries(AFFIXES.map((a) => [a.key, a]));
 
+/* ---------- 装备强化（客户端/服务端共用公式，避免数值漂移） ---------- */
+const ENH_MAX = 20;       // 强化上限 +20
+const ENH_STEP = 0.07;    // 每级 +7% 基础属性（特殊词条不放大）
+const enhMul = (it) => 1 + ENH_STEP * ((it && it.enh) || 0);
+const enhCost = (it) => Math.round(50 * (((it && it.rar) || 0) + 1) * Math.pow(1.45, (it && it.enh) || 0));
+const enhRate = (enh) => (enh < 4 ? 1 : Math.max(0.3, 1 - (enh - 3) * 0.1));   // +3 内必成
+
 const SLOTS = [
   { key: 'weapon', name: '武器', stat: 'atk' },
   { key: 'armor',  name: '防具', stat: 'def' },
@@ -221,5 +228,5 @@ const CLASS_NAMES = {
   hunter:  { warrior: '兽刃猎手', assassin: '影爪猎手', ranger: '鹰眼猎手', tank: '巨盾猎手', healer: '灵兽驯师' },
 };
 
-return { DIMENSIONS, RARITIES, AFFIXES, AFFIX_COUNT, AFFIX_MAP, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
+return { DIMENSIONS, RARITIES, AFFIXES, AFFIX_COUNT, AFFIX_MAP, ENH_MAX, ENH_STEP, enhMul, enhCost, enhRate, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
 });

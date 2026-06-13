@@ -1360,14 +1360,19 @@ let panelTab = 'stats';
 let rankData = [];
 const RAR_COLORS = ['#95a5a6', '#2ecc71', '#3498db', '#9b59b6', '#f39c12'];
 function itemStatText(it) {
+  const ef = enhMul(it);   // 强化放大基础属性（与服务器一致）
   const parts = [];
-  if (it.patk) parts.push(`物攻+${it.patk}`);
-  if (it.matk) parts.push(`法攻+${it.matk}`);
-  if (it.armor) parts.push(`物防+${it.armor}`);
-  if (it.mres) parts.push(`法防+${it.mres}`);
-  if (it.hp) parts.push(`生命+${it.hp}`);
+  if (it.patk) parts.push(`物攻+${Math.round(it.patk * ef)}`);
+  if (it.matk) parts.push(`法攻+${Math.round(it.matk * ef)}`);
+  if (it.armor) parts.push(`物防+${Math.round(it.armor * ef)}`);
+  if (it.mres) parts.push(`法防+${Math.round(it.mres * ef)}`);
+  if (it.hp) parts.push(`生命+${Math.round(it.hp * ef)}`);
   if (it.spd) parts.push(`移速+${it.spd}`);
   return parts.join(' ');
+}
+/* 装备名（含 🏆 至宝标记与 +N 强化等级） */
+function itemName(it) {
+  return `<span style="color:${RAR_COLORS[it.rar]}">${it.relic ? '🏆' : ''}${it.name}</span>${it.enh ? `<b style="color:#ffce54"> +${it.enh}</b>` : ''}`;
 }
 /* 特殊词条文本（暴击/吸血等），用金色高亮以区别基础属性 */
 function itemAffixText(it) {
@@ -1420,21 +1425,28 @@ function renderPanel() {
   } else if (panelTab === 'bag') {
     const eq = invData.equip || {};
     const slotNames = { weapon: '武器', helmet: '帽子', armor: '衣服', boots: '鞋子', acc: '饰品' };
+    const enhBtn = (it, attr) => (it.enh || 0) >= ENH_MAX
+      ? `<button disabled>满级 +${it.enh}</button>`
+      : `<button ${attr}>🔨${enhCost(it)}金${(it.enh || 0) >= 4 ? `(${Math.round(enhRate(it.enh) * 100)}%)` : ''}</button>`;
     body.innerHTML = `
-      <div class="panel-sub">已装备（点击卸下）</div>
+      <div class="panel-sub">已装备（点击名称卸下 · 🔨强化）</div>
       <div class="equip-row">${Object.keys(slotNames).map((s) => {
         const it = eq[s];
-        return `<div class="equip-slot" data-slot="${s}">${slotNames[s]}<br>${it ? `<span style="color:${RAR_COLORS[it.rar]}">${it.relic ? '🏆' : ''}${it.name}</span><br><small>${itemFullText(it)}</small>` : '<span class="dim-text">空</span>'}</div>`;
+        return `<div class="equip-slot">${slotNames[s]}<br>${it
+          ? `<span class="eq-name" data-slot="${s}">${itemName(it)}</span><br><small>${itemFullText(it)}</small><br>${enhBtn(it, `data-enh-slot="${s}"`)}`
+          : '<span class="dim-text">空</span>'}</div>`;
       }).join('')}</div>
       <div class="panel-sub">背包（${(invData.inv || []).length}/24）</div>
       ${(invData.inv || []).map((it, i) => `
         <div class="inv-row">
-          <span><span style="color:${RAR_COLORS[it.rar]}">${it.relic ? '🏆' : ''}${it.name}</span> <small class="dim-text">${itemFullText(it)}</small></span>
-          <span class="inv-btns"><button data-eq="${i}">装备</button><button data-sell="${i}">卖${Math.round(it.val * 0.4)}金</button></span>
+          <span>${itemName(it)} <small class="dim-text">${itemFullText(it)}</small></span>
+          <span class="inv-btns"><button data-eq="${i}">装备</button>${enhBtn(it, `data-enh-i="${i}"`)}<button data-sell="${i}">卖${Math.round(it.val * 0.4)}金</button></span>
         </div>`).join('') || '<div class="dim-text">背包空空如也，去打怪掉装备或商店购买吧</div>'}`;
+    body.querySelectorAll('[data-enh-i]').forEach((b) => b.onclick = () => net({ t: 'enhance', i: +b.dataset.enhI }));
+    body.querySelectorAll('[data-enh-slot]').forEach((b) => b.onclick = () => net({ t: 'enhance', slot: b.dataset.enhSlot }));
     body.querySelectorAll('[data-eq]').forEach((b) => b.onclick = () => net({ t: 'equip', i: +b.dataset.eq }));
     body.querySelectorAll('[data-sell]').forEach((b) => b.onclick = () => net({ t: 'sell', i: +b.dataset.sell }));
-    body.querySelectorAll('.equip-slot').forEach((el) => el.onclick = () => { if ((invData.equip || {})[el.dataset.slot]) net({ t: 'unequip', slot: el.dataset.slot }); });
+    body.querySelectorAll('.eq-name').forEach((el) => el.onclick = () => { if ((invData.equip || {})[el.dataset.slot]) net({ t: 'unequip', slot: el.dataset.slot }); });
   } else if (panelTab === 'party') {
     const mine = playerName();
     const nearby = [...remotes.values()].filter((r) => r.dim === myDim && !partyMembers.some((m) => m.name === r.name));

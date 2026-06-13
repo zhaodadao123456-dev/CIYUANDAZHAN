@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES, AFFIXES, AFFIX_COUNT } = require('./public/js/data.js');
+const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES, AFFIXES, AFFIX_COUNT, ENH_MAX, enhMul, enhCost, enhRate } = require('./public/js/data.js');
 const LAIR_R = +process.env.DW_LAIR_R || require('./public/js/data.js').LAIR_R;   // 可被测试覆盖
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -233,8 +233,9 @@ function statsOf(p) {
   for (const slot of Object.keys(p.equip || {})) {
     const it = p.equip[slot];
     if (!it) continue;
-    hp += it.hp || 0; patk += it.patk || 0; matk += it.matk || 0;
-    armor += it.armor || 0; mres += it.mres || 0; spd += it.spd || 0;
+    const ef = enhMul(it);   // 强化只放大基础属性，不放大特殊词条
+    hp += (it.hp || 0) * ef; patk += (it.patk || 0) * ef; matk += (it.matk || 0) * ef;
+    armor += (it.armor || 0) * ef; mres += (it.mres || 0) * ef; spd += it.spd || 0;
     crit += it.crit || 0; critDmg += it.critDmg || 0; lifesteal += it.lifesteal || 0;
     pen += it.pen || 0; cdr += it.cdr || 0; tenacity += it.tenacity || 0;
   }
@@ -325,6 +326,8 @@ const BOOTS_NAMES = ['疾行之靴', '迅捷之靴', '神行靴'];
 const SHOP_WEAPON = ['制式利刃', '精工战刃', '名匠神兵'];
 const SHOP_ARMOR = ['制式战甲', '精工铠甲', '名匠圣铠'];
 const SHOP_ACC = ['力量徽记', '勇气勋章', '王者徽章'];
+
+/* 装备强化公式（ENH_MAX/enhMul/enhCost/enhRate）来自共享 data.js */
 
 /* 按槽位/品质生成装备数值；q 为强度系数 */
 function makeItem(slot, name, rar, q, spdBonus = 0, affixBonus = 0) {
@@ -733,6 +736,27 @@ function handle(ws, m) {
       const { id, price, ...item } = it;
       p.inv.push({ ...item });
       send(p.ws, { t: 'feed', msg: `🛒 购买【${it.name}】成功！记得在背包中装备` });
+      sendInv(p); sendYou(p); persist(p);
+      return;
+    }
+    case 'enhance': {
+      // 装备强化：消耗金币提升基础属性，+4 起有失败率（失败仅耗金、不掉级、不损坏）
+      const item = m.slot ? p.equip[SLOT_NAMES[m.slot] ? m.slot : null] : p.inv[m.i | 0];
+      if (!item) return send(p.ws, { t: 'err', msg: '没有可强化的装备' });
+      const enh = item.enh || 0;
+      if (enh >= ENH_MAX) return send(p.ws, { t: 'err', msg: `已达强化上限 +${ENH_MAX}` });
+      const cost = enhCost(item);
+      if (p.gold < cost) return send(p.ws, { t: 'err', msg: `强化需要 ${cost} 金币` });
+      p.gold -= cost;
+      const rate = enhRate(enh);
+      if (Math.random() < rate) {
+        item.enh = enh + 1;
+        send(p.ws, { t: 'feed', msg: `🔨 强化成功！【${item.name}】+${item.enh}（花费 ${cost} 金）` });
+        roomCast(p.room, { t: 'dimfx', kind: 'heal', id: p.id });   // 复用金光特效
+      } else {
+        send(p.ws, { t: 'feed', msg: `💢 强化失败…【${item.name}】保持 +${enh}（花费 ${cost} 金，装备无损）` });
+      }
+      p.hp = Math.min(p.hp, maxHp(p));
       sendInv(p); sendYou(p); persist(p);
       return;
     }
