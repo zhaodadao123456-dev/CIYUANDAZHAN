@@ -125,19 +125,20 @@ namespace DW
         void GuiHud()
         {
             // 左上：状态
-            var tl = new Rect(12, 10, 360, 110);
+            var tl = new Rect(12, 10, 410, 132);
             guiRects.Add(tl);
             GUI.Box(tl, "", _box);
             int hp = you != null ? (int?)you["hp"] ?? 0 : 0;
             int maxHp = you != null ? (int?)you["maxHp"] ?? 1 : 1;
+            int shield = you != null ? (int?)you["shield"] ?? 0 : 0;
             int exp = you != null ? (int?)you["exp"] ?? 0 : 0;
             int expNeed = you != null ? (int?)you["expNeed"] ?? 1 : 1;
             int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
-            var roomName = curRoom == "war" ? "🌀 重叠战场" : Data.Dim(myDim).name;
-            GUI.Label(new Rect(20, 14, 340, 22), $"<b>{roomName}</b> ｜ {Data.ClassTitle(myDim, myCls)}", _label);
-            DrawBar(new Rect(20, 40, 280, 16), (float)hp / maxHp, Color.green, $"{hp}/{maxHp}");
-            DrawBar(new Rect(20, 60, 280, 8), (float)exp / expNeed, Data.Hex("#ffd166"), "");
-            GUI.Label(new Rect(20, 74, 340, 22),
+            var roomName = curRoom == "war" ? "🌀 重叠战场" : curRoom == "melee" ? "🔥 大混战" : Data.Dim(myDim).name;
+            GUI.Label(new Rect(20, 16, 390, 24), $"<b>{roomName}</b> ｜ {Data.ClassTitle(myDim, myCls)}", _label);
+            DrawBar(new Rect(20, 46, 386, 22), (float)hp / maxHp, new Color(0.2f, 0.85f, 0.3f), shield > 0 ? $"{hp}/{maxHp}  🛡{shield}" : $"{hp}/{maxHp}");
+            DrawBar(new Rect(20, 72, 386, 10), (float)exp / expNeed, Data.Hex("#ffd166"), "");
+            GUI.Label(new Rect(20, 88, 390, 24),
                 $"Lv.{MyLevel} ｜ 💰{gold}" + (MySkPts > 0 ? $" ｜ <color=#ffd166>✨技能点×{MySkPts}</color>" : ""), _label);
 
             // 战场横幅
@@ -315,17 +316,43 @@ namespace DW
             GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, (r.width - 2) * Mathf.Clamp01(pct), r.height - 2), Texture2D.whiteTexture);
             GUI.color = Color.white;
             if (txt.Length > 0)
-                GUI.Label(new Rect(r.x, r.y - 3, r.width, r.height + 6), $"<size=11><b> {txt}</b></size>", _label);
+                GUI.Label(new Rect(r.x, r.y - 3, r.width, r.height + 6), $"<size=12><b> {txt}</b></size>", _label);
+        }
+
+        /* 技能效果类型 → 颜色（图标按效果上色，不同职业技能类型不同→图标也不同） */
+        static Color KindColor(string kind)
+        {
+            switch (kind)
+            {
+                case "proj": return new Color(0.30f, 0.80f, 1f);     // 远程=青
+                case "aoe": return new Color(1f, 0.55f, 0.12f);      // 范围=橙
+                case "dashmelee": return new Color(0.7f, 0.4f, 1f);  // 突进=紫
+                case "heal": return new Color(0.3f, 0.95f, 0.5f);    // 治疗=绿
+                case "aoeheal": return new Color(0.5f, 1f, 0.7f);    // 群疗=浅绿
+                default: return new Color(1f, 0.4f, 0.35f);          // 近战=红
+            }
+        }
+
+        /* 在矩形里画一个纯色图标块（带顶部高光），IMGUI 无贴图也能有"图标" */
+        void IconSwatch(Rect r, Color c)
+        {
+            GUI.color = new Color(c.r * 0.5f, c.g * 0.5f, c.b * 0.5f, 0.9f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = new Color(c.r, c.g, c.b, 0.95f);
+            GUI.DrawTexture(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), Texture2D.whiteTexture);
+            GUI.color = new Color(1, 1, 1, 0.25f);
+            GUI.DrawTexture(new Rect(r.x + 2, r.y + 2, r.width - 4, 3), Texture2D.whiteTexture);
+            GUI.color = Color.white;
         }
 
         void GuiSkillBar()
         {
             var keys = new[] { "basic", "q", "e", "r" };
             var keyLabels = new[] { "攻击", "Q", "E", "R" };
-            float slotW = 116, gap = 10;   // 放大技能格
+            float slotW = 116, slotH = 98, gap = 10;   // 放大技能格（含图标）
             int extra = 2;   // 翻滚 + 次元技能
             float total = (keys.Length + extra) * (slotW + gap);
-            float x0 = (SW - total) / 2, y0 = SH - 116;
+            float x0 = (SW - total) / 2, y0 = SH - slotH - 18;
             var def = Data.Cls(myCls);
 
             // 触屏大攻击键（右下，醒目）
@@ -338,20 +365,23 @@ namespace DW
             for (int i = 0; i < keys.Length; i++)
             {
                 var sk = def.Skill(keys[i]);
-                var r = new Rect(x0 + i * (slotW + gap), y0, slotW, 76);
+                var r = new Rect(x0 + i * (slotW + gap), y0, slotW, slotH);
                 guiRects.Add(r);
                 bool locked = sk.minLvl > 0 && MyLevel < sk.minLvl;
                 float ready;
                 readyAt.TryGetValue(keys[i], out ready);
                 float cdRemain = Mathf.Max(0, ready - Time.time);
                 GUI.Box(r, "", _box);
-                GUI.Label(new Rect(r.x + 6, r.y + 4, slotW - 8, 18), $"<size=11><color=#ffd166>{keyLabels[i]}</color> Lv{MySkLvl(keys[i])}</size>", _label);
-                GUI.Label(new Rect(r.x + 6, r.y + 22, slotW - 8, 20), locked ? $"<color=#888>{sk.name}🔒</color>" : sk.name, _label);
+                // 图标块（按技能效果类型上色）+ 按键角标
+                var ic = new Rect(r.x + 6, r.y + 6, slotW - 12, 42);
+                IconSwatch(ic, locked ? Color.gray : KindColor(sk.kind));
+                GUI.Label(new Rect(ic.x + 4, ic.y + 2, slotW, 20), $"<b><color=#fff>{keyLabels[i]}</color></b>", _label);
+                GUI.Label(new Rect(ic.x, ic.y + 2, ic.width - 6, 20), $"<color=#ffd166>Lv{MySkLvl(keys[i])}</color>", new GUIStyle(_label) { alignment = TextAnchor.UpperRight });
+                GUI.Label(new Rect(r.x + 4, r.y + 50, slotW - 8, 20), locked ? $"<size=13><color=#888>{sk.name}🔒</color></size>" : $"<size=13>{sk.name}</size>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
                 if (cdRemain > 0)
-                    GUI.Label(new Rect(r.x + 6, r.y + 44, slotW - 8, 20), $"<color=#aaa>{cdRemain:0.0}s</color>", _label);
-                else if (GUI.Button(new Rect(r.x + 6, r.y + 44, slotW - 12, 24), "施放", _btn)) Cast(keys[i]);
-                // 技能加点
-                if (MySkPts > 0 && !locked)   // 技能无上限
+                    GUI.Label(new Rect(r.x + 4, r.y + 72, slotW - 8, 22), $"<b><color=#fff>{cdRemain:0.0}s</color></b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
+                else if (GUI.Button(new Rect(r.x + 8, r.y + 72, slotW - 16, 22), "施放", _btn)) Cast(keys[i]);
+                if (MySkPts > 0 && !locked)
                 {
                     var pr = new Rect(r.xMax - 26, r.y - 12, 26, 26);
                     guiRects.Add(pr);
@@ -361,22 +391,24 @@ namespace DW
                 }
             }
             // 翻滚
-            var dr = new Rect(x0 + keys.Length * (slotW + gap), y0, slotW, 76);
+            var dr = new Rect(x0 + keys.Length * (slotW + gap), y0, slotW, slotH);
             guiRects.Add(dr);
             GUI.Box(dr, "", _box);
+            IconSwatch(new Rect(dr.x + 6, dr.y + 6, slotW - 12, 42), new Color(0.45f, 0.6f, 0.85f));
+            GUI.Label(new Rect(dr.x + 10, dr.y + 8, slotW, 20), "<b><color=#fff>空格</color></b>", _label);
+            GUI.Label(new Rect(dr.x + 4, dr.y + 50, slotW - 8, 20), "<size=13>翻滚闪避</size>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
             float dRemain = Mathf.Max(0, dodgeReadyAt - Time.time);
-            GUI.Label(new Rect(dr.x + 6, dr.y + 4, slotW, 18), "<size=11><color=#ffd166>空格</color></size>", _label);
-            GUI.Label(new Rect(dr.x + 6, dr.y + 22, slotW, 20), "翻滚", _label);
-            if (dRemain > 0) GUI.Label(new Rect(dr.x + 6, dr.y + 44, slotW, 20), $"<color=#aaa>{dRemain:0.0}s</color>", _label);
-            // 次元专属技能（每个次元都有，F 键）
+            if (dRemain > 0) GUI.Label(new Rect(dr.x + 4, dr.y + 72, slotW - 8, 22), $"<b><color=#fff>{dRemain:0.0}s</color></b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
+            // 次元专属技能（F 键）
             {
-                var cr = new Rect(x0 + (keys.Length + 1) * (slotW + gap), y0, slotW, 76);
+                var cr = new Rect(x0 + (keys.Length + 1) * (slotW + gap), y0, slotW, slotH);
                 guiRects.Add(cr);
                 GUI.Box(cr, "", _box);
+                IconSwatch(new Rect(cr.x + 6, cr.y + 6, slotW - 12, 42), new Color(1f, 0.84f, 0.25f));
+                GUI.Label(new Rect(cr.x + 10, cr.y + 8, slotW, 20), "<b><color=#fff>F 次元</color></b>", _label);
+                GUI.Label(new Rect(cr.x + 4, cr.y + 50, slotW - 8, 20), $"<size=13>{dimSkillName}</size>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
                 float cRemain = Mathf.Max(0, captureReadyAt - Time.time);
-                GUI.Label(new Rect(cr.x + 6, cr.y + 4, slotW, 18), "<size=11><color=#ffd166>F 次元</color></size>", _label);
-                GUI.Label(new Rect(cr.x + 6, cr.y + 22, slotW, 20), dimSkillName, _label);
-                if (cRemain > 0) GUI.Label(new Rect(cr.x + 6, cr.y + 44, slotW, 20), $"<color=#aaa>{cRemain:0.0}s</color>", _label);
+                if (cRemain > 0) GUI.Label(new Rect(cr.x + 4, cr.y + 72, slotW - 8, 22), $"<b><color=#fff>{cRemain:0.0}s</color></b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
             }
         }
 
@@ -455,6 +487,17 @@ namespace DW
 
         string RarColor(JObject it) => ColorUtility.ToHtmlStringRGB(Data.RarityColors[Mathf.Clamp((int?)it["rar"] ?? 0, 0, 4)]);
 
+        /* 装备图标：品质色方块 + 部位首字（IMGUI 无贴图的"图标"） */
+        void ItemIcon(JObject it)
+        {
+            var rc = Data.RarityColors[Mathf.Clamp((int?)it["rar"] ?? 0, 0, 4)];
+            string slotName; Data.SlotNames.TryGetValue((string)it["slot"] ?? "", out slotName);
+            GUI.backgroundColor = rc;
+            GUILayout.Box(string.IsNullOrEmpty(slotName) ? "装" : slotName.Substring(0, 1),
+                new GUIStyle(_btn) { fontSize = 15, fontStyle = FontStyle.Bold }, GUILayout.Width(30), GUILayout.Height(30));
+            GUI.backgroundColor = Color.white;
+        }
+
         void GuiBag()
         {
             GUILayout.Label("<b>已装备</b>（点击卸下）", _label);
@@ -462,10 +505,12 @@ namespace DW
                 foreach (var slot in Data.SlotNames)
                 {
                     var it = equipData[slot.Key] as JObject;
-                    if (it == null) { GUILayout.Label($"{slot.Value}：<color=#777>空</color>", _label); continue; }
+                    if (it == null) { GUILayout.Label($"　{slot.Value}：<color=#777>空</color>", _label); continue; }
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"{slot.Value}：<color=#{RarColor(it)}>{it["name"]}</color> <size=12>{ItemStats(it)}</size>", _label);
-                    if (GUILayout.Button("卸下", _btn, GUILayout.Width(60))) Send(new { t = "unequip", slot = slot.Key });
+                    ItemIcon(it);
+                    GUILayout.Label($"<color=#{RarColor(it)}>{it["name"]}</color>\n<size=12>{ItemStats(it)}</size>", _label, GUILayout.Height(30));
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("卸下", _btn, GUILayout.Width(64), GUILayout.Height(30))) Send(new { t = "unequip", slot = slot.Key });
                     GUILayout.EndHorizontal();
                 }
             GUILayout.Space(8);
@@ -476,9 +521,11 @@ namespace DW
                     var it = (JObject)invData[i];
                     int val = (int?)it["val"] ?? 0;
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"<color=#{RarColor(it)}>{it["name"]}</color> <size=12>{ItemStats(it)}</size>", _label);
-                    if (GUILayout.Button("装备", _btn, GUILayout.Width(60))) Send(new { t = "equip", i });
-                    if (GUILayout.Button($"卖{val * 2 / 5}金", _btn, GUILayout.Width(86))) Send(new { t = "sell", i });
+                    ItemIcon(it);
+                    GUILayout.Label($"<color=#{RarColor(it)}>{it["name"]}</color>\n<size=12>{ItemStats(it)}</size>", _label, GUILayout.Height(30));
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("装备", _btn, GUILayout.Width(58), GUILayout.Height(30))) Send(new { t = "equip", i });
+                    if (GUILayout.Button($"卖{val * 2 / 5}", _btn, GUILayout.Width(64), GUILayout.Height(30))) Send(new { t = "sell", i });
                     GUILayout.EndHorizontal();
                 }
         }
