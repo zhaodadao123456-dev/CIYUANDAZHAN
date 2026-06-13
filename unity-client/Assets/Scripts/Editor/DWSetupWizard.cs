@@ -53,6 +53,20 @@ namespace DW.EditorTools
         /* 英雄池排序优先级（让常见职业形象排在前面，组合取模时更顺眼） */
         static readonly string[] HeroPriority = { "wukong", "悟空", "witch", "女巫", "cowboy", "sheriff", "牛仔", "trooper", "half_blood", "半血", "nun", "修女", "missionary", "传教士", "bunny", "兔" };
 
+        /* 次元专属英雄分配规则（依据真实资源清单的购买包，按 heroSrcs 顺序取首个匹配）：
+         *   修仙 ← 悟空(WukongB，全套人形动作)
+         *   西方魔法 ← Half_Blood / 教会侍从（人形，重定向悟空动作）
+         *   科技 ← Sci-Fi 士兵 v.1     赛博朋克 ← Sci-Fi 士兵 v.2
+         * 士兵包原为 Generic 骨骼无动作，SaveCharPrefab(forceHuman) 会自动转 Humanoid 并重导入。 */
+        static readonly (string dim, System.Func<string, bool> match)[] DimHeroRules =
+        {
+            ("xiuxian", (p) => Has(p, "wukong", "悟空")),
+            ("magic",   (p) => Has(p, "half_blood", "servant_church", "church", "半血") && !Has(p, "gun", "sword", "stand")),
+            ("tech",    (p) => Has(p, "trooper") && Has(p, "v.1", "v1")),
+            ("cyber",   (p) => Has(p, "trooper") && Has(p, "v.2", "v2")),
+        };
+        static bool Has(string p, params string[] keys) { var l = Lower(p); foreach (var k in keys) if (l.Contains(k)) return true; return false; }
+
         const string HeroDir = "Assets/Resources/DWHeroes";
         const string MobDir = "Assets/Resources/DWMobs";
 
@@ -85,11 +99,30 @@ namespace DW.EditorTools
                 SaveCharPrefab(bossSrcs[0], $"{ResDir}/mon_boss.prefab", ctrl, "世界BOSS(小丑)", log);
             else log.AppendLine("未发现小丑模型，世界BOSS沿用怪物模型");
 
-            // 英雄池 DWHeroes/h_XX（运行时按「次元×职业」组合取用，用上全部人物）
+            // 次元专属英雄（依据真实购买包精确分配，写 Resources/DW/hero_{dim}，运行时优先级最高）
+            log.AppendLine("\n--- 次元专属英雄分配 ---");
+            var usedForDim = new HashSet<string>();
+            foreach (var (dim, match) in DimHeroRules)
+            {
+                var src = heroSrcs.FirstOrDefault(match);
+                if (src == null) { log.AppendLine($"[{dim}] 未匹配到专属购买包 → 运行时回退角色池"); continue; }
+                SaveCharPrefab(src, $"{ResDir}/hero_{dim}.prefab", ctrl, $"次元英雄[{dim}]", log, forceHuman: true);
+                usedForDim.Add(src);
+            }
+            // 猎人无专属购买包：复用一个尚未占用的人形英雄（偏好男性形象），让其也有稳定外观
+            if (AssetDatabase.LoadAssetAtPath<GameObject>($"{ResDir}/hero_hunter.prefab") == null)
+            {
+                var hunterSrc = heroSrcs.FirstOrDefault((p) => !usedForDim.Contains(p) && Has(p, "man", "boy", "male"))
+                             ?? heroSrcs.FirstOrDefault((p) => !usedForDim.Contains(p));
+                if (hunterSrc != null)
+                    SaveCharPrefab(hunterSrc, $"{ResDir}/hero_hunter.prefab", ctrl, "次元英雄[hunter] (借用人形)", log, forceHuman: true);
+            }
+
+            // 英雄池 DWHeroes/h_XX（运行时按「次元×职业」组合取用的兜底，用上全部人物 + 未来未知购买包）
             RebuildFolder(HeroDir);
             int hi = 0;
             foreach (var src in heroSrcs)
-                SaveCharPrefab(src, $"{HeroDir}/h_{hi++:00}.prefab", ctrl, $"英雄池#{hi} {System.IO.Path.GetFileNameWithoutExtension(src)}", log);
+                SaveCharPrefab(src, $"{HeroDir}/h_{hi++:00}.prefab", ctrl, $"英雄池#{hi} {System.IO.Path.GetFileNameWithoutExtension(src)}", log, forceHuman: true);
             if (hi == 0) log.AppendLine("⚠ 英雄池为空，英雄将用占位小人");
 
             // 怪物池 DWMobs/mob_XX（骷髅等，运行时按怪物id稳定取用）
@@ -133,26 +166,77 @@ namespace DW.EditorTools
             return parts.Length >= 2 ? parts[0] + "/" + parts[1] : p;
         }
 
-        /* 把一个角色源复制成标准命名 Prefab 并挂动画控制器 */
-        static void SaveCharPrefab(string src, string dst, AnimatorController ctrl, string label, StringBuilder log)
+        /* 把一个角色源复制成标准命名 Prefab 并挂动画控制器。
+         * forceHuman：源若是 Generic 骨骼（如 Sci-Fi 士兵），自动把其 FBX 导入设置转 Humanoid
+         * 并重导入，使其能重定向通用人形动作——否则站桩 T-Pose。 */
+        static void SaveCharPrefab(string src, string dst, AnimatorController ctrl, string label, StringBuilder log, bool forceHuman = false)
         {
             AssetDatabase.DeleteAsset(dst);
             var srcGo = AssetDatabase.LoadAssetAtPath<GameObject>(src);
             if (srcGo == null) { log.AppendLine($"{label}：加载失败 {src}"); return; }
+            bool human = HasHumanAvatar(srcGo);
+            if (forceHuman && !human)
+            {
+                var av = EnsureHumanoidAvatar(srcGo, log);
+                human = av != null;
+                srcGo = AssetDatabase.LoadAssetAtPath<GameObject>(src);   // 重导入后重新加载
+            }
             var inst = (GameObject)Object.Instantiate(srcGo);
             var animator = inst.GetComponentInChildren<Animator>();
             if (animator == null) animator = inst.AddComponent<Animator>();
-            bool human = animator.avatar != null && animator.avatar.isHuman;
+            if (animator.avatar == null || !animator.avatar.isHuman)
+            {
+                var av = FindHumanAvatar(srcGo);                          // 转换后头像在 FBX 子资源里
+                if (av != null) { animator.avatar = av; human = true; }
+            }
             if (ctrl != null && human) animator.runtimeAnimatorController = ctrl;
             PrefabUtility.SaveAsPrefabAsset(inst, dst);
             Object.DestroyImmediate(inst);
-            log.AppendLine($"{label} ← {src}  动画:{(ctrl != null && human ? "已挂" : "静态(非人形骨骼)")}");
+            log.AppendLine($"{label} ← {src}  动画:{(ctrl != null && human ? "已挂" : "静态(无人形骨骼)")}");
         }
 
-        /* 全项目角色预制体（带蒙皮网格、人形优先、完整版优先、排除自己生成的 Resources/DW） */
+        static bool HasHumanAvatar(GameObject go)
+        {
+            var an = go.GetComponentInChildren<Animator>(true);
+            return an != null && an.avatar != null && an.avatar.isHuman;
+        }
+
+        /* 从模型 FBX 的子资源里取人形 Avatar */
+        static Avatar FindHumanAvatar(GameObject srcGo)
+        {
+            var smr = srcGo.GetComponentInChildren<SkinnedMeshRenderer>(true);
+            if (smr == null || smr.sharedMesh == null) return null;
+            var meshPath = AssetDatabase.GetAssetPath(smr.sharedMesh);
+            foreach (var a in AssetDatabase.LoadAllAssetsAtPath(meshPath))
+                if (a is Avatar av && av.isHuman) return av;
+            return null;
+        }
+
+        /* 把源模型的导入骨骼类型改为 Humanoid 并重导入，返回生成的人形 Avatar（失败返回 null） */
+        static Avatar EnsureHumanoidAvatar(GameObject srcGo, StringBuilder log)
+        {
+            var smr = srcGo.GetComponentInChildren<SkinnedMeshRenderer>(true);
+            if (smr == null || smr.sharedMesh == null) return null;
+            var meshPath = AssetDatabase.GetAssetPath(smr.sharedMesh);
+            var imp = AssetImporter.GetAtPath(meshPath) as ModelImporter;
+            if (imp == null) return null;
+            if (imp.animationType != ModelImporterAnimationType.Human)
+            {
+                imp.animationType = ModelImporterAnimationType.Human;
+                imp.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+                imp.SaveAndReimport();
+                log.AppendLine($"  ↳ 已将 {Path.GetFileName(meshPath)} 转为 Humanoid 骨骼并重导入");
+            }
+            var av = FindHumanAvatar(AssetDatabase.LoadAssetAtPath<GameObject>(meshPath));
+            if (av == null) log.AppendLine($"  ⚠ {Path.GetFileName(meshPath)} 自动 Humanoid 失败，可能需手动在导入设置里配 Avatar");
+            return av;
+        }
+
+        /* 全项目角色资源（含 .prefab 与导入的 .fbx/.obj 模型，如悟空只有 FBX）：
+         * 带蒙皮网格、人形优先、完整版优先、排除自己生成的 Resources/DW */
         static List<string> AllCharacterPrefabs()
         {
-            return AssetDatabase.FindAssets("t:Prefab")
+            return AssetDatabase.FindAssets("t:GameObject")
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where((p) => p.StartsWith("Assets/") && !p.StartsWith("Assets/Resources/"))
                 .Where((p) => {

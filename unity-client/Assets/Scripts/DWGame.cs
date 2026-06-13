@@ -553,10 +553,12 @@ namespace DW
         }
 
         /* 英雄模型按「次元×职业」组合从角色池里确定（确定性，各端一致，用上所有模型）：
-         *  1) 显式覆盖 DW/hero_{dim}_{cls} → 2) 角色池按组合取模 → 3) 占位小人 */
+         *  1) DW/hero_{dim}_{cls} → 2) DW/hero_{dim}（次元专属，向导依购买包分配）
+         *  → 3) DW/hero_{cls} → 4) 角色池按组合取模 → 5) 占位小人 */
         GameObject MakeHero(string clsId, string dimId)
         {
             var prefab = Resources.Load<GameObject>("DW/hero_" + dimId + "_" + clsId)
+                       ?? Resources.Load<GameObject>("DW/hero_" + dimId)
                        ?? Resources.Load<GameObject>("DW/hero_" + clsId);
             if (prefab == null)
             {
