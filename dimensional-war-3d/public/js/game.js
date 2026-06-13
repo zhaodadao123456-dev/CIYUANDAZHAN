@@ -324,6 +324,7 @@ function onMsg(m) {
     }
     case 'rank': {
       rankData = m.list || [];
+      if (m.mode) rankMode = m.mode;
       renderPanel();
       break;
     }
@@ -931,7 +932,7 @@ function bindInput() {
   };
   document.querySelectorAll('.panel-tab').forEach((el) => el.onclick = () => {
     panelTab = el.dataset.tab;
-    if (panelTab === 'rank') net({ t: 'rank' });   // 打开时拉取最新榜单
+    if (panelTab === 'rank') net({ t: 'rank', mode: rankMode });   // 打开时拉取最新榜单
     renderPanel();
   });
   $('btn-panel-close').onclick = togglePanel;
@@ -1344,7 +1345,7 @@ function updateYou(y) {
   if (y.skPts != null) HUD.skPts = y.skPts;
   if (y.spd != null) HUD.spd = y.spd;
   for (const k of ['patk', 'matk', 'armor', 'mres', 'gold', 'maxHp', 'hp', 'exp', 'expNeed', 'kills', 'pvpKills',
-                   'crit', 'critDmg', 'lifesteal', 'pen', 'cdr', 'tenacity']) {
+                   'crit', 'critDmg', 'lifesteal', 'pen', 'cdr', 'tenacity', 'rankPts']) {
     if (y[k] != null) HUD[k] = y[k];
   }
   $('hp-fill').style.width = Math.max(0, y.hp / y.maxHp * 100) + '%';
@@ -1358,6 +1359,7 @@ function updateYou(y) {
 /* ---------- 属性/背包/商店 面板 ---------- */
 let panelTab = 'stats';
 let rankData = [];
+let rankMode = 'level';
 const RAR_COLORS = ['#95a5a6', '#2ecc71', '#3498db', '#9b59b6', '#f39c12'];
 function itemStatText(it) {
   const ef = enhMul(it);   // 强化放大基础属性（与服务器一致）
@@ -1413,6 +1415,7 @@ function renderPanel() {
         <div>⏱️ 冷却缩减</div><div>${HUD.cdr || 0}%</div>
         <div>🧱 韧性(抗控)</div><div>${HUD.tenacity || 0}%</div>
         <div>💰 金币</div><div>${HUD.gold || 0}</div>
+        <div>🏅 段位</div><div><span style="color:${rankTier(HUD.rankPts || 0).color}">${rankTier(HUD.rankPts || 0).icon} ${rankTier(HUD.rankPts || 0).name}</span>（${HUD.rankPts || 0} 分，重叠战场/大混战击杀+分）</div>
         <div>🗡️ 击杀</div><div>野怪${HUD.kills || 0} / 玩家${HUD.pvpKills || 0}</div>
         <div>✨ 技能点</div><div>${HUD.skPts}（升级获得，点技能格上的＋加点）</div>
       </div>
@@ -1483,20 +1486,32 @@ function renderPanel() {
     const dimIcon2 = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.icon : '❔'; };
     const dimAcc = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.color : '#aab'; };
     const mine = playerName();
+    const ladder = rankMode === 'ladder';
     body.innerHTML = `
-      <div class="panel-sub">🏆 全服排行榜（等级 / PvP击杀）</div>
+      <div class="rank-toggle">
+        <button class="${ladder ? '' : 'on'}" data-rmode="level">📈 等级榜</button>
+        <button class="${ladder ? 'on' : ''}" data-rmode="ladder">🏅 段位榜</button>
+      </div>
       ${rankData.length === 0 ? '<div class="dim-text">加载中…</div>' : rankData.map((r, i) => {
         const pos = i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1);
         const title = (CLASS_NAMES[r.dim] || {})[r.cls];
+        const tier = rankTier(r.rankPts || 0);
         const cls = `rank-row${i < 3 ? ' top' + (i + 1) : ''}${r.name === mine ? ' self' : ''}`;
+        const head = ladder
+          ? `<span style="color:${tier.color}">${tier.icon}${tier.name} ${r.rankPts || 0}</span> ｜ ⚔️${r.pvpKills} ｜ Lv.${r.level}`
+          : `${title ? `<span class="rank-tag">${title}</span>` : ''}Lv.${r.level} ｜ ⚔️PvP ${r.pvpKills} ｜ 🗡️${r.kills}`;
         return `<div class="${cls}">
           <div class="rank-pos">${pos}</div>
           <div class="rank-main">
             <div class="rank-name"><span class="dim-ic">${dimIcon2(r.dim)}</span><span style="color:${dimAcc(r.dim)}">${r.name}</span>${r.online ? '<span class="rank-dot" title="在线"></span>' : ''}</div>
-            <div class="rank-sub">${title ? `<span class="rank-tag">${title}</span>` : ''}Lv.${r.level} ｜ ⚔️PvP ${r.pvpKills} ｜ 🗡️${r.kills}${r.ach ? ` ｜ 🏅×${r.ach}` : ''}</div>
+            <div class="rank-sub">${head}${r.ach ? ` ｜ 🏅×${r.ach}` : ''}</div>
           </div>
         </div>`;
       }).join('')}`;
+    body.querySelectorAll('[data-rmode]').forEach((b) => b.onclick = () => {
+      if (rankMode === b.dataset.rmode) return;
+      rankMode = b.dataset.rmode; rankData = []; renderPanel(); net({ t: 'rank', mode: rankMode });
+    });
   } else {
     body.innerHTML = `
       <div class="panel-sub">商店（金币：💰${HUD.gold || 0}）</div>

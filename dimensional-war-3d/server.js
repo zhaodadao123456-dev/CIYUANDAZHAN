@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES, AFFIXES, AFFIX_COUNT, ENH_MAX, enhMul, enhCost, enhRate } = require('./public/js/data.js');
+const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES, AFFIXES, AFFIX_COUNT, ENH_MAX, enhMul, enhCost, enhRate, rankTier, rankDelta } = require('./public/js/data.js');
 const LAIR_R = +process.env.DW_LAIR_R || require('./public/js/data.js').LAIR_R;   // 可被测试覆盖
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -199,7 +199,7 @@ function newPlayer(ws, name, dimId, clsId) {
     id, ws, name, dim: dimId, cls: clsId, room: dimId,
     x: rnd(-4, 4), z: rnd(-4, 4), ry: 0, anim: 'idle',
     level: rec.level || 1, exp: rec.exp || 0, gold: rec.gold || 0,
-    kills: rec.kills || 0, pvpKills: rec.pvpKills || 0,
+    kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, rankPts: rec.rankPts || 0,
     ach: { ...(rec.ach || {}) },
     hp: 0, dead: false, dieT: 0,
     cds: { basic: 0, q: 0, e: 0, r: 0 },
@@ -255,7 +255,7 @@ const skHealMul = (p, k) => 1 + 0.15 * ((p.sk[k] || 1) - 1);
 
 function persist(p) {
   saved[p.name] = {
-    level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills,
+    level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, rankPts: p.rankPts || 0,
     cls: p.cls, dim: p.dim, sk: p.sk, skPts: p.skPts, inv: p.inv, equip: p.equip,
     daily: p.daily, dailyStreak: p.dailyStreak, ach: p.ach || {},
     pet: p.pet ? { name: p.pet.name, tier: p.pet.tier, maxHp: p.pet.maxHp, atk: p.pet.atk } : null,
@@ -277,6 +277,9 @@ const ACHIEVEMENTS = [
   { id: 'boss1',   name: '屠灭者',   icon: '👑', desc: '参与讨伐世界BOSS' },
   { id: 'mvp1',    name: '讨伐MVP', icon: '🏅', desc: '在BOSS战中输出第一', bc: 1 },
   { id: 'melee_win', name: '混战之王', icon: '🏆', desc: '赢得五次元大混战', bc: 1 },
+  { id: 'rank_gold', name: '黄金斗士',  icon: '🥇', desc: 'PvP 段位达到黄金' },
+  { id: 'rank_dia',  name: '钻石强者',  icon: '💠', desc: 'PvP 段位达到钻石', bc: 1 },
+  { id: 'rank_king', name: '次元王者',  icon: '👑', desc: 'PvP 段位达到王者', bc: 1 },
 ];
 const ACH_MAP = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
 
@@ -301,6 +304,9 @@ function checkAch(p) {
   if (p.pvpKills >= 10) unlock(p, 'pvp10');
   if (p.pvpKills >= 50) unlock(p, 'pvp50');
   if (p.gold >= 5000) unlock(p, 'rich5k');
+  if ((p.rankPts || 0) >= 500) unlock(p, 'rank_gold');
+  if ((p.rankPts || 0) >= 1800) unlock(p, 'rank_dia');
+  if ((p.rankPts || 0) >= 5000) unlock(p, 'rank_king');
 }
 
 function gainExp(p, n) {
@@ -475,7 +481,7 @@ function sendYou(p) {
   const st = statsOf(p);
   send(p.ws, {
     t: 'you', hp: Math.max(0, Math.round(p.hp)), maxHp: st.maxHp, level: p.level, exp: p.exp, expNeed: expNeed(p.level),
-    gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, room: p.room, dim: p.dim,
+    gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, rankPts: p.rankPts || 0, room: p.room, dim: p.dim,
     patk: Math.round(st.patk), matk: Math.round(st.matk), armor: Math.round(st.armor), mres: Math.round(st.mres),
     spd: +st.spd.toFixed(2), skPts: p.skPts, sk: p.sk,
     crit: Math.round(st.crit), critDmg: Math.round(st.critDmg), lifesteal: Math.round(st.lifesteal),
@@ -671,18 +677,21 @@ function handle(ws, m) {
       return;
     }
     case 'rank': {
-      // 全服排行榜：含离线玩家（存档）+ 在线实时数据
+      // 全服排行榜：含离线玩家（存档）+ 在线实时数据。mode='ladder' 按段位分排，否则按等级
       const all = new Map();
       for (const [name, rec] of Object.entries(saved)) {
-        all.set(name, { name, level: rec.level || 1, kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, gold: rec.gold || 0, dim: rec.dim || '', cls: rec.cls || '', ach: Object.keys(rec.ach || {}).length, online: false });
+        all.set(name, { name, level: rec.level || 1, kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, rankPts: rec.rankPts || 0, gold: rec.gold || 0, dim: rec.dim || '', cls: rec.cls || '', ach: Object.keys(rec.ach || {}).length, online: false });
       }
       for (const op of conns.values()) {
-        all.set(op.name, { name: op.name, level: op.level, kills: op.kills, pvpKills: op.pvpKills, gold: op.gold, dim: op.dim, cls: op.cls, ach: Object.keys(op.ach || {}).length, online: true });
+        all.set(op.name, { name: op.name, level: op.level, kills: op.kills, pvpKills: op.pvpKills, rankPts: op.rankPts || 0, gold: op.gold, dim: op.dim, cls: op.cls, ach: Object.keys(op.ach || {}).length, online: true });
       }
+      const ladder = m.mode === 'ladder';
       const list = [...all.values()]
-        .sort((a, b) => b.level - a.level || b.pvpKills - a.pvpKills || b.kills - a.kills)
+        .sort(ladder
+          ? (a, b) => b.rankPts - a.rankPts || b.pvpKills - a.pvpKills || b.level - a.level
+          : (a, b) => b.level - a.level || b.pvpKills - a.pvpKills || b.kills - a.kills)
         .slice(0, 20);
-      return send(p.ws, { t: 'rank', list });
+      return send(p.ws, { t: 'rank', list, mode: ladder ? 'ladder' : 'level' });
     }
     case 'sklvl': {
       const k = ['basic', 'q', 'e', 'r'].includes(m.k) ? m.k : null;
@@ -1276,6 +1285,15 @@ function killPlayer(killer, victim) {
   victim.gold -= loot;
   killer.gold += loot;
   killer.pvpKills++;
+  // PvP 段位分结算：打强者得分多、打弱者得分少；阵亡者扣分（不低于0）
+  const before = rankTier(killer.rankPts).name;
+  const { gain, loss } = rankDelta(killer.rankPts || 0, victim.rankPts || 0);
+  killer.rankPts = (killer.rankPts || 0) + gain;
+  victim.rankPts = Math.max(0, (victim.rankPts || 0) - loss);
+  send(killer.ws, { t: 'feed', msg: `🏅 段位 +${gain} 分（当前 ${killer.rankPts}｜${rankTier(killer.rankPts).icon}${rankTier(killer.rankPts).name}）` });
+  send(victim.ws, { t: 'feed', msg: `📉 段位 -${loss} 分（当前 ${victim.rankPts}｜${rankTier(victim.rankPts).icon}${rankTier(victim.rankPts).name}）` });
+  const after = rankTier(killer.rankPts).name;
+  if (after !== before) allCast({ t: 'feed', msg: `${rankTier(killer.rankPts).icon} 【${dimName(killer.dim)}】${killer.name} 晋级【${after}】段位！` });
   checkAch(killer);
   if (war.active && victim.room === 'war') {
     if (killer.dim === war.a) war.killsA++;

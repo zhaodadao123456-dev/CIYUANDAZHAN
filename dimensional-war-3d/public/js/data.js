@@ -139,6 +139,30 @@ const enhMul = (it) => 1 + ENH_STEP * ((it && it.enh) || 0);
 const enhCost = (it) => Math.round(50 * (((it && it.rar) || 0) + 1) * Math.pow(1.45, (it && it.enh) || 0));
 const enhRate = (enh) => (enh < 4 ? 1 : Math.max(0.3, 1 - (enh - 3) * 0.1));   // +3 内必成
 
+/* ---------- PvP 段位赛（重叠战场/大混战击杀积累段位分） ---------- */
+const RANK_TIERS = [
+  { name: '青铜', icon: '🥉', min: 0,    color: '#cd7f32' },
+  { name: '白银', icon: '🥈', min: 200,  color: '#bdc3c7' },
+  { name: '黄金', icon: '🥇', min: 500,  color: '#f1c40f' },
+  { name: '铂金', icon: '💎', min: 1000, color: '#1abc9c' },
+  { name: '钻石', icon: '💠', min: 1800, color: '#3498db' },
+  { name: '大师', icon: '🔱', min: 3000, color: '#9b59b6' },
+  { name: '王者', icon: '👑', min: 5000, color: '#e74c3c' },
+];
+function rankTier(pts) {
+  pts = pts || 0;
+  let t = RANK_TIERS[0];
+  for (const r of RANK_TIERS) if (pts >= r.min) t = r;
+  return t;
+}
+/* 一次 PvP 击杀的段位分结算：打强者得分更多、打弱者得分少（抑制虐菜） */
+function rankDelta(killerPts, victimPts) {
+  const diff = (victimPts || 0) - (killerPts || 0);
+  const gain = Math.max(6, Math.min(45, 18 + Math.round(diff / 100)));
+  const loss = Math.max(4, Math.min(30, 14 - Math.round(diff / 120)));
+  return { gain, loss };
+}
+
 const SLOTS = [
   { key: 'weapon', name: '武器', stat: 'atk' },
   { key: 'armor',  name: '防具', stat: 'def' },
@@ -228,5 +252,5 @@ const CLASS_NAMES = {
   hunter:  { warrior: '兽刃猎手', assassin: '影爪猎手', ranger: '鹰眼猎手', tank: '巨盾猎手', healer: '灵兽驯师' },
 };
 
-return { DIMENSIONS, RARITIES, AFFIXES, AFFIX_COUNT, AFFIX_MAP, ENH_MAX, ENH_STEP, enhMul, enhCost, enhRate, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
+return { DIMENSIONS, RARITIES, AFFIXES, AFFIX_COUNT, AFFIX_MAP, ENH_MAX, ENH_STEP, enhMul, enhCost, enhRate, RANK_TIERS, rankTier, rankDelta, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
 });

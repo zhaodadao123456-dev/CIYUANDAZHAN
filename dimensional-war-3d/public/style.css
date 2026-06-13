@@ -354,6 +354,12 @@ body.touch .controls-help { display: none; }
 .inv-btns button:hover { background: #3a3a7a; }
 
 /* ---------- 排行榜美化 ---------- */
+.rank-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+.rank-toggle button {
+  flex: 1; padding: 7px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  background: rgba(40,40,72,0.6); color: #bcbce0; border: 1px solid #3a3a66;
+}
+.rank-toggle button.on { background: rgba(255,209,102,0.16); color: #ffd166; border-color: #ffd166; font-weight: bold; }
 .rank-row {
   display: flex; align-items: center; gap: 9px; padding: 8px 10px; margin-bottom: 6px;
   border: 1px solid #2c2c50; border-radius: 10px; background: rgba(28,28,54,0.6);
