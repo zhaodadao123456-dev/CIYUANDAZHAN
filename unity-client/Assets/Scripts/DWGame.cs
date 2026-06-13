@@ -377,6 +377,9 @@ namespace DW
 
         /* ================= 场景与实体 ================= */
 
+        // 障碍物（与服务器一致）：x,z,r,t
+        readonly List<Vector4> obstacles = new List<Vector4>();
+
         void EnterRoom(string roomId, JObject m)
         {
             curRoom = roomId;
@@ -385,6 +388,10 @@ namespace DW
             foreach (var e in pets.Values) Destroy(e.go);
             foreach (var p in projs.Values) Destroy(p.go);
             players.Clear(); monsters.Clear(); pets.Clear(); projs.Clear();
+            obstacles.Clear();
+            if (m["obstacles"] != null)
+                foreach (JObject o in (JArray)m["obstacles"])
+                    obstacles.Add(new Vector4((float)o["x"], (float)o["z"], (float)o["r"], (int?)o["t"] ?? 0));
             BuildWorld(roomId == "war" ? Data.WarDim : Data.Dim(myDim));
 
             pos = new Vector3((float?)m["x"] ?? 0, 0, (float?)m["z"] ?? 0);
@@ -447,32 +454,64 @@ namespace DW
                     if (pf != null) themeProps.Add(pf);
                 }
 
-            int propCount = Mathf.RoundToInt(Data.MapHalf * 2.2f);   // 随地图变大而变密
-            for (int i = 0; i < propCount; i++)
+            // 障碍物即可见场景：每个服务器障碍处放一棵树/一栋建筑（看得见=走不过去）
+            if (obstacles.Count > 0)
             {
-                float a = (float)(rng.NextDouble() * Math.PI * 2);
-                float r = 22 + (float)rng.NextDouble() * (Data.MapHalf - 28);
-                var p2 = new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r);
-                if (themeProps.Count > 0)
+                for (int i = 0; i < obstacles.Count; i++)
                 {
-                    var src = themeProps[rng.Next(themeProps.Count)];
-                    var o = Instantiate(src);
-                    o.transform.position = p2;
-                    o.transform.rotation = Quaternion.Euler(0, (float)(rng.NextDouble() * 360), 0);
-                    float s = 1.6f + (float)rng.NextDouble() * 1.2f;   // KayKit 原始较小，放大
-                    o.transform.localScale = Vector3.one * s;
-                    worldObjs.Add(o);
-                }
-                else
-                {
-                    var o = GameObject.CreatePrimitive(rng.NextDouble() < 0.5 ? PrimitiveType.Cube : PrimitiveType.Cylinder);
-                    float h = 1.5f + (float)rng.NextDouble() * 5f;
-                    o.transform.position = new Vector3(p2.x, h / 2, p2.z);
-                    o.transform.localScale = new Vector3(1.2f, h, 1.2f);
-                    Tint(o, Color.Lerp(theme.ground * 1.8f, theme.accent, 0.12f));
-                    worldObjs.Add(o);
+                    var ob = obstacles[i];
+                    PlaceProp(themeProps, theme, new Vector3(ob.x, 0, ob.y), ob.z * 1.7f, i, rng);
                 }
             }
+            else   // 战场/混战等无障碍房间：随机点缀
+            {
+                int propCount = Mathf.RoundToInt(Data.MapHalf * 1.2f);
+                for (int i = 0; i < propCount; i++)
+                {
+                    float a = (float)(rng.NextDouble() * Math.PI * 2);
+                    float r = 22 + (float)rng.NextDouble() * (Data.MapHalf - 28);
+                    PlaceProp(themeProps, theme, new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r), 1.6f + (float)rng.NextDouble() * 1.2f, i, rng);
+                }
+            }
+        }
+
+        void PlaceProp(List<GameObject> themeProps, DimDef theme, Vector3 at, float scale, int idx, System.Random rng)
+        {
+            if (themeProps.Count > 0)
+            {
+                var src = themeProps[idx % themeProps.Count];
+                var o = Instantiate(src);
+                o.transform.position = at;
+                o.transform.rotation = Quaternion.Euler(0, (float)(rng.NextDouble() * 360), 0);
+                o.transform.localScale = Vector3.one * Mathf.Max(1.4f, scale);
+                worldObjs.Add(o);
+            }
+            else
+            {
+                var o = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                float h = Mathf.Max(2f, scale * 1.6f);
+                o.transform.position = new Vector3(at.x, h / 2, at.z);
+                o.transform.localScale = new Vector3(scale, h, scale);
+                Tint(o, Color.Lerp(theme.ground * 1.8f, theme.accent, 0.12f));
+                worldObjs.Add(o);
+            }
+        }
+
+        /* 本地碰撞：把坐标推出所有障碍圆（与服务器一致，避免回弹） */
+        Vector3 ResolveObstacles(Vector3 p, float rad)
+        {
+            for (int k = 0; k < obstacles.Count; k++)
+            {
+                var o = obstacles[k];
+                float dx = p.x - o.x, dz = p.z - o.y, min = o.z + rad;
+                float d2 = dx * dx + dz * dz;
+                if (d2 < min * min)
+                {
+                    float d = Mathf.Sqrt(d2); if (d < 0.001f) d = 0.001f;
+                    p.x = o.x + dx / d * min; p.z = o.y + dz / d * min;
+                }
+            }
+            return p;
         }
 
         static void Tint(GameObject go, Color c)
@@ -1019,6 +1058,7 @@ namespace DW
                 pos += vel * speed * Time.deltaTime;
                 pos.x = Mathf.Clamp(pos.x, -Data.MapHalf, Data.MapHalf);
                 pos.z = Mathf.Clamp(pos.z, -Data.MapHalf, Data.MapHalf);
+                pos = ResolveObstacles(pos, 0.6f);   // 撞树木/建筑停下
                 ry = Mathf.Atan2(vel.x, vel.z);
             }
             meGo.transform.position = pos;

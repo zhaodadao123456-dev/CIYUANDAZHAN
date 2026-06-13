@@ -173,6 +173,30 @@ function client(name, dim, cls) {
   const daily = A.got('feed', (m) => /每日签到/.test(m.msg));
   check('每日签到奖励', !!daily, daily && daily.msg.slice(0, 30));
 
+  // 10.955 障碍物碰撞：welcome 含 obstacles，且无法走进障碍圆内
+  const wA2 = A.got('welcome');
+  const obs = wA2 && wA2.obstacles;
+  check('地图含障碍物布局', !!(obs && obs.length > 0), obs && `障碍数=${obs.length}`);
+  if (obs && obs.length) {
+    const E = client(); await E.open;
+    E.send({ t: 'join', name: '碰撞测试', dim: 'tech', cls: 'warrior' });
+    await sleep(300);
+    const o0 = (E.got('welcome').obstacles || [])[0] || obs[0];
+    // 朝障碍中心连续小步移动，服务器应把我挡在圆外
+    let ex = 0, ez = 0;
+    for (let i = 0; i < 80; i++) {
+      const d = Math.hypot(o0.x - ex, o0.z - ez) || 1;
+      ex += (o0.x - ex) / d * 0.6; ez += (o0.z - ez) / d * 0.6;
+      E.send({ t: 'mv', x: ex, z: ez, ry: 0, anim: 'run' });
+      await sleep(30);
+    }
+    const snap = [...E.msgs].reverse().find((x) => x.t === 'snap');
+    const meRow = snap && snap.ps.find((r) => r[0] === E.got('welcome').id);
+    const distToCenter = meRow ? Math.hypot(o0.x - meRow[1], o0.z - meRow[2]) : 0;
+    check('被障碍物挡住(未穿模)', distToCenter > o0.r * 0.8, `距障碍中心=${distToCenter.toFixed(2)} 半径=${o0.r}`);
+    E.ws.close();
+  }
+
   // 10.96 五次元大混战：等待开战(15s调度) → 进入混战场
   let meleeOn = false;
   for (let i = 0; i < 24 && !meleeOn; i++) {

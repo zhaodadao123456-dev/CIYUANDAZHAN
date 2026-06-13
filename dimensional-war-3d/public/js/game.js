@@ -299,6 +299,7 @@ function onMsg(m) {
       if (m.ach) myAch = new Set(m.ach);
       if (m.dimSkill) { dimSkillDef = m.dimSkill; updateDimSkillSlot(); }
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
+      obstacles = m.obstacles || [];
       enterRoom(m.room, m);
       setBoss(m.boss);
       if (m.melee) { meleeInfo = m.melee; renderMeleeBanner(); }
@@ -607,19 +608,13 @@ function buildHomeLayout(themeKey, add, rng, theme) {
   campfire.position.set(0, 2.5, 0);
   add(campfire);
 
-  // 3) 野外散布（避开大道与巢穴方向）
+  // 3) 野外障碍：在服务器障碍点放可见的树/巨石/建筑（看得见=走不过去）
   const lairA = (typeof LAIR_ANGLES !== 'undefined' && LAIR_ANGLES[themeKey]) || 0;
-  const count = Math.round((themeKey === 'cyber' ? 56 : 72) * 2.4);   // 地图扩大后加密摆件
-  for (let i = 0; i < count; i++) {
-    const a = rng() * Math.PI * 2;
-    if (inRoad(a)) continue;
-    let da = Math.abs(a - lairA);
-    if (da > Math.PI) da = Math.PI * 2 - da;
-    const r = 22 + rng() * (MAP_HALF - 28);
-    if (da < 0.4 && r > LAIR_R - 16) continue;  // 巢穴前留空地
+  for (const ob of obstacles) {
     const o = MODELS.makeProp(themeKey, rng) || fallback();
-    o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+    o.position.set(ob.x, 0, ob.z);
     o.rotation.y = rng() * 6.28;
+    o.scale.multiplyScalar(Math.max(1, ob.r * 0.9));   // 体积匹配碰撞半径
     add(o);
   }
 
@@ -949,6 +944,20 @@ function togglePanel() {
 }
 
 /* 相机相对移动向量（键盘 WASD 或虚拟摇杆） */
+let obstacles = [];
+function resolveObstacles(x, z, rad) {
+  for (let k = 0; k < obstacles.length; k++) {
+    const o = obstacles[k];
+    const dx = x - o.x, dz = z - o.z, min = o.r + rad;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < min * min) {
+      const d = Math.sqrt(d2) || 0.001;
+      x = o.x + dx / d * min; z = o.z + dz / d * min;
+    }
+  }
+  return [x, z];
+}
+
 function moveVec() {
   let fx = 0, fz = 0;
   if (joy.active && (joy.dx || joy.dy)) {
@@ -1615,6 +1624,8 @@ function animate() {
       if (vx || vz) {
         me.x = Math.max(-MAP_HALF, Math.min(MAP_HALF, me.x + vx * speed * dt));
         me.z = Math.max(-MAP_HALF, Math.min(MAP_HALF, me.z + vz * speed * dt));
+        const rp = resolveObstacles(me.x, me.z, 0.6);   // 撞树木/建筑停下
+        me.x = rp[0]; me.z = rp[1];
         if (time - me.attackT > 0.25) me.obj.rotation.y = Math.atan2(vx, vz);
         me.anim = 'run';
       } else me.anim = 'idle';

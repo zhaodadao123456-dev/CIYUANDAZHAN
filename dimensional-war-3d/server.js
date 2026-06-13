@@ -54,12 +54,62 @@ setInterval(() => {
 
 /* ---------- 房间（每个次元一张地图 + 重叠战场） ---------- */
 const rooms = {};
-for (const d of DIMENSIONS) rooms[d.id] = makeRoom(d.id);
+
+function makeRoom(id) {
+  return { id, players: new Map(), monsters: new Map(), projectiles: new Map(), obstacles: [] };
+}
+
+/* 确定性随机（按字符串种子），保证服务器与各端布局一致 */
+function seededRand(seed) {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+}
+
+/* 生成一张地图的障碍物（树木/建筑/巨石），服务器与客户端共用此布局做碰撞与渲染 */
+function genObstacles(dimId) {
+  const rng = seededRand('dw-obstacles-' + dimId);
+  const lairA = (LAIR_ANGLES && LAIR_ANGLES[dimId]) || 0;
+  const list = [];
+  const tries = 220;
+  for (let i = 0; i < tries && list.length < 90; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = SAFE_R + 8 + rng() * (MAP_HALF - SAFE_R - 18);
+    // 4 条主干道留出通路
+    const roadGap = Math.abs(((a % (Math.PI / 2)) / (Math.PI / 2)) - 0.5);
+    if (roadGap > 0.42) continue;
+    // 巢穴正前方留空
+    let da = Math.abs(a - lairA); if (da > Math.PI) da = Math.PI * 2 - da;
+    if (da < 0.5 && r > LAIR_R - 18) continue;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (list.some((o) => (o.x - x) * (o.x - x) + (o.z - z) * (o.z - z) < 36)) continue; // 间距≥6
+    const t = i % 3;                  // 0 树 1 巨石 2 建筑
+    const rad = t === 2 ? 2.4 : t === 1 ? 1.6 : 1.1;
+    list.push({ x: +x.toFixed(1), z: +z.toFixed(1), r: rad, t });
+  }
+  return list;
+}
+
+for (const d of DIMENSIONS) { rooms[d.id] = makeRoom(d.id); rooms[d.id].obstacles = genObstacles(d.id); }
 rooms.war = makeRoom('war');
 rooms.melee = makeRoom('melee');
 
-function makeRoom(id) {
-  return { id, players: new Map(), monsters: new Map(), projectiles: new Map() };
+/* 把坐标推出所有障碍圆（实体半径 rad），返回 {x,z} */
+function resolveObstacles(room, x, z, rad) {
+  const obs = room.obstacles;
+  if (!obs || obs.length === 0) return { x, z };
+  for (let k = 0; k < obs.length; k++) {
+    const o = obs[k];
+    const dx = x - o.x, dz = z - o.z;
+    const min = o.r + rad;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < min * min) {
+      const d = Math.sqrt(d2) || 0.001;
+      x = o.x + (dx / d) * min;
+      z = o.z + (dz / d) * min;
+    }
+  }
+  return { x, z };
 }
 
 /* ---------- 怪物 ---------- */
@@ -516,7 +566,8 @@ function handle(ws, m) {
         x = p.x + (x - p.x) / d * maxD;
         z = p.z + (z - p.z) / d * maxD;
       }
-      p.x = x; p.z = z;
+      const rp = resolveObstacles(rooms[p.room], x, z, 0.6);   // 障碍物碰撞
+      p.x = rp.x; p.z = rp.z;
       p.ry = +m.ry || 0;
       p.anim = m.anim === 'run' ? 'run' : 'idle';
       p.lastMoveT = t;
@@ -860,6 +911,7 @@ function joinRoom(p, roomId, isFirst = false) {
     war: warState(),
     melee: meleeState(),
     boss: worldBoss ? { alive: 1, dim: worldBoss.dim, name: worldBoss.name, x: worldBoss.x, z: worldBoss.z } : null,
+    obstacles: rooms[roomId].obstacles,
     shop: isFirst ? SHOP : undefined,
     achDefs: isFirst ? ACHIEVEMENTS : undefined,
     ach: Object.keys(p.ach || {}),
@@ -1309,6 +1361,8 @@ function tickRoom(room) {
         mo.state = 'chase';
         mo.x += (tgt.x - mo.x) / d * mo.speed * dt;
         mo.z += (tgt.z - mo.z) / d * mo.speed * dt;
+        const rm = resolveObstacles(room, mo.x, mo.z, 0.8);
+        mo.x = rm.x; mo.z = rm.z;
       } else if (t - mo.atkT > 1100) {
         mo.atkT = t;
         mo.state = 'attack';
