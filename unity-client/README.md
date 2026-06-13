@@ -37,6 +37,15 @@
 File → Build Settings → iOS → Build，Unity 会生成 Xcode 工程，
 按 `ios-app/README.md` 的签名流程上真机/上架。
 
+## 怪物与场景（KayKit 免费素材，已内置）
+
+`Assets/Resources/DWMon`（怪物 t1~t4）与 `Assets/Resources/DWProps`（各次元场景道具）
+是网页版同款 KayKit CC0 公版模型，已随工程提供。读取 `.glb` 需要 **glTFast** 插件，
+已在 `Packages/manifest.json` 声明（`com.unity.cloud.gltfast`），首次打开 Unity 会自动下载。
+
+> 若自动下载失败：Window → Package Manager → 左上角 ➕ → Add package by name →
+> 输入 `com.unity.cloud.gltfast` → Add。装好后怪物和场景即生效，否则自动回退占位方块。
+
 ## 当前状态 / 路线图
 
 - [x] 连接服务器、多人同步、移动/技能/翻滚、自动瞄准

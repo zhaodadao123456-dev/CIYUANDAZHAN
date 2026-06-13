@@ -351,6 +351,17 @@ namespace DW
                 foreach (JObject p in (JArray)m["players"]) AddPlayer(p);
         }
 
+        /* 各次元 KayKit 场景道具（文件名，对应 Resources/DWProps/*.glb） */
+        static readonly Dictionary<string, string[]> PropNames = new Dictionary<string, string[]>
+        {
+            { "tech",    new[] { "tech_basemodule_A", "tech_basemodule_B", "tech_containers_A", "tech_drill_structure", "tech_rocks_A", "tech_solarpanel" } },
+            { "xiuxian", new[] { "xiuxian_column", "xiuxian_rock_single_A", "xiuxian_torch_lit", "xiuxian_tree_single_A", "xiuxian_trees_B_medium" } },
+            { "cyber",   new[] { "cyber_building_A", "cyber_building_B", "cyber_building_D", "cyber_dumpster", "cyber_streetlight", "cyber_trafficlight_A" } },
+            { "magic",   new[] { "magic_chest_gold", "magic_column", "magic_crates_stacked", "magic_pillar_decorated", "magic_rubble_large", "magic_torch_lit" } },
+            { "hunter",  new[] { "hunter_lantern_standing", "hunter_rock_single_C", "hunter_tree_dead_medium", "hunter_tree_pine_orange_small", "hunter_tree_pine_yellow_small" } },
+            { "war",     new[] { "war_fence_pillar_broken", "war_gravestone", "war_pillar", "war_rubble_half", "war_rubble_large", "war_torch_lit" } },
+        };
+
         void BuildWorld(DimDef theme)
         {
             foreach (var o in worldObjs) Destroy(o);
@@ -377,18 +388,41 @@ namespace DW
             sun.transform.rotation = Quaternion.Euler(50, -30, 0);
             worldObjs.Add(sun.gameObject);
 
-            // 简易摆件（占位：等导入正式美术包后替换为场景资产）
+            // 场景摆件：优先用 KayKit 真模型（按文件名精确加载），否则方块占位
             var rng = new System.Random(theme.id.GetHashCode());
+            var themeProps = new List<GameObject>();
+            string[] names;
+            if (PropNames.TryGetValue(theme.id, out names))
+                foreach (var n in names)
+                {
+                    var pf = Resources.Load<GameObject>("DWProps/" + n);
+                    if (pf != null) themeProps.Add(pf);
+                }
+
             for (int i = 0; i < 60; i++)
             {
-                var o = GameObject.CreatePrimitive(rng.NextDouble() < 0.5 ? PrimitiveType.Cube : PrimitiveType.Cylinder);
                 float a = (float)(rng.NextDouble() * Math.PI * 2);
                 float r = 15 + (float)rng.NextDouble() * (Data.MapHalf - 20);
-                float h = 1.5f + (float)rng.NextDouble() * 5f;
-                o.transform.position = new Vector3(Mathf.Cos(a) * r, h / 2, Mathf.Sin(a) * r);
-                o.transform.localScale = new Vector3(1.2f, h, 1.2f);
-                Tint(o, Color.Lerp(theme.ground * 1.8f, theme.accent, 0.12f));
-                worldObjs.Add(o);
+                var p2 = new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r);
+                if (themeProps.Count > 0)
+                {
+                    var src = themeProps[rng.Next(themeProps.Count)];
+                    var o = Instantiate(src);
+                    o.transform.position = p2;
+                    o.transform.rotation = Quaternion.Euler(0, (float)(rng.NextDouble() * 360), 0);
+                    float s = 1.6f + (float)rng.NextDouble() * 1.2f;   // KayKit 原始较小，放大
+                    o.transform.localScale = Vector3.one * s;
+                    worldObjs.Add(o);
+                }
+                else
+                {
+                    var o = GameObject.CreatePrimitive(rng.NextDouble() < 0.5 ? PrimitiveType.Cube : PrimitiveType.Cylinder);
+                    float h = 1.5f + (float)rng.NextDouble() * 5f;
+                    o.transform.position = new Vector3(p2.x, h / 2, p2.z);
+                    o.transform.localScale = new Vector3(1.2f, h, 1.2f);
+                    Tint(o, Color.Lerp(theme.ground * 1.8f, theme.accent, 0.12f));
+                    worldObjs.Add(o);
+                }
             }
         }
 
@@ -560,7 +594,7 @@ namespace DW
         /* 怪物：优先用接入的正式模型（Resources/DW/mon_t*），否则生成敌对小怪占位 */
         GameObject MakeCreature(int tier)
         {
-            var prefab = Resources.Load<GameObject>("DW/mon_t" + Mathf.Clamp(tier, 1, 4));
+            var prefab = Resources.Load<GameObject>("DWMon/mon_t" + Mathf.Clamp(tier, 1, 4));
             if (prefab != null)
             {
                 var root = new GameObject("Monster");
