@@ -466,16 +466,24 @@ namespace DW
             sun.transform.rotation = Quaternion.Euler(52, -30, 0);
             worldObjs.Add(sun.gameObject);
 
-            // 场景摆件：优先用 KayKit 真模型（按文件名精确加载），否则方块占位
+            // 场景摆件：优先用你买的场景模型(DWScene，如黑暗地牢)，其次 KayKit，最后方块占位
             var rng = new System.Random(theme.id.GetHashCode());
             var themeProps = new List<GameObject>();
-            string[] names;
-            if (PropNames.TryGetValue(theme.id, out names))
-                foreach (var n in names)
-                {
-                    var pf = Resources.Load<GameObject>("DWProps/" + n);
-                    if (pf != null) themeProps.Add(pf);
-                }
+            var userScene = Resources.LoadAll<GameObject>("DWScene");
+            if (userScene.Length > 0)
+            {
+                themeProps.AddRange(userScene);
+            }
+            else
+            {
+                string[] names;
+                if (PropNames.TryGetValue(theme.id, out names))
+                    foreach (var n in names)
+                    {
+                        var pf = Resources.Load<GameObject>("DWProps/" + n);
+                        if (pf != null) themeProps.Add(pf);
+                    }
+            }
 
             // 障碍物即可见场景：每个服务器障碍处放一棵树/一栋建筑（看得见=走不过去）
             if (obstacles.Count > 0)

@@ -72,6 +72,36 @@ namespace DW.EditorTools
 
         const string HeroDir = "Assets/Resources/DWHeroes";
         const string MobDir = "Assets/Resources/DWMobs";
+        const string SceneDir = "Assets/Resources/DWScene";
+
+        /* 适合散布到野外的"道具型"静态模型关键词（柱子/石棺/木桶/骸骨…） */
+        static readonly string[] ScenePropKeys = { "pillar", "column", "statue", "barrel", "crate", "box", "rock", "stone", "tree", "plant", "chest", "pot", "vase", "lamp", "lantern", "torch", "brazier", "grave", "tomb", "ruin", "rubble", "fountain", "cart", "shelf", "throne", "sarcophag", "coffin", "skull", "bone", "banner", "fence", "well", "altar", "mushroom", "crystal", "pile", "debris", "pumpkin", "candle", "cage" };
+        /* 结构件不散布（平铺会很丑） */
+        static readonly string[] SceneBadKeys = { "floor", "wall", "ceiling", "door", "stair", "tile", "ground", "roof", "corner", "arch", "bridge", "platform", "ramp", "window", "frame", "plane", "terrain", "ceil", "_lod", "collision", "modular_" };
+
+        /* 全项目"静态场景道具"：有 MeshRenderer 无 SkinnedMesh、名字像道具、非角色、非管线变体 */
+        static List<string> SceneryProps()
+        {
+            var picks = AssetDatabase.FindAssets("t:GameObject")
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Where((p) => p.StartsWith("Assets/") && !p.StartsWith("Assets/Resources/") && Lower(p).EndsWith(".prefab"))
+                .Where((p) => !BadPrefabVariant(p))
+                .Where((p) => {
+                    var n = Lower(Path.GetFileNameWithoutExtension(p));
+                    return ScenePropKeys.Any((k) => n.Contains(k)) && !SceneBadKeys.Any((k) => n.Contains(k));
+                })
+                .Where((p) => {
+                    var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
+                    return go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) == null
+                                      && go.GetComponentInChildren<MeshRenderer>(true) != null;
+                });
+            // 每个角色基名只取一个，最多 30 个，避免刷屏
+            var seen = new HashSet<string>();
+            var res = new List<string>();
+            foreach (var p in picks)
+                if (seen.Add(NormBase(p)) && res.Count < 30) res.Add(p);
+            return res;
+        }
 
         [MenuItem("次元大战/② 一键接入已购模型(自动)")]
         public static void AutoWire()
@@ -147,6 +177,20 @@ namespace DW.EditorTools
             foreach (var src in monSrcs)
                 SaveCharPrefab(src, $"{MobDir}/mob_{mi++:00}.prefab", ctrl, $"怪物池#{mi} {System.IO.Path.GetFileNameWithoutExtension(src)}", log);
             if (mi == 0) log.AppendLine("未发现骷髅/怪物类角色，怪物沿用 KayKit 默认模型");
+
+            // 场景池 DWScene/sc_XX（你买的静态场景模型，如黑暗地牢的柱子/石棺/木桶等；地图据此散布）
+            RebuildFolder(SceneDir);
+            int si = 0;
+            foreach (var src in SceneryProps())
+            {
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(src);
+                if (go == null) continue;
+                var inst = (GameObject)Object.Instantiate(go);
+                PrefabUtility.SaveAsPrefabAsset(inst, $"{SceneDir}/sc_{si:00}.prefab");
+                Object.DestroyImmediate(inst);
+                log.AppendLine($"场景#{++si} ← {src}");
+            }
+            if (si == 0) log.AppendLine("未发现可用场景模型，地图沿用 KayKit 道具");
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
