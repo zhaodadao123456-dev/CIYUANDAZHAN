@@ -100,10 +100,16 @@ const check = (name, ok, extra = '') => { results.push([name, ok]); console.log(
     !!rareItem && (inv.inv || []).filter((it) => it.rar === 1).length === 0 && lastYou().gold < goldPreFuse,
     rareItem ? `得到 ${rareItem.name}` : '未产出');
 
-  // 2.8 治疗药剂：购买 → 受伤后使用回血
+  // 2.8 药剂：购买治疗/能量；能量药剂重置技能冷却
   send({ t: 'buy', id: 'pot_hp', qty: 3 });
+  await sleep(200);
+  check('购买治疗药剂×3', (lastYou().potions || {}).pot_hp === 3, `pot_hp=${(lastYou().potions || {}).pot_hp}`);
+  send({ t: 'buy', id: 'pot_en', qty: 1 });
+  await sleep(150);
+  send({ t: 'usepotion', id: 'pot_en' });
   await sleep(250);
-  check('购买治疗药剂×3', lastYou().potions === 3, `potions=${lastYou().potions}`);
+  const gotCdr = msgs.some((m) => m.t === 'cdreset');
+  check('能量药剂重置冷却', gotCdr && ((lastYou().potions || {}).pot_en || 0) === 0, `cdreset=${gotCdr}`);
 
   // 3. 走向最近的T1怪并打残
   let snap = lastSnap();

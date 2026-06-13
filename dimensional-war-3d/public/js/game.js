@@ -229,7 +229,8 @@ function initTouch() {
   bindTap('sk-r', () => castSkill('r'));
   bindTap('sk-dodge', dodge);
   bindTap('sk-pet', capturePet);
-  bindTap('sk-potion', usePotion);
+  bindTap('sk-potion', useHeal);
+  bindTap('sk-energy', () => usePotion('pot_en'));
   bindTap('btn-atk', () => castSkill('basic'));
 }
 
@@ -327,7 +328,7 @@ function onMsg(m) {
       if (m.ach) myAch = new Set(m.ach);
       if (m.achEquip !== undefined) achEquip = m.achEquip;
       if (m.bagMode) bagMode = m.bagMode;
-      if (m.potionDef) potionDef = m.potionDef;
+      if (m.potionDefs) potionDefs = m.potionDefs;
       if (m.dimSkill) { dimSkillDef = m.dimSkill; updateDimSkillSlot(); }
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       obstacles = m.obstacles || [];
@@ -468,6 +469,7 @@ function onMsg(m) {
     case 'dimfx': onDimFx(m); break;
     case 'ccfx': onCcFx(m); break;
     case 'cc': onCc(m); break;
+    case 'cdreset': cds = { basic: 0, q: 0, e: 0, r: 0 }; capCdEnd = 0; break;
     case 'rooted': cc.rootUntil = performance.now() + (m.ms || 2000); toast('🔮 你被禁锢了！'); break;
     case 'pinvite': {
       pendingInviteFrom = m.from;
@@ -925,7 +927,8 @@ function bindInput() {
     if (e.code === 'KeyB') togglePanel();
     if (e.code === 'Space') { e.preventDefault(); dodge(); }
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') jump();
-    if (e.code === 'KeyH') usePotion();
+    if (e.code === 'KeyH') useHeal();
+    if (e.code === 'KeyG') usePotion('pot_en');
   });
   addEventListener('keyup', (e) => keys[e.code] = false);
   $('btn-chat').onclick = openChat;
@@ -1089,15 +1092,26 @@ function jump() {
   AUDIO.sfx('dodge', 0.35, 1.4);
 }
 
-function usePotion() {
+function updatePotionHud() {
+  const pc = $('pot-count'); if (pc) pc.textContent = '×' + (potCount('pot_hp') + potCount('pot_hpL'));
+  const ec = $('en-count'); if (ec) ec.textContent = '×' + potCount('pot_en');
+}
+function useHeal() {   // H：优先用高级治疗药剂
+  const id = potCount('pot_hpL') > 0 ? 'pot_hpL' : (potCount('pot_hp') > 0 ? 'pot_hp' : null);
+  if (!id) return toast('🧪 没有治疗药剂了，去商店购买');
+  usePotion(id);
+}
+function usePotion(id) {
   if (!joined || dead) return;
+  const def = potionDefs.find((d) => d.id === id);
+  if (!def) return;
   const t = performance.now();
-  if (potions <= 0) return toast('🧪 没有治疗药剂了，去商店购买');
-  if (t < potCdEnd) return;
-  if ((HUD.hp || 0) >= (HUD.maxHp || 1)) return toast('生命已满');
-  potCdEnd = t + ((potionDef && potionDef.cd) || 9000);
-  net({ t: 'usepotion' });
-  AUDIO.sfx('coin', 0.5, 1.5);
+  if (potCount(id) <= 0) return toast(`没有${def.name}了，去商店购买`);
+  if (t < (potCdEnd[id] || 0)) return;
+  if (def.kind === 'heal' && (HUD.hp || 0) >= (HUD.maxHp || 1)) return toast('生命已满');
+  potCdEnd[id] = t + (def.cd || 0);
+  net({ t: 'usepotion', id });
+  AUDIO.sfx(def.kind === 'energy' ? 'levelup' : 'coin', 0.5, 1.4);
 }
 
 function nearestEnemy(maxDist = 15) {
@@ -1417,7 +1431,7 @@ function updateYou(y) {
   $('stat-line').textContent = `Lv.${y.level} ｜ 💰${y.gold} ｜ 击杀${y.kills} ｜ PvP${y.pvpKills}` + (HUD.skPts > 0 ? ` ｜ ✨技能点×${HUD.skPts}` : '');
   if (y.achEquip !== undefined) achEquip = y.achEquip;
   if (y.bagMode) bagMode = y.bagMode;
-  if (y.potions !== undefined) { potions = y.potions; const pc = $('pot-count'); if (pc) pc.textContent = '×' + potions; }
+  if (y.potions !== undefined) { potions = y.potions || {}; updatePotionHud(); }
   if (me) me.hp = y.hp;
   if (!$('panel').classList.contains('hidden')) renderPanel();
 }
@@ -1601,20 +1615,20 @@ function renderPanel() {
       rankMode = b.dataset.rmode; rankData = []; renderPanel(); net({ t: 'rank', mode: rankMode });
     });
   } else {
-    const pd = potionDef;
     body.innerHTML = `
-      <div class="panel-sub">商店（金币：💰${HUD.gold || 0}）</div>
-      ${pd ? `<div class="inv-row">
-          <span>${pd.icon || '🧪'} <b>${pd.name}</b> <small class="dim-text">回复 ${Math.round(pd.healPct * 100)}% 生命 ｜ 持有 ×${potions} ｜ H 键使用</small></span>
-          <span class="inv-btns"><button data-buypot="1">买1 💰${pd.price}</button><button data-buypot="10">买10 💰${pd.price * 10}</button></span>
-        </div>` : ''}
+      <div class="panel-sub">商店 · 消耗药剂（金币：💰${HUD.gold || 0}）</div>
+      ${potionDefs.map((pd) => `<div class="inv-row">
+          <span>${pd.icon} <b>${pd.name}</b> <small class="dim-text">${pd.desc} ｜ 持有 ×${potCount(pd.id)}</small></span>
+          <span class="inv-btns"><button data-buypot="${pd.id}" data-qty="1">买1 💰${pd.price}</button><button data-buypot="${pd.id}" data-qty="10">买10 💰${pd.price * 10}</button></span>
+        </div>`).join('')}
+      <div class="panel-sub">商店 · 装备</div>
       ${shopData.map((it) => `
         <div class="inv-row">
           <span><span style="color:${RAR_COLORS[it.rar]}">${it.name}</span> <small class="dim-text">[${({ weapon: '武器', helmet: '帽子', armor: '衣服', boots: '鞋子', acc: '饰品' })[it.slot]}] ${itemFullText(it)}</small></span>
           <span class="inv-btns"><button data-buy="${it.id}">💰${it.price}</button></span>
         </div>`).join('')}`;
     body.querySelectorAll('[data-buy]').forEach((b) => b.onclick = () => net({ t: 'buy', id: b.dataset.buy }));
-    body.querySelectorAll('[data-buypot]').forEach((b) => b.onclick = () => net({ t: 'buy', id: 'pot_hp', qty: +b.dataset.buypot }));
+    body.querySelectorAll('[data-buypot]').forEach((b) => b.onclick = () => net({ t: 'buy', id: b.dataset.buypot, qty: +b.dataset.qty }));
   }
 }
 
@@ -1651,7 +1665,8 @@ let achDefs = [];
 let myAch = new Set();
 let achEquip = null;
 let bagMode = 'sell';
-let potions = 0, potionDef = null, potCdEnd = 0;
+let potions = {}, potionDefs = [], potCdEnd = {};
+const potCount = (id) => potions[id] || 0;
 
 function renderPartyHud() {
   const el = $('party-hud');
@@ -1797,9 +1812,18 @@ function renderSkillBar() {
   }
   const pot = $('sk-potion');
   if (pot) {
-    const cd = (potionDef && potionDef.cd) || 9000;
-    pot.querySelector('.cd').style.height = (Math.max(0, potCdEnd - t) / cd * 100) + '%';
-    pot.classList.toggle('empty', potions <= 0);
+    const id = potCount('pot_hpL') > 0 ? 'pot_hpL' : 'pot_hp';
+    const def = potionDefs.find((d) => d.id === id);
+    const cd = (def && def.cd) || 9000;
+    pot.querySelector('.cd').style.height = (Math.max(0, (potCdEnd[id] || 0) - t) / cd * 100) + '%';
+    pot.classList.toggle('empty', (potCount('pot_hp') + potCount('pot_hpL')) <= 0);
+  }
+  const en = $('sk-energy');
+  if (en) {
+    const def = potionDefs.find((d) => d.id === 'pot_en');
+    const cd = (def && def.cd) || 20000;
+    en.querySelector('.cd').style.height = (Math.max(0, (potCdEnd.pot_en || 0) - t) / cd * 100) + '%';
+    en.classList.toggle('empty', potCount('pot_en') <= 0);
   }
 }
 let capCdEnd = 0;
