@@ -434,7 +434,9 @@ function onMsg(m) {
       break;
     }
     case 'dimfx': onDimFx(m); break;
-    case 'rooted': rootedUntil = performance.now() + (m.ms || 2000); toast('🔮 你被禁锢了！'); break;
+    case 'ccfx': onCcFx(m); break;
+    case 'cc': onCc(m); break;
+    case 'rooted': cc.rootUntil = performance.now() + (m.ms || 2000); toast('🔮 你被禁锢了！'); break;
     case 'pinvite': {
       pendingInviteFrom = m.from;
       $('invite-text').textContent = `👥 ${m.from} 邀请你组队（共享经验）`;
@@ -845,10 +847,10 @@ function onDmg(m) {
     const mo = monsters.get(m.id);
     if (mo) {
       mo.hp = m.hp; drawBar(mo);
-      dmgNumber(mo.obj.position, m.amt, m.by === myId ? '#ffe14d' : '#ffffff');
+      dmgNumber(mo.obj.position, m.crit ? m.amt + ' 暴击!' : m.amt, m.crit ? '#ff9f1a' : (m.by === myId ? '#ffe14d' : '#ffffff'), m.crit);
       flash(mo.obj);
       if (m.by === myId) AUDIO.sfx('hit', 0.6);
-      sparks(mo.obj.position.x, 1.0, mo.obj.position.z, 0xffcc55, { count: 7, speed: 4, life: 0.4 });
+      sparks(mo.obj.position.x, 1.0, mo.obj.position.z, m.crit ? 0xff9f1a : 0xffcc55, { count: m.crit ? 14 : 7, speed: 4, life: 0.4 });
     }
   } else if (m.kind === 'pet') {
     const pe = petsEnt.get(m.id);
@@ -859,13 +861,13 @@ function onDmg(m) {
     }
   } else {
     if (m.id === myId) {
-      dmgNumber(me.obj.position, m.amt, '#ff5566');
+      dmgNumber(me.obj.position, m.crit ? m.amt + ' 暴击!' : m.amt, '#ff5566', m.crit);
       AUDIO.sfx('hurt', 0.7);
       $('hurt').classList.remove('hidden');
       setTimeout(() => $('hurt').classList.add('hidden'), 120);
     } else {
       const r = remotes.get(m.id);
-      if (r) { r.hp = m.hp; drawBar(r); dmgNumber(r.obj.position, m.amt, m.by === myId ? '#ffe14d' : '#ffffff'); flash(r.obj); }
+      if (r) { r.hp = m.hp; drawBar(r); dmgNumber(r.obj.position, m.crit ? m.amt + ' 暴击!' : m.amt, m.crit ? '#ff9f1a' : (m.by === myId ? '#ffe14d' : '#ffffff'), m.crit); flash(r.obj); }
     }
   }
 }
@@ -936,7 +938,7 @@ function bindInput() {
 }
 
 function capturePet() {   // 现为「次元专属技能」F 键，按当前次元触发
-  if (!joined || rootedUntil > performance.now()) return;
+  if (!joined || performance.now() < ccHardUntil()) return;
   const t = performance.now();
   if (t < capCdEnd) return;
   capCdEnd = t + ((dimSkillDef && dimSkillDef.cd) || 3000);
@@ -1021,7 +1023,7 @@ function moveVec() {
     if (keys.KeyD) fx += 1;
   }
   if (!fx && !fz) return null;
-  if (rootedUntil > performance.now()) return null;   // 被禁锢无法移动
+  if (performance.now() < ccHardUntil()) return null;   // 眩晕/定身无法移动
   const l = Math.hypot(fx, fz); fx /= l; fz /= l;
   const s = Math.sin(camYaw), c = Math.cos(camYaw);
   // 相机指向玩家的前方 = (-sin(yaw), -cos(yaw))；fx为左右分量
@@ -1278,20 +1280,21 @@ function flash(obj) {
   });
 }
 
-function dmgNumber(pos, amt, color) {
+function dmgNumber(pos, amt, color, crit) {
   const cv = document.createElement('canvas');
-  cv.width = 192; cv.height = 96;
+  cv.width = 320; cv.height = 96;
   const ctx = cv.getContext('2d');
-  ctx.font = 'bold 56px sans-serif';
+  ctx.font = `bold ${crit ? 70 : 56}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.fillStyle = color;
   ctx.strokeStyle = '#000';
-  ctx.lineWidth = 7;
-  ctx.strokeText(amt, 96, 64);
-  ctx.fillText(amt, 96, 64);
+  ctx.lineWidth = crit ? 9 : 7;
+  ctx.strokeText(amt, 160, 66);
+  ctx.fillText(amt, 160, 66);
   const tex = new THREE.CanvasTexture(cv);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sp.scale.set(2.2, 1.1, 1);
+  const s = crit ? 1.5 : 1;
+  sp.scale.set(3.6 * s, 1.1 * s, 1);
   sp.position.set(pos.x + (Math.random() - 0.5), pos.y + 2.2, pos.z);
   scene.add(sp);
   dmgSprites.push({ sp, age: 0 });
@@ -1340,7 +1343,8 @@ function updateYou(y) {
   if (y.sk) HUD.sk = y.sk;
   if (y.skPts != null) HUD.skPts = y.skPts;
   if (y.spd != null) HUD.spd = y.spd;
-  for (const k of ['patk', 'matk', 'armor', 'mres', 'gold', 'maxHp', 'hp', 'exp', 'expNeed', 'kills', 'pvpKills']) {
+  for (const k of ['patk', 'matk', 'armor', 'mres', 'gold', 'maxHp', 'hp', 'exp', 'expNeed', 'kills', 'pvpKills',
+                   'crit', 'critDmg', 'lifesteal', 'pen', 'cdr', 'tenacity']) {
     if (y[k] != null) HUD[k] = y[k];
   }
   $('hp-fill').style.width = Math.max(0, y.hp / y.maxHp * 100) + '%';
@@ -1365,6 +1369,21 @@ function itemStatText(it) {
   if (it.spd) parts.push(`移速+${it.spd}`);
   return parts.join(' ');
 }
+/* 特殊词条文本（暴击/吸血等），用金色高亮以区别基础属性 */
+function itemAffixText(it) {
+  const a = [];
+  if (it.crit) a.push(`暴击+${it.crit}%`);
+  if (it.critDmg) a.push(`暴伤+${it.critDmg}%`);
+  if (it.lifesteal) a.push(`吸血+${it.lifesteal}%`);
+  if (it.pen) a.push(`穿透+${it.pen}`);
+  if (it.cdr) a.push(`冷却-${it.cdr}%`);
+  if (it.tenacity) a.push(`韧性+${it.tenacity}%`);
+  return a.length ? `<span style="color:#ffce54">✦ ${a.join(' ')}</span>` : '';
+}
+function itemFullText(it) {
+  const base = itemStatText(it), af = itemAffixText(it);
+  return base + (af ? '<br>' + af : '');
+}
 function renderPanel() {
   const panel = $('panel');
   if (!panel || panel.classList.contains('hidden')) return;
@@ -1383,6 +1402,11 @@ function renderPanel() {
         <div>🛡️ 物理防御</div><div>${HUD.armor || 0}</div>
         <div>✨ 法术防御</div><div>${HUD.mres || 0}</div>
         <div>👟 移动速度</div><div>${HUD.spd || myClsDef().speed}</div>
+        <div>💥 暴击</div><div>${HUD.crit || 0}% ｜ 暴伤 ${100 + (HUD.critDmg || 50)}%</div>
+        <div>🩸 吸血</div><div>${HUD.lifesteal || 0}%</div>
+        <div>🗡️ 穿透</div><div>${HUD.pen || 0}</div>
+        <div>⏱️ 冷却缩减</div><div>${HUD.cdr || 0}%</div>
+        <div>🧱 韧性(抗控)</div><div>${HUD.tenacity || 0}%</div>
         <div>💰 金币</div><div>${HUD.gold || 0}</div>
         <div>🗡️ 击杀</div><div>野怪${HUD.kills || 0} / 玩家${HUD.pvpKills || 0}</div>
         <div>✨ 技能点</div><div>${HUD.skPts}（升级获得，点技能格上的＋加点）</div>
@@ -1400,12 +1424,12 @@ function renderPanel() {
       <div class="panel-sub">已装备（点击卸下）</div>
       <div class="equip-row">${Object.keys(slotNames).map((s) => {
         const it = eq[s];
-        return `<div class="equip-slot" data-slot="${s}">${slotNames[s]}<br>${it ? `<span style="color:${RAR_COLORS[it.rar]}">${it.name}</span><br><small>${itemStatText(it)}</small>` : '<span class="dim-text">空</span>'}</div>`;
+        return `<div class="equip-slot" data-slot="${s}">${slotNames[s]}<br>${it ? `<span style="color:${RAR_COLORS[it.rar]}">${it.relic ? '🏆' : ''}${it.name}</span><br><small>${itemFullText(it)}</small>` : '<span class="dim-text">空</span>'}</div>`;
       }).join('')}</div>
       <div class="panel-sub">背包（${(invData.inv || []).length}/24）</div>
       ${(invData.inv || []).map((it, i) => `
         <div class="inv-row">
-          <span style="color:${RAR_COLORS[it.rar]}">${it.name}</span> <small class="dim-text">${itemStatText(it)}</small>
+          <span><span style="color:${RAR_COLORS[it.rar]}">${it.relic ? '🏆' : ''}${it.name}</span> <small class="dim-text">${itemFullText(it)}</small></span>
           <span class="inv-btns"><button data-eq="${i}">装备</button><button data-sell="${i}">卖${Math.round(it.val * 0.4)}金</button></span>
         </div>`).join('') || '<div class="dim-text">背包空空如也，去打怪掉装备或商店购买吧</div>'}`;
     body.querySelectorAll('[data-eq]').forEach((b) => b.onclick = () => net({ t: 'equip', i: +b.dataset.eq }));
@@ -1455,7 +1479,7 @@ function renderPanel() {
       <div class="panel-sub">商店（金币：💰${HUD.gold || 0}）</div>
       ${shopData.map((it) => `
         <div class="inv-row">
-          <span style="color:${RAR_COLORS[it.rar]}">${it.name}</span> <small class="dim-text">[${({ weapon: '武器', helmet: '帽子', armor: '衣服', boots: '鞋子', acc: '饰品' })[it.slot]}] ${itemStatText(it)}</small>
+          <span><span style="color:${RAR_COLORS[it.rar]}">${it.name}</span> <small class="dim-text">[${({ weapon: '武器', helmet: '帽子', armor: '衣服', boots: '鞋子', acc: '饰品' })[it.slot]}] ${itemFullText(it)}</small></span>
           <span class="inv-btns"><button data-buy="${it.id}">💰${it.price}</button></span>
         </div>`).join('')}`;
     body.querySelectorAll('[data-buy]').forEach((b) => b.onclick = () => net({ t: 'buy', id: b.dataset.buy }));
@@ -1627,7 +1651,25 @@ function renderSkillBar() {
 }
 let capCdEnd = 0;
 let dimSkillDef = null;
-let rootedUntil = 0;
+/* 控制状态（被服务器施加的眩晕/定身/减速） */
+const cc = { stunUntil: 0, rootUntil: 0, slowUntil: 0, slowPct: 0 };
+const ccHardUntil = () => Math.max(cc.stunUntil, cc.rootUntil);              // 不能移动的截止时刻
+const ccSlowMul = () => (performance.now() < cc.slowUntil ? 1 - cc.slowPct : 1);
+const CC_NAME = { stun: '眩晕', root: '定身', slow: '减速' };
+function onCc(m) {
+  const t = performance.now();
+  if (m.kind === 'cleanse') { cc.stunUntil = cc.rootUntil = cc.slowUntil = 0; cc.slowPct = 0; toast('✨ 已净化所有控制'); return; }
+  if (m.kind === 'slow') { cc.slowUntil = t + m.ms; cc.slowPct = m.pct || 0.3; }
+  else if (m.kind === 'root') cc.rootUntil = t + m.ms;
+  else cc.stunUntil = t + m.ms;
+  toast(`💫 你被${CC_NAME[m.kind] || '控制'}了！`);
+}
+/* 任意实体被控时脚下闪一下提示环 */
+function onCcFx(m) {
+  const p = (m.id === myId) ? (me && me.obj && me.obj.position) : dimEntPos(m.id);
+  const col = m.kind === 'slow' ? 0x3aa0ff : m.kind === 'root' ? 0x9b59b6 : 0xffd166;
+  if (p) ringFx(p.x, p.z, m.kind === 'stun' ? 1.8 : 2.2, col);
+}
 
 /* 次元技能视觉特效 */
 function dimEntPos(id) {
@@ -1653,6 +1695,12 @@ function onDimFx(m) {
   } else if (m.kind === 'field') {
     ringFx(m.x, m.z, (m.r || 6) * 1.1, 0x9b59b6);
     flashLight(m.x, 1.5, m.z, 0x9b59b6, 3.5, 14, 0.5);
+  } else if (m.kind === 'emp') {
+    // 磁暴电磁脉冲：青色双环 + 强光
+    ringFx(m.x, m.z, (m.r || 6) * 1.1, 0x00d8ff);
+    ringFx(m.x, m.z, (m.r || 6) * 0.6, 0x66f0ff);
+    flashLight(m.x, 1.6, m.z, 0x00d8ff, 4, 16, 0.45);
+    sparks(m.x, 1.0, m.z, 0x66f0ff, { count: 16, speed: 5, life: 0.5 });
   }
 }
 
@@ -1688,13 +1736,15 @@ function animate() {
     if (!dead) {
       const t = performance.now();
       let vx = 0, vz = 0, speed = HUD.spd || myClsDef().speed;
-      if (t < burstT) {
+      const hardCC = t < ccHardUntil();   // 眩晕/定身：完全无法移动（含冲刺）
+      if (t < burstT && !hardCC) {
         vx = burstDir[0]; vz = burstDir[1]; speed = burstSpeed;
         if (rushTrail > 0) { rushTrail -= dt; sparks(me.x, 0.7, me.z, dimAccent(myDim), { count: 3, speed: 1.2, life: 0.4, gravity: 0, up: 0.3 }); }
       }
-      else {
+      else if (!hardCC) {
         const mv = moveVec();
         if (mv) { vx = mv[0]; vz = mv[1]; }
+        speed *= ccSlowMul();   // 减速
       }
       if (vx || vz) {
         me.x = Math.max(-MAP_HALF, Math.min(MAP_HALF, me.x + vx * speed * dt));

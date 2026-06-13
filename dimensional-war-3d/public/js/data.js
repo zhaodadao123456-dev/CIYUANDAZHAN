@@ -111,12 +111,26 @@ const DIMENSIONS = [
 ];
 
 const RARITIES = [
-  { name: '普通', color: '#95a5a6', mult: 1.0,  weight: 50 },
-  { name: '精良', color: '#2ecc71', mult: 1.35, weight: 28 },
-  { name: '稀有', color: '#3498db', mult: 1.8,  weight: 14 },
-  { name: '史诗', color: '#9b59b6', mult: 2.4,  weight: 6 },
-  { name: '传说', color: '#f39c12', mult: 3.2,  weight: 2 },
+  { name: '普通', color: '#95a5a6', mult: 1.0,  weight: 60 },
+  { name: '精良', color: '#2ecc71', mult: 1.35, weight: 26 },
+  { name: '稀有', color: '#3498db', mult: 1.85, weight: 10 },
+  { name: '史诗', color: '#9b59b6', mult: 2.5,  weight: 3.2 },
+  { name: '传说', color: '#f39c12', mult: 3.4,  weight: 0.8 },
 ];
+
+/* 装备特殊词条（英雄联盟/传奇风格）：稀有及以上随机附带，品质越高条数越多、数值越大。
+ * 由服务器在掉落/购买时滚动写入 item[key]，statsOf 汇总，战斗结算时生效。 */
+const AFFIXES = [
+  { key: 'crit',      name: '暴击率',   unit: '%', min: 4,  max: 8,  slots: ['weapon', 'acc'] },
+  { key: 'critDmg',   name: '暴击伤害', unit: '%', min: 12, max: 26, slots: ['weapon', 'acc'] },
+  { key: 'lifesteal', name: '吸血',     unit: '%', min: 4,  max: 9,  slots: ['weapon'] },
+  { key: 'pen',       name: '穿透',     unit: '',  min: 6,  max: 15, slots: ['weapon', 'acc'] },
+  { key: 'cdr',       name: '冷却缩减', unit: '%', min: 5,  max: 11, slots: ['helmet', 'acc'] },
+  { key: 'tenacity',  name: '韧性',     unit: '%', min: 8,  max: 16, slots: ['helmet', 'armor', 'boots'] },
+];
+/* 各品质附带的词条数：普通0 / 精良0 / 稀有1 / 史诗2 / 传说3 */
+const AFFIX_COUNT = [0, 0, 1, 2, 3];
+const AFFIX_MAP = Object.fromEntries(AFFIXES.map((a) => [a.key, a]));
 
 const SLOTS = [
   { key: 'weapon', name: '武器', stat: 'atk' },
@@ -152,8 +166,8 @@ const CLASSES = [
     skills: {
       basic: { name: '劈砍',   kind: 'melee',     cd: 600,   range: 4.2, arc: 2.2, mult: 1.0,  desc: '挥斧劈砍面前扇形范围的敌人，造成100%物理伤害' },
       q:     { name: '飞斧',   kind: 'proj',      cd: 3000,  mult: 1.5, speed: 22, radius: 1.6, life: 1800, desc: '掷出旋转飞斧，命中第一个敌人造成150%物理伤害' },
-      e:     { name: '旋风斩', kind: 'aoe',       cd: 7000,  radius: 5.5, mult: 2.2, minLvl: 3, desc: '以自身为中心旋身横扫，对周围5.5米敌人造成220%物理伤害' },
-      r:     { name: '突进斩', kind: 'dashmelee', cd: 12000, range: 5.0, arc: 3.14, mult: 3.0, minLvl: 5, desc: '向前突进并挥出致命一斩，造成300%物理伤害' },
+      e:     { name: '旋风斩', kind: 'aoe',       cd: 7000,  radius: 5.5, mult: 2.2, minLvl: 3, cc: { type: 'slow', ms: 1400, pct: 0.3 }, desc: '以自身为中心旋身横扫，对周围5.5米敌人造成220%物理伤害并减速30%（1.4秒）' },
+      r:     { name: '突进斩', kind: 'dashmelee', cd: 12000, range: 5.0, arc: 3.14, mult: 3.0, minLvl: 5, cc: { type: 'stun', ms: 600 }, desc: '向前突进并挥出致命一斩，造成300%物理伤害并击晕0.6秒' },
     },
   },
   {
@@ -172,7 +186,7 @@ const CLASSES = [
     skills: {
       basic: { name: '速射',     kind: 'proj',      cd: 700,   mult: 0.85, speed: 28, radius: 1.3, life: 1500, desc: '快速射击，远距离命中造成85%物理伤害' },
       q:     { name: '穿云箭',   kind: 'proj',      cd: 3000,  mult: 1.7, speed: 34, radius: 1.5, life: 2200, desc: '蓄力强射，弹速极快射程极远，造成170%物理伤害' },
-      e:     { name: '箭雨',     kind: 'aoe',       cd: 8000,  radius: 6.5, mult: 1.8, minLvl: 3, desc: '万箭齐发，对周围6.5米敌人造成180%物理伤害' },
+      e:     { name: '箭雨',     kind: 'aoe',       cd: 8000,  radius: 6.5, mult: 1.8, minLvl: 3, cc: { type: 'slow', ms: 1600, pct: 0.35 }, desc: '万箭齐发，对周围6.5米敌人造成180%物理伤害并减速35%（1.6秒）' },
       r:     { name: '猎杀冲锋', kind: 'dashmelee', cd: 11000, range: 4.5, arc: 3.14, mult: 2.4, minLvl: 5, desc: '突进拉开身位并近距离爆射，造成240%物理伤害' },
     },
   },
@@ -181,9 +195,9 @@ const CLASSES = [
     dmgType: 'phys', hpMul: 1.75, dmgMul: 0.7, dmgTakenMul: 0.55, speed: 7.2,
     skills: {
       basic: { name: '盾击',     kind: 'melee',     cd: 750,   range: 4.0, arc: 2.4, mult: 1.0, desc: '挥盾横扫，造成100%物理伤害' },
-      q:     { name: '震地',     kind: 'aoe',       cd: 4000,  radius: 4.0, mult: 1.1, desc: '重踏地面，对周围4米敌人造成110%物理伤害' },
-      e:     { name: '盾墙冲击', kind: 'aoe',       cd: 8000,  radius: 5.5, mult: 1.6, minLvl: 3, desc: '盾墙震荡冲击周围5.5米敌人，造成160%物理伤害' },
-      r:     { name: '铁壁冲锋', kind: 'dashmelee', cd: 12000, range: 5.0, arc: 3.14, mult: 2.2, minLvl: 5, desc: '巨盾开路向前冲撞，造成220%物理伤害' },
+      q:     { name: '震地',     kind: 'aoe',       cd: 4000,  radius: 4.0, mult: 1.1, cc: { type: 'slow', ms: 2000, pct: 0.35 }, desc: '重踏地面，对周围4米敌人造成110%物理伤害并减速35%（2秒）' },
+      e:     { name: '盾墙冲击', kind: 'aoe',       cd: 8000,  radius: 5.5, mult: 1.6, minLvl: 3, cc: { type: 'root', ms: 1200 }, desc: '盾墙震荡冲击周围5.5米敌人，造成160%物理伤害并定身1.2秒' },
+      r:     { name: '铁壁冲锋', kind: 'dashmelee', cd: 12000, range: 5.0, arc: 3.14, mult: 2.2, minLvl: 5, cc: { type: 'stun', ms: 900 }, desc: '巨盾开路向前冲撞，造成220%物理伤害并击晕0.9秒——坦克是顶级控制位' },
     },
   },
   {
@@ -193,7 +207,7 @@ const CLASSES = [
       basic: { name: '圣光弹',   kind: 'proj',    cd: 650,   mult: 0.8, speed: 24, radius: 1.3, life: 1500, desc: '发射圣光法球，命中造成80%法术伤害' },
       q:     { name: '治愈术',   kind: 'heal',    cd: 4500,  pct: 0.28, range: 9, desc: '治疗自己与9米内伤势最重的队友，恢复28%最大生命' },
       e:     { name: '群体圣疗', kind: 'aoeheal', cd: 10000, radius: 8, pct: 0.22, minLvl: 3, desc: '圣光普照，恢复周围8米所有队友22%最大生命' },
-      r:     { name: '圣光审判', kind: 'aoe',     cd: 12000, radius: 5.5, mult: 2.2, minLvl: 5, desc: '降下圣光审判，对周围5.5米敌人造成220%法术伤害' },
+      r:     { name: '圣光审判', kind: 'aoe',     cd: 12000, radius: 5.5, mult: 2.2, minLvl: 5, cc: { type: 'stun', ms: 700 }, desc: '降下圣光审判，对周围5.5米敌人造成220%法术伤害并击晕0.7秒' },
     },
   },
 ];
@@ -207,5 +221,5 @@ const CLASS_NAMES = {
   hunter:  { warrior: '兽刃猎手', assassin: '影爪猎手', ranger: '鹰眼猎手', tank: '巨盾猎手', healer: '灵兽驯师' },
 };
 
-return { DIMENSIONS, RARITIES, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
+return { DIMENSIONS, RARITIES, AFFIXES, AFFIX_COUNT, AFFIX_MAP, SLOTS, INVITE_REWARDS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, CLASS_NAMES };
 });

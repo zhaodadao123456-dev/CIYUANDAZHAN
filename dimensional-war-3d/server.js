@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES } = require('./public/js/data.js');
+const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES, AFFIXES, AFFIX_COUNT } = require('./public/js/data.js');
 const LAIR_R = +process.env.DW_LAIR_R || require('./public/js/data.js').LAIR_R;   // 可被测试覆盖
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -228,13 +228,22 @@ function statsOf(p) {
   let armor = 6 + p.level * 1.2;
   let mres = 6 + p.level * 1.2;
   let spd = c.speed;
+  // 特殊词条：暴击率 / 暴击伤害(基础50%) / 吸血 / 穿透 / 冷却缩减 / 韧性
+  let crit = 0, critDmg = 50, lifesteal = 0, pen = 0, cdr = 0, tenacity = 0;
   for (const slot of Object.keys(p.equip || {})) {
     const it = p.equip[slot];
     if (!it) continue;
     hp += it.hp || 0; patk += it.patk || 0; matk += it.matk || 0;
     armor += it.armor || 0; mres += it.mres || 0; spd += it.spd || 0;
+    crit += it.crit || 0; critDmg += it.critDmg || 0; lifesteal += it.lifesteal || 0;
+    pen += it.pen || 0; cdr += it.cdr || 0; tenacity += it.tenacity || 0;
   }
-  return { maxHp: Math.round(hp), patk, matk, armor, mres, spd };
+  // 永久全属性 buff（世界意志邀请奖励）对攻防生命同样生效
+  return {
+    maxHp: Math.round(hp), patk, matk, armor, mres, spd,
+    crit: clamp(crit, 0, 75), critDmg, lifesteal: clamp(lifesteal, 0, 60),
+    pen: Math.max(0, pen), cdr: clamp(cdr, 0, 40), tenacity: clamp(tenacity, 0, 60),
+  };
 }
 const maxHp = (p) => statsOf(p).maxHp;
 const atkOf = (p) => { const st = statsOf(p); return clsOf(p).dmgType === 'magic' ? st.matk : st.patk; };
@@ -318,18 +327,52 @@ const SHOP_ARMOR = ['制式战甲', '精工铠甲', '名匠圣铠'];
 const SHOP_ACC = ['力量徽记', '勇气勋章', '王者徽章'];
 
 /* 按槽位/品质生成装备数值；q 为强度系数 */
-function makeItem(slot, name, rar, q, spdBonus = 0) {
+function makeItem(slot, name, rar, q, spdBonus = 0, affixBonus = 0) {
   const it = { slot, name: `${RARITIES[rar].name}·${name}`, rar, val: Math.round(110 * q) };
   if (slot === 'weapon') { it.patk = Math.round(9 * q); it.matk = Math.round(9 * q); }
   else if (slot === 'helmet') { it.hp = Math.round(55 * q); it.mres = Math.round(6 * q); }
   else if (slot === 'armor') { it.hp = Math.round(80 * q); it.armor = Math.round(8 * q); }
   else if (slot === 'boots') { it.hp = Math.round(35 * q); it.spd = +(0.25 + spdBonus).toFixed(2); }
   else { it.patk = Math.round(4.5 * q); it.matk = Math.round(4.5 * q); it.hp = Math.round(28 * q); }
+  rollAffixes(it, rar, affixBonus);
+  return it;
+}
+
+/* 滚动特殊词条（暴击/暴伤/吸血/穿透/冷却缩减/韧性）：品质越高条数越多、数值越大。
+ * affixBonus：额外强度系数（如世界BOSS/混战极品装备），让顶级掉落词条拉满。 */
+function rollAffixes(it, rar, affixBonus = 0) {
+  const n = (AFFIX_COUNT[rar] || 0) + (affixBonus > 0 ? 1 : 0);
+  if (n <= 0) return;
+  it.affixes = [];
+  const pool = AFFIXES.filter((a) => a.slots.includes(it.slot));
+  for (let i = 0; i < n && pool.length; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    const a = pool.splice(idx, 1)[0];
+    const scale = 0.85 + rar * 0.06 + affixBonus;   // 品质 + 额外加成
+    const v = Math.max(1, Math.round((a.min + Math.random() * (a.max - a.min)) * scale));
+    it[a.key] = (it[a.key] || 0) + v;
+    it.affixes.push(a.key);
+  }
+}
+
+/* 次元至宝：大混战 MVP 专属武器，传说品质且全部武器词条拉满（暴击/暴伤/吸血/穿透） */
+function makeDimRelic(dimId) {
+  const dim = DIMENSIONS.find((d) => d.id === dimId) || DIMENSIONS[0];
+  const base = dim.weaponNames[2] || '次元神兵';
+  const it = { slot: 'weapon', name: `次元至宝·${base}`, rar: 4, relic: 1, val: 6000 };
+  it.patk = Math.round(9 * RARITIES[4].mult * 1.6);
+  it.matk = it.patk;
+  it.affixes = [];
+  for (const a of AFFIXES) {
+    if (!a.slots.includes('weapon')) continue;
+    it[a.key] = Math.round(a.max * 1.25);   // 拉满并超额
+    it.affixes.push(a.key);
+  }
   return it;
 }
 
 /* 野怪掉落：槽位随机，稀有度受怪物层级限制 */
-function rollDrop(tier, dimId, minRar = 0) {
+function rollDrop(tier, dimId, minRar = 0, affixBonus = 0) {
   const slots = ['weapon', 'helmet', 'armor', 'boots', 'acc'];
   const slot = slots[Math.floor(Math.random() * slots.length)];
   const maxRar = Math.min(4, tier);   // T1最多精良…T4可出传说
@@ -345,7 +388,7 @@ function rollDrop(tier, dimId, minRar = 0) {
     : slot === 'acc' ? dim.accNames[idx]
     : slot === 'helmet' ? HELMET_NAMES[idx] : BOOTS_NAMES[idx];
   const q = RARITIES[rar].mult * (0.7 + tier * 0.22);
-  return makeItem(slot, name, rar, q, rar * 0.12);
+  return makeItem(slot, name, rar, q, rar * 0.12, affixBonus);
 }
 
 /* 商店固定货架：每槽位 精良/稀有/史诗 三档 */
@@ -432,6 +475,8 @@ function sendYou(p) {
     gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, room: p.room, dim: p.dim,
     patk: Math.round(st.patk), matk: Math.round(st.matk), armor: Math.round(st.armor), mres: Math.round(st.mres),
     spd: +st.spd.toFixed(2), skPts: p.skPts, sk: p.sk,
+    crit: Math.round(st.crit), critDmg: Math.round(st.critDmg), lifesteal: Math.round(st.lifesteal),
+    pen: Math.round(st.pen), cdr: Math.round(st.cdr), tenacity: Math.round(st.tenacity),
     shield: (p.shield > 0 && now() < p.shieldUntil) ? p.shield : 0,
   });
 }
@@ -556,12 +601,15 @@ function handle(ws, m) {
     case 'mv': {
       if (p.dead) return;
       const t = now();
+      // 眩晕/定身：服务器锁定位置，转向仍可
+      if (isHardCC(p)) { p.ry = +m.ry || 0; p.anim = 'idle'; p.lastMoveT = t; return; }
       const dt = Math.max(0.03, (t - p.lastMoveT) / 1000);
       let x = clamp(+m.x || 0, -MAP_HALF, MAP_HALF);
       let z = clamp(+m.z || 0, -MAP_HALF, MAP_HALF);
-      // 速度防作弊：超速则按方向限幅
+      // 速度防作弊：超速则按方向限幅（减速时上限同步收紧）
       const d = Math.sqrt(dist2(x, z, p.x, p.z));
-      const maxD = MAX_SPEED * dt;
+      const slowMul = (p.slowUntil && t < p.slowUntil) ? (1 - (p.slowPct || 0)) : 1;
+      const maxD = MAX_SPEED * slowMul * dt;
       if (d > maxD && d > 0) {
         x = p.x + (x - p.x) / d * maxD;
         z = p.z + (z - p.z) / d * maxD;
@@ -694,11 +742,11 @@ function handle(ws, m) {
 /* ---------- 猎人专属：捕捉宝宝 ---------- */
 /* ---------- 次元专属技能（F 键，各次元独有） ---------- */
 const DIM_SKILL = {
-  tech:    { name: '能量护盾', cd: 18000, desc: '展开纳米护盾，6秒内吸收伤害' },
-  xiuxian: { name: '吐纳回春', cd: 20000, desc: '运转真气，瞬间回复大量生命' },
-  cyber:   { name: '相位闪现', cd: 11000, desc: '瞬间相位移动一段距离' },
-  magic:   { name: '禁锢领域', cd: 14000, desc: '冻结周围敌人并造成法术伤害' },
-  hunter:  { name: '捕捉宝宝', cd: 3000,  desc: '将虚弱的野怪收为宝宝' },
+  tech:    { name: '磁暴力场', cd: 16000, desc: '展开纳米护盾吸收伤害(6秒)，同时电磁脉冲眩晕周围敌人1.2秒' },
+  xiuxian: { name: '吐纳净化', cd: 18000, desc: '运转真气回复大量生命，并净化自身全部控制效果' },
+  cyber:   { name: '相位突袭', cd: 10000, desc: '瞬间相位闪现，落点处敌人被电磁残影减速45%(2秒)' },
+  magic:   { name: '禁锢领域', cd: 13000, desc: '【控制位】冻结周围8米敌人2.8秒并造成法术伤害——西方魔法是次元第一控制流派' },
+  hunter:  { name: '猎手陷阱', cd: 3000,  desc: '将虚弱野怪收为宝宝；对附近敌人布下缠丝，命中减速' },
 };
 
 /* 玩家受伤时先扣护盾，返回穿透到生命的伤害（被多处伤害入口调用） */
@@ -710,6 +758,27 @@ function absorbShield(p, dmg) {
   }
   return dmg;
 }
+
+/* ---------- 控制效果（眩晕/定身/减速）统一入口 ---------- */
+const CC_LABEL = { stun: '眩晕', root: '定身', slow: '减速' };
+/* 给目标施加控制：玩家受韧性减免，世界BOSS免疫硬控（仍可减速），保证BOSS是走位战。 */
+function applyCC(src, tgt, cc) {
+  if (!cc || !tgt || tgt.dead || tgt.state === 'dead') return;
+  const t = now();
+  const isMon = !!tgt.tier;
+  if (isMon && tgt.boss && cc.type !== 'slow') return;   // BOSS 免疫眩晕/定身
+  let ms = cc.ms;
+  if (!isMon) { const ten = statsOf(tgt).tenacity || 0; ms = Math.round(ms * (1 - ten / 100)); }
+  if (ms < 100) return;
+  if (cc.type === 'slow') { tgt.slowUntil = Math.max(tgt.slowUntil || 0, t + ms); tgt.slowPct = Math.max(tgt.slowPct || 0, cc.pct || 0.3); }
+  else if (cc.type === 'root') { tgt.rootUntil = Math.max(tgt.rootUntil || 0, t + ms); }
+  else { tgt.stunUntil = Math.max(tgt.stunUntil || 0, t + ms); }
+  roomCast(src.room, { t: 'ccfx', id: tgt.id, kind: cc.type });
+  if (!isMon) send(tgt.ws, { t: 'cc', kind: cc.type, ms, pct: cc.pct || 0 });
+}
+/* 玩家当前是否被硬控（不能移动/施法） */
+const isHardCC = (p) => { const t = now(); return (p.stunUntil && t < p.stunUntil) || (p.rootUntil && t < p.rootUntil); };
+const isStunned = (p) => p.stunUntil && now() < p.stunUntil;
 
 /* 预警型地面AoE：先广播警示圈，delay 毫秒后才真正落地结算。
  * 落地瞬间按玩家「当时」的位置判定——站在圈内才吃伤害，跑出去即可躲避，
@@ -819,15 +888,28 @@ function dimSkill(p) {
     p.shield = Math.round(maxHp(p) * 0.45);
     p.shieldUntil = t + 6000;
     roomCast(p.room, { t: 'dimfx', kind: 'shield', id: p.id });
-    send(p.ws, { t: 'feed', msg: `🛡 能量护盾展开，吸收 ${p.shield} 点伤害（6秒）` });
+    // 电磁脉冲：眩晕周围 6 米敌人 1.2 秒
+    const R = 6;
+    for (const mo of room.monsters.values()) {
+      if (mo.state === 'dead' || dist2(p.x, p.z, mo.x, mo.z) > R * R) continue;
+      applyCC(p, mo, { type: 'stun', ms: 1200 });
+    }
+    if (p.room === 'war' || p.room === 'melee')
+      for (const o of room.players.values()) {
+        if (o.dead || o.dim === p.dim || dist2(p.x, p.z, o.x, o.z) > R * R) continue;
+        applyCC(p, o, { type: 'stun', ms: 1200 });
+      }
+    roomCast(p.room, { t: 'dimfx', kind: 'emp', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: R });
+    send(p.ws, { t: 'feed', msg: `🛡⚡ 磁暴力场：护盾吸收 ${p.shield} 点伤害，并电磁眩晕周围敌人` });
     sendYou(p);
   } else if (p.dim === 'xiuxian') {
     p.dimCd = t + def.cd;
     const heal = Math.round(maxHp(p) * 0.45);
     p.hp = Math.min(maxHp(p), p.hp + heal);
+    cleanseCC(p);   // 净化自身控制
     roomCast(p.room, { t: 'heal', id: p.id, amt: heal, hp: Math.round(p.hp), by: p.id });
     roomCast(p.room, { t: 'dimfx', kind: 'heal', id: p.id });
-    send(p.ws, { t: 'feed', msg: `☯ 吐纳回春，恢复 ${heal} 点生命` });
+    send(p.ws, { t: 'feed', msg: `☯ 吐纳净化，恢复 ${heal} 点生命并解除所有控制` });
     sendYou(p);
   } else if (p.dim === 'cyber') {
     p.dimCd = t + def.cd;
@@ -835,30 +917,47 @@ function dimSkill(p) {
     p.x = clamp(p.x + Math.sin(p.ry) * dist, -MAP_HALF, MAP_HALF);
     p.z = clamp(p.z + Math.cos(p.ry) * dist, -MAP_HALF, MAP_HALF);
     p.lastMoveT = t;   // 防被测速踢回
+    // 残影：落点 5 米内敌人减速 45%（2秒）
+    const R = 5;
+    for (const mo of room.monsters.values()) {
+      if (mo.state === 'dead' || dist2(p.x, p.z, mo.x, mo.z) > R * R) continue;
+      applyCC(p, mo, { type: 'slow', ms: 2000, pct: 0.45 });
+    }
+    if (p.room === 'war' || p.room === 'melee')
+      for (const o of room.players.values()) {
+        if (o.dead || o.dim === p.dim || dist2(p.x, p.z, o.x, o.z) > R * R) continue;
+        applyCC(p, o, { type: 'slow', ms: 2000, pct: 0.45 });
+      }
     roomCast(p.room, { t: 'dimfx', kind: 'blink', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2) });
-    send(p.ws, { t: 'feed', msg: '⚡ 相位闪现' });
+    send(p.ws, { t: 'feed', msg: '⚡ 相位突袭，落点敌人被残影减速' });
     sendYou(p);
   } else if (p.dim === 'magic') {
     p.dimCd = t + def.cd;
-    const R = 6, dmg = Math.round(atkOf(p) * 1.2);
+    const R = 8, dmg = Math.round(atkOf(p) * 1.2);
     roomCast(p.room, { t: 'dimfx', kind: 'field', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: R });
-    // 冻结范围内野怪 + 造成法术伤害
+    // 冻结范围内野怪 + 造成法术伤害（控制位招牌）
     for (const mo of room.monsters.values()) {
       if (mo.state === 'dead') continue;
       if (dist2(p.x, p.z, mo.x, mo.z) > R * R) continue;
-      mo.rootUntil = t + 2800;
+      applyCC(p, mo, { type: 'root', ms: 2800 });
       applyDamage(p, mo, dmg, 'magic');
     }
-    // 战场/混战内冻结敌方玩家（通知其客户端短暂禁足）
+    // 战场/混战内定身敌方玩家（受其韧性减免）
     if (p.room === 'war' || p.room === 'melee')
       for (const o of room.players.values()) {
         if (o.dead || o.dim === p.dim) continue;
         if (dist2(p.x, p.z, o.x, o.z) > R * R) continue;
-        send(o.ws, { t: 'rooted', ms: 2200 });
+        applyCC(p, o, { type: 'root', ms: 2800 });
         applyDamage(p, o, dmg, 'magic');
       }
-    send(p.ws, { t: 'feed', msg: '🔮 禁锢领域展开' });
+    send(p.ws, { t: 'feed', msg: '🔮 禁锢领域展开，敌人被冻结！' });
   }
+}
+
+/* 净化：解除目标全部控制状态（修仙吐纳净化用） */
+function cleanseCC(p) {
+  p.stunUntil = 0; p.rootUntil = 0; p.slowUntil = 0; p.slowPct = 0;
+  if (p.ws) send(p.ws, { t: 'cc', kind: 'cleanse', ms: 0 });
 }
 
 function capturePet(p) {
@@ -965,11 +1064,12 @@ function cast(p, m) {
   if (p.dead) return;
   const kind = ['basic', 'q', 'e', 'r'].includes(m.k) ? m.k : null;
   if (!kind) return;
+  if (isHardCC(p)) return send(p.ws, { t: 'err', msg: '你正被控制，无法施法' });
   const sk = clsOf(p).skills[kind];
   if (sk.minLvl && p.level < sk.minLvl) return send(p.ws, { t: 'err', msg: `${kind.toUpperCase()}技能需要 Lv.${sk.minLvl}` });
   const t = now();
   if (t < p.cds[kind]) return;
-  p.cds[kind] = t + sk.cd;
+  p.cds[kind] = t + Math.round(sk.cd * (1 - (statsOf(p).cdr || 0) / 100));   // 冷却缩减
 
   let dx = +m.dx || 0, dz = +m.dz || 0;
   const dl = Math.sqrt(dx * dx + dz * dz) || 1;
@@ -987,7 +1087,7 @@ function cast(p, m) {
     room.projectiles.set(id, {
       id, owner: p.id, x: p.x + dx * 0.5, z: p.z + dz * 0.5, dx, dz,
       speed: sk.speed, born: t, life: sk.life, hitR: sk.radius || 1.6,
-      dmg: atkOf(p) * sk.mult * skDmgMul(p, kind), dmgType,
+      dmg: atkOf(p) * sk.mult * skDmgMul(p, kind), dmgType, cc: sk.cc || null,
     });
     roomCast(p.room, { t: 'proj', id, owner: p.id, x: p.x, z: p.z, dx, dz, speed: sk.speed, dim: p.dim });
     return;
@@ -1029,7 +1129,7 @@ function cast(p, m) {
         hit = ang <= sk.arc / 2;
       }
     }
-    if (hit) applyDamage(p, tgt, dmg, dmgType);
+    if (hit) { applyDamage(p, tgt, dmg, dmgType); if (sk.cc) applyCC(p, tgt, sk.cc); }
   }
 }
 
@@ -1054,18 +1154,33 @@ function targetsOf(p) {
   return list;
 }
 
-/* 伤害结算：经过目标防御(物防/法防)与职业减伤 */
-function applyDamage(attacker, tgt, dmg, dmgType = 'phys') {
+/* 伤害结算：经过目标防御(物防/法防)与职业减伤；含暴击/穿透/吸血（仅玩家攻击者） */
+function applyDamage(attacker, tgt, dmg, dmgType = 'phys', opt = {}) {
   const isMonster = !!tgt.tier;
-  const def = isMonster
+  const ast = (attacker && !attacker.tier) ? statsOf(attacker) : null;
+  // 暴击：按攻击者暴击率滚动，命中则按暴击伤害放大
+  let crit = false;
+  if (ast && opt.canCrit !== false && Math.random() * 100 < ast.crit) {
+    crit = true; dmg *= 1 + ast.critDmg / 100;
+  }
+  let def = isMonster
     ? (dmgType === 'phys' ? tgt.tier * 7 : tgt.tier * 5)
     : (dmgType === 'phys' ? statsOf(tgt).armor : statsOf(tgt).mres);
+  if (ast) def = Math.max(0, def - ast.pen);   // 穿透：无视部分防御
   dmg = dmg * 100 / (100 + def);
   if (!isMonster) dmg *= clsOf(tgt).dmgTakenMul;
   dmg = Math.max(1, Math.round(dmg));
   if (!isMonster) dmg = absorbShield(tgt, dmg);   // 科技护盾吸收
   tgt.hp -= dmg;
-  roomCast(attacker.room, { t: 'dmg', kind: isMonster ? 'm' : 'p', id: tgt.id, amt: dmg, hp: Math.max(0, Math.round(tgt.hp)), by: attacker.id });
+  // 吸血：玩家攻击者按造成伤害回复生命
+  if (ast && ast.lifesteal > 0 && !attacker.dead) {
+    const heal = Math.round(dmg * ast.lifesteal / 100);
+    if (heal > 0 && attacker.hp < ast.maxHp) {
+      attacker.hp = Math.min(ast.maxHp, attacker.hp + heal);
+      sendYou(attacker);
+    }
+  }
+  roomCast(attacker.room, { t: 'dmg', kind: isMonster ? 'm' : 'p', id: tgt.id, amt: dmg, hp: Math.max(0, Math.round(tgt.hp)), by: attacker.id, crit: crit ? 1 : 0 });
   if (isMonster && tgt.boss && attacker.name) {
     // BOSS战伤害贡献统计（按昵称，结算时分配奖励）
     tgt.dmgBy = tgt.dmgBy || new Map();
@@ -1100,20 +1215,20 @@ function killMonster(p, mo) {
       if (!mem) continue;
       if (!mvpGiven) {
         mvpGiven = true;
-        giveItem(mem, rollDrop(4, mem.dim, 3), `世界BOSS【${mo.name}】MVP奖励`);
-        allCast({ t: 'feed', msg: `🏅 本场BOSS战MVP：【${dimName(mem.dim)}】${mem.name}，史诗战利品到手！` });
+        giveItem(mem, rollDrop(4, mem.dim, 4, 0.6), `世界BOSS【${mo.name}】MVP奖励`);   // 传说+额外满词条
+        allCast({ t: 'feed', msg: `🏅 本场BOSS战MVP：【${dimName(mem.dim)}】${mem.name}，顶级战利品到手！` });
         unlock(mem, 'mvp1');
       } else if (d / total >= 0.1) {
-        giveItem(mem, rollDrop(4, mem.dim, 2), `世界BOSS【${mo.name}】贡献奖励`);
+        giveItem(mem, rollDrop(4, mem.dim, 3, 0.3), `世界BOSS【${mo.name}】贡献奖励`);   // 史诗+强化词条
         if (mem !== p) gainExp(mem, Math.round(mo.exp * 0.5));
       }
       unlock(mem, 'boss1');
     }
-    if (!mvpGiven) giveItem(p, rollDrop(4, p.dim, 3), `世界BOSS【${mo.name}】掉落`);
+    if (!mvpGiven) giveItem(p, rollDrop(4, p.dim, 4, 0.5), `世界BOSS【${mo.name}】掉落`);
     allCast({ t: 'boss', alive: 0 });
     worldBoss = null;
-  } else if (Math.random() < 0.14 + mo.tier * 0.05) {
-    // 几率掉落装备（层级越高概率越大、品质越好）
+  } else if (Math.random() < 0.08 + mo.tier * 0.035) {
+    // 几率掉落装备（获取更难：层级越高概率越大、品质越好）
     giveItem(p, rollDrop(mo.tier, p.dim), `【${mo.name}】掉落`);
   }
   gainExp(p, mo.exp); // 内部会 sendYou + persist
@@ -1143,7 +1258,7 @@ function killPlayer(killer, victim) {
     else if (killer.dim === war.b) war.killsB++;
     allCast({ t: 'war', state: warState() });
   }
-  if (victim.room === 'melee') meleeEliminated.add(victim.name);   // 混战：阵亡即淘汰
+  if (victim.room === 'melee') { meleeEliminated.add(victim.name); killer.meleeKills = (killer.meleeKills || 0) + 1; }   // 混战：阵亡即淘汰，记 MVP 击杀
   roomCast(victim.room, { t: 'pdie', id: victim.id, by: killer.id });
   const arena = victim.room === 'melee' ? '五次元大混战' : '重叠战场';
   allCast({ t: 'feed', msg: `⚔️ 【${dimName(killer.dim)}】${killer.name} 在${arena}击杀了 【${dimName(victim.dim)}】${victim.name}，掠夺 ${loot} 金币！` });
@@ -1213,6 +1328,7 @@ function startMelee() {
   melee.endsAt = now() + (MELEE_MS > 0 ? MELEE_MS : Math.max(1, MELEE_END_HOUR - MELEE_HOUR) * 3600000);
   melee.participants.clear();
   meleeEliminated.clear();
+  for (const c of conns.values()) c.meleeKills = 0;   // 重置 MVP 击杀计数
   rooms.melee.monsters.clear();
   rooms.melee.projectiles.clear();
   allCast({ t: 'melee', state: meleeState() });
@@ -1228,7 +1344,13 @@ function endMelee() {
   let winner = null, best = -1;
   for (const [dim, n] of Object.entries(aliveByDim)) if (n > best) { best = n; winner = dim; }
   melee.active = false; melee.endsAt = 0;
-  for (const p of [...rooms.melee.players.values()]) {
+  // MVP：本场混战击杀最多者（优先取胜方阵营），独享「次元至宝」满词条传说
+  const roster = [...rooms.melee.players.values()];
+  const mvpPool = winner ? roster.filter((p) => p.dim === winner) : roster;
+  let mvp = null;
+  for (const p of (mvpPool.length ? mvpPool : roster))
+    if ((p.meleeKills || 0) > 0 && (!mvp || p.meleeKills > mvp.meleeKills)) mvp = p;
+  for (const p of roster) {
     const win = winner && p.dim === winner && !p.dead;
     if (win) {
       giveItem(p, rollDrop(4, p.dim, 4), '五次元大混战·大胜');   // 传说装备
@@ -1237,6 +1359,10 @@ function endMelee() {
     } else {
       p.gold += 200;
       send(p.ws, { t: 'feed', msg: '🏁 大混战结束，参与奖励 200 金币。' });
+    }
+    if (p === mvp) {
+      giveItem(p, makeDimRelic(p.dim), '五次元大混战·MVP');
+      allCast({ t: 'feed', msg: `🏆✨ 本场五次元大混战 MVP：【${dimName(p.dim)}】${p.name}（${p.meleeKills} 杀）！独得最极品【次元至宝】！` });
     }
     persist(p);
     joinRoom(p, p.dim);
@@ -1294,7 +1420,7 @@ function tickRoom(room) {
       for (const tgt of targets) {
         if (dist2(px, pz, tgt.x, tgt.z) < hr * hr) {
           if (pr.fromMonster) hurtPlayer(room, mob || { id: pr.owner, name: '怪物', targetId: null }, tgt, pr.dmg, pr.dmgType);
-          else applyDamage(owner, tgt, pr.dmg, pr.dmgType);
+          else { applyDamage(owner, tgt, pr.dmg, pr.dmgType); if (pr.cc && owner) applyCC(owner, tgt, pr.cc); }
           hitId = tgt.id; pr.x = px; pr.z = pz;
           break;
         }
@@ -1321,7 +1447,9 @@ function tickRoom(room) {
       }
       continue;
     }
-    if (mo.rootUntil && t < mo.rootUntil) continue;   // 魔法禁锢：定身
+    if (mo.stunUntil && t < mo.stunUntil) continue;            // 眩晕：完全无法行动
+    const rooted = mo.rootUntil && t < mo.rootUntil;           // 定身：可攻击不可移动
+    const moSpd = (mo.slowUntil && t < mo.slowUntil) ? mo.speed * (1 - (mo.slowPct || 0)) : mo.speed;  // 减速
     let tgt = mo.targetId ? room.players.get(mo.targetId) : null;
     if (tgt && (tgt.dead || inSafeZone(room, tgt.x, tgt.z) || dist2(mo.x, mo.z, tgt.x, tgt.z) > 26 * 26)) { tgt = null; mo.targetId = null; }
     if (!tgt) {
@@ -1374,13 +1502,13 @@ function tickRoom(room) {
       }
       if (tgt.dead) {           // 轰击若击杀了目标，本帧停手
         mo.targetId = null; mo.state = 'idle';
-      } else if (d > 2.0) {
+      } else if (d > 2.0 && !rooted) {
         mo.state = 'chase';
-        mo.x += (tgt.x - mo.x) / d * mo.speed * dt;
-        mo.z += (tgt.z - mo.z) / d * mo.speed * dt;
+        mo.x += (tgt.x - mo.x) / d * moSpd * dt;
+        mo.z += (tgt.z - mo.z) / d * moSpd * dt;
         const rm = resolveObstacles(room, mo.x, mo.z, 0.8);
         mo.x = rm.x; mo.z = rm.z;
-      } else if (t - mo.atkT > 1100) {
+      } else if (d <= 2.0 && t - mo.atkT > 1100) {
         mo.atkT = t;
         mo.state = 'attack';
         let dmg = mo.atk * rnd(0.9, 1.15);

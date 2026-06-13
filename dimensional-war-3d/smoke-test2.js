@@ -6,7 +6,8 @@ const WebSocket = require('ws');
 const PORT = 34568;
 // 预置一个5级猎人射手：带技能点和金币
 fs.writeFileSync('players.json', JSON.stringify({
-  '测试猎人2': { level: 18, exp: 0, gold: 5000, kills: 0, pvpKills: 0, cls: 'ranger', sk: { basic: 1, q: 1, e: 1, r: 1 }, skPts: 4, inv: [], equip: {} },
+  // daily 预置为今日，避免上线签到 +200 金币干扰精确金币断言
+  '测试猎人2': { level: 18, exp: 0, gold: 5000, kills: 0, pvpKills: 0, cls: 'ranger', sk: { basic: 1, q: 1, e: 1, r: 1 }, skPts: 4, inv: [], equip: {}, daily: new Date().toISOString().slice(0, 10) },
 }));
 
 const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT }, stdio: ['ignore', 'pipe', 'pipe'] });
