@@ -206,7 +206,7 @@ function newPlayer(ws, name, dimId, clsId) {
     level: rec.level || 1, exp: rec.exp || 0, gold: rec.gold || 0,
     kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, rankPts: rec.rankPts || 0,
     ach: { ...(rec.ach || {}) }, achEquip: rec.achEquip || null,
-    bagMode: rec.bagMode || 'sell',
+    bagMode: rec.bagMode || 'sell', potions: rec.potions || 0, potCd: 0,
     hp: 0, dead: false, dieT: 0,
     cds: { basic: 0, q: 0, e: 0, r: 0 },
     pet: null, capCd: 0,
@@ -274,7 +274,7 @@ function persist(p) {
     level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, rankPts: p.rankPts || 0,
     cls: p.cls, dim: p.dim, sk: p.sk, skPts: p.skPts, inv: p.inv, equip: p.equip,
     daily: p.daily, dailyStreak: p.dailyStreak, ach: p.ach || {}, achEquip: p.achEquip || null,
-    bagMode: p.bagMode || 'sell',
+    bagMode: p.bagMode || 'sell', potions: p.potions || 0,
     pet: p.pet ? { name: p.pet.name, tier: p.pet.tier, maxHp: p.pet.maxHp, atk: p.pet.atk } : null,
   };
   saveDirty = true;
@@ -450,6 +450,9 @@ const SHOP = [];
   }
 }
 
+/* 消耗品：治疗药剂（按最大生命百分比回血，带冷却防战斗内狂嗑） */
+const POTION = { id: 'pot_hp', name: '治疗药剂', icon: '🧪', healPct: 0.5, price: 70, cd: 9000, max: 99 };
+
 function sendInv(p) {
   send(p.ws, { t: 'inv', equip: p.equip, inv: p.inv, gold: p.gold });
 }
@@ -559,7 +562,7 @@ function sendYou(p) {
     spd: +st.spd.toFixed(2), skPts: p.skPts, sk: p.sk,
     crit: Math.round(st.crit), critDmg: Math.round(st.critDmg), lifesteal: Math.round(st.lifesteal),
     pen: Math.round(st.pen), cdr: Math.round(st.cdr), tenacity: Math.round(st.tenacity),
-    achEquip: p.achEquip || null, bagMode: p.bagMode || 'sell',
+    achEquip: p.achEquip || null, bagMode: p.bagMode || 'sell', potions: p.potions || 0,
     shield: (p.shield > 0 && now() < p.shieldUntil) ? p.shield : 0,
   });
 }
@@ -811,6 +814,20 @@ function handle(ws, m) {
       return;
     }
     case 'buy': {
+      // 治疗药剂（消耗品，单独计数，可一次买多瓶）
+      if (m.id === POTION.id) {
+        const qty = Math.max(1, Math.min(20, m.qty | 0 || 1));
+        const have = p.potions || 0;
+        const canBuy = Math.min(qty, POTION.max - have);
+        if (canBuy <= 0) return send(p.ws, { t: 'err', msg: `药剂已达上限 ${POTION.max}` });
+        const cost = POTION.price * canBuy;
+        if (p.gold < cost) return send(p.ws, { t: 'err', msg: `金币不足（需要 ${cost}）` });
+        p.gold -= cost;
+        p.potions = have + canBuy;
+        send(p.ws, { t: 'feed', msg: `🧪 购买【${POTION.name}】×${canBuy}（花费 ${cost} 金），按 H 键嗑药回血` });
+        sendYou(p); persist(p);
+        return;
+      }
       const it = SHOP.find((s) => s.id === m.id);
       if (!it) return;
       if (p.gold < it.price) return send(p.ws, { t: 'err', msg: `金币不足（需要 ${it.price}）` });
@@ -858,6 +875,23 @@ function handle(ws, m) {
     case 'bagmode': {
       p.bagMode = m.mode === 'enhance' ? 'enhance' : 'sell';
       send(p.ws, { t: 'feed', msg: p.bagMode === 'enhance' ? '🔨 满包将自动强化穿戴装备' : '💰 满包将自动卖出低品质装备' });
+      sendYou(p); persist(p);
+      return;
+    }
+    case 'usepotion': {
+      if (p.dead) return send(p.ws, { t: 'err', msg: '阵亡状态无法使用药剂' });
+      if ((p.potions || 0) <= 0) return send(p.ws, { t: 'err', msg: '没有治疗药剂了，去商店购买' });
+      const t = now();
+      if (t < (p.potCd || 0)) return send(p.ws, { t: 'err', msg: `药剂冷却中（${Math.ceil((p.potCd - t) / 1000)}s）` });
+      const mx = maxHp(p);
+      if (p.hp >= mx) return send(p.ws, { t: 'err', msg: '生命已满' });
+      p.potCd = t + POTION.cd;
+      p.potions -= 1;
+      const heal = Math.round(mx * POTION.healPct);
+      p.hp = Math.min(mx, p.hp + heal);
+      roomCast(p.room, { t: 'heal', id: p.id, amt: heal, hp: Math.round(p.hp), by: p.id });
+      roomCast(p.room, { t: 'dimfx', kind: 'heal', id: p.id });
+      send(p.ws, { t: 'feed', msg: `🧪 服用治疗药剂，恢复 ${heal} 点生命（剩 ${p.potions} 瓶）` });
       sendYou(p); persist(p);
       return;
     }
@@ -1174,6 +1208,7 @@ function joinRoom(p, roomId, isFirst = false) {
     boss: worldBoss ? { alive: 1, dim: worldBoss.dim, name: worldBoss.name, x: worldBoss.x, z: worldBoss.z } : null,
     obstacles: rooms[roomId].obstacles,
     shop: isFirst ? SHOP : undefined,
+    potionDef: isFirst ? { id: POTION.id, name: POTION.name, icon: POTION.icon, price: POTION.price, healPct: POTION.healPct, cd: POTION.cd } : undefined,
     achDefs: isFirst ? ACHIEVEMENTS : undefined,
     ach: Object.keys(p.ach || {}), achEquip: p.achEquip || null, bagMode: p.bagMode || 'sell',
     dimSkill: { ...DIM_SKILL[p.dim], dim: p.dim },

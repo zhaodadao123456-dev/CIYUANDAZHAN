@@ -285,6 +285,9 @@ body.touch .controls-help { display: none; }
 
 /* ---------- 技能栏扩展：名称/等级/加点 ---------- */
 .skill-slot .sk-name { font-size: 12px; }
+.pot-count { position: absolute; bottom: 3px; right: 5px; font-size: 11px; color: #2ecc71; font-weight: bold; z-index: 2; }
+#sk-potion.empty { filter: grayscale(0.8) brightness(0.6); }
+#sk-potion.empty .pot-count { color: #c66; }
 .skill-slot .sk-lv {
   position: absolute; bottom: 3px; right: 5px;
   font-size: 9px; color: #ffd166; font-weight: bold; z-index: 2;

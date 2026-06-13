@@ -100,6 +100,11 @@ const check = (name, ok, extra = '') => { results.push([name, ok]); console.log(
     !!rareItem && (inv.inv || []).filter((it) => it.rar === 1).length === 0 && lastYou().gold < goldPreFuse,
     rareItem ? `得到 ${rareItem.name}` : '未产出');
 
+  // 2.8 治疗药剂：购买 → 受伤后使用回血
+  send({ t: 'buy', id: 'pot_hp', qty: 3 });
+  await sleep(250);
+  check('购买治疗药剂×3', lastYou().potions === 3, `potions=${lastYou().potions}`);
+
   // 3. 走向最近的T1怪并打残
   let snap = lastSnap();
   let pos = { x: 0, z: 0 };

@@ -229,6 +229,7 @@ function initTouch() {
   bindTap('sk-r', () => castSkill('r'));
   bindTap('sk-dodge', dodge);
   bindTap('sk-pet', capturePet);
+  bindTap('sk-potion', usePotion);
   bindTap('btn-atk', () => castSkill('basic'));
 }
 
@@ -326,6 +327,7 @@ function onMsg(m) {
       if (m.ach) myAch = new Set(m.ach);
       if (m.achEquip !== undefined) achEquip = m.achEquip;
       if (m.bagMode) bagMode = m.bagMode;
+      if (m.potionDef) potionDef = m.potionDef;
       if (m.dimSkill) { dimSkillDef = m.dimSkill; updateDimSkillSlot(); }
       if (m.equip || m.inv) { invData = { equip: m.equip || {}, inv: m.inv || [] }; renderPanel(); }
       obstacles = m.obstacles || [];
@@ -923,6 +925,7 @@ function bindInput() {
     if (e.code === 'KeyB') togglePanel();
     if (e.code === 'Space') { e.preventDefault(); dodge(); }
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') jump();
+    if (e.code === 'KeyH') usePotion();
   });
   addEventListener('keyup', (e) => keys[e.code] = false);
   $('btn-chat').onclick = openChat;
@@ -1084,6 +1087,17 @@ function jump() {
   jumpCd = t + 760;
   MODELS.jumpAnim(me.obj);
   AUDIO.sfx('dodge', 0.35, 1.4);
+}
+
+function usePotion() {
+  if (!joined || dead) return;
+  const t = performance.now();
+  if (potions <= 0) return toast('🧪 没有治疗药剂了，去商店购买');
+  if (t < potCdEnd) return;
+  if ((HUD.hp || 0) >= (HUD.maxHp || 1)) return toast('生命已满');
+  potCdEnd = t + ((potionDef && potionDef.cd) || 9000);
+  net({ t: 'usepotion' });
+  AUDIO.sfx('coin', 0.5, 1.5);
 }
 
 function nearestEnemy(maxDist = 15) {
@@ -1403,6 +1417,7 @@ function updateYou(y) {
   $('stat-line').textContent = `Lv.${y.level} ｜ 💰${y.gold} ｜ 击杀${y.kills} ｜ PvP${y.pvpKills}` + (HUD.skPts > 0 ? ` ｜ ✨技能点×${HUD.skPts}` : '');
   if (y.achEquip !== undefined) achEquip = y.achEquip;
   if (y.bagMode) bagMode = y.bagMode;
+  if (y.potions !== undefined) { potions = y.potions; const pc = $('pot-count'); if (pc) pc.textContent = '×' + potions; }
   if (me) me.hp = y.hp;
   if (!$('panel').classList.contains('hidden')) renderPanel();
 }
@@ -1586,14 +1601,20 @@ function renderPanel() {
       rankMode = b.dataset.rmode; rankData = []; renderPanel(); net({ t: 'rank', mode: rankMode });
     });
   } else {
+    const pd = potionDef;
     body.innerHTML = `
       <div class="panel-sub">商店（金币：💰${HUD.gold || 0}）</div>
+      ${pd ? `<div class="inv-row">
+          <span>${pd.icon || '🧪'} <b>${pd.name}</b> <small class="dim-text">回复 ${Math.round(pd.healPct * 100)}% 生命 ｜ 持有 ×${potions} ｜ H 键使用</small></span>
+          <span class="inv-btns"><button data-buypot="1">买1 💰${pd.price}</button><button data-buypot="10">买10 💰${pd.price * 10}</button></span>
+        </div>` : ''}
       ${shopData.map((it) => `
         <div class="inv-row">
           <span><span style="color:${RAR_COLORS[it.rar]}">${it.name}</span> <small class="dim-text">[${({ weapon: '武器', helmet: '帽子', armor: '衣服', boots: '鞋子', acc: '饰品' })[it.slot]}] ${itemFullText(it)}</small></span>
           <span class="inv-btns"><button data-buy="${it.id}">💰${it.price}</button></span>
         </div>`).join('')}`;
     body.querySelectorAll('[data-buy]').forEach((b) => b.onclick = () => net({ t: 'buy', id: b.dataset.buy }));
+    body.querySelectorAll('[data-buypot]').forEach((b) => b.onclick = () => net({ t: 'buy', id: 'pot_hp', qty: +b.dataset.buypot }));
   }
 }
 
@@ -1630,6 +1651,7 @@ let achDefs = [];
 let myAch = new Set();
 let achEquip = null;
 let bagMode = 'sell';
+let potions = 0, potionDef = null, potCdEnd = 0;
 
 function renderPartyHud() {
   const el = $('party-hud');
@@ -1772,6 +1794,12 @@ function renderSkillBar() {
     const cd = (dimSkillDef && dimSkillDef.cd) || 3000;
     const remain = Math.max(0, (capCdEnd || 0) - t);
     cap.querySelector('.cd').style.height = (remain / cd * 100) + '%';
+  }
+  const pot = $('sk-potion');
+  if (pot) {
+    const cd = (potionDef && potionDef.cd) || 9000;
+    pot.querySelector('.cd').style.height = (Math.max(0, potCdEnd - t) / cd * 100) + '%';
+    pot.classList.toggle('empty', potions <= 0);
   }
 }
 let capCdEnd = 0;
