@@ -29,6 +29,8 @@ const dmgSprites = [];
 let keys = {}, camYaw = 0, camPitch = 0.55, camDist = 11;
 let cds = { basic: 0, q: 0, e: 0, r: 0 };
 let burstT = 0, burstSpeed = 0, burstDir = [0, 0], dodgeCd = 0, rushTrail = 0;
+let jumpUntil = 0, jumpCd = 0;          // 跳跃：竖直弧线 + 跳跃姿态
+const JUMP_MS = 620, JUMP_H = 1.5;
 let warInfo = { active: false };
 let dead = false, deadAt = 0;
 let joined = false;
@@ -918,6 +920,7 @@ function bindInput() {
     if (e.code === 'KeyF') capturePet();
     if (e.code === 'KeyB') togglePanel();
     if (e.code === 'Space') { e.preventDefault(); dodge(); }
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') jump();
   });
   addEventListener('keyup', (e) => keys[e.code] = false);
   $('btn-chat').onclick = openChat;
@@ -1070,6 +1073,15 @@ function dodge() {
   MODELS.dodgeAnim(me.obj);
   AUDIO.sfx('dodge', 0.5);
   dodgeCd = t + 1200;
+}
+
+function jump() {
+  const t = performance.now();
+  if (t < jumpCd || dead || t < ccHardUntil()) return;   // 被控时不能跳
+  jumpUntil = t + JUMP_MS;
+  jumpCd = t + 760;
+  MODELS.jumpAnim(me.obj);
+  AUDIO.sfx('dodge', 0.35, 1.4);
 }
 
 function nearestEnemy(maxDist = 15) {
@@ -1833,6 +1845,11 @@ function animate() {
     } else me.anim = 'dead';
 
     if (!MODELS.drive(me.obj, me.anim, dt)) MODELS.animateHumanoid(me.obj, me.anim, time, me.attackT);
+    // 跳跃竖直弧线（叠加在动画之上，GLTF/程序化模型通用）
+    if (performance.now() < jumpUntil) {
+      const k = 1 - (jumpUntil - performance.now()) / JUMP_MS;
+      me.obj.position.y = Math.sin(k * Math.PI) * JUMP_H;
+    }
 
     // 网络同步 15Hz
     if (time - lastNetT > 0.066 && !dead) {

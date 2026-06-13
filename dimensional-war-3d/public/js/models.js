@@ -284,6 +284,13 @@ const MODELS = (() => {
     playOnce(rig, 'Dodge_Forward', 1.4);
   }
 
+  /* 跳跃动作（竖直弧线由调用方驱动；此处播放跳跃姿态片段，缺失则忽略） */
+  function jumpAnim(obj) {
+    const rig = obj.userData.rig;
+    if (!rig) return;
+    playOnce(rig, 'Jump_Full_Short', 1.1);
+  }
+
   /* ============ 程序化兜底模型（资产加载失败时） ============ */
   const M = (color, opts = {}) => new THREE.MeshStandardMaterial({
     color, roughness: opts.rough ?? 0.7, metalness: opts.metal ?? 0.15,
@@ -394,5 +401,5 @@ const MODELS = (() => {
     g.rotation.z = state === 'attack' ? Math.sin(time * 25) * 0.08 : 0;
   }
 
-  return { loadAssets, makeHero, makeMonster, makeProp, makePropNamed, drive, attackAnim, monsterAttack, dodgeAnim, animateHumanoid, animateMonster, isReady: () => assetsReady };
+  return { loadAssets, makeHero, makeMonster, makeProp, makePropNamed, drive, attackAnim, monsterAttack, dodgeAnim, jumpAnim, animateHumanoid, animateMonster, isReady: () => assetsReady };
 })();
