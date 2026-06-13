@@ -47,18 +47,14 @@ namespace DW.EditorTools
                 $"清单已生成：{outPath}\n\n把这个文件内容发给 Claude，即可精确分配每个角色。", "好");
         }
 
-        /* 各职业候选关键词（按优先级；匹配资源路径，命中即选，且不重复使用） */
-        static readonly (string key, string cls, string[] keys)[] HeroRules =
-        {
-            ("xiuxian", "刺客", new[] { "wukong", "悟空", "monkey", "ninja", "assassin", "rogue", "samurai" }),
-            ("magic",   "奶妈", new[] { "witch", "女巫", "nun", "修女", "priest", "cleric", "missionary", "传教士", "mage", "heal" }),
-            ("cyber",   "射手", new[] { "cowboy", "sheriff", "牛仔", "archer", "ranger", "gun", "trooper_girl", "girl_v" }),
-            ("tech",    "坦克", new[] { "trooper", "sci-fi", "scifi", "knight", "armor", "guard", "robot", "mech", "heavy", "lord" }),
-            ("hunter",  "战士", new[] { "half_blood", "halfblood", "半血", "warrior", "sword", "fighter", "barbarian", "man", "cowboy" }),
-        };
+        /* 角色分类关键词 */
+        static readonly string[] BossKeys = { "clown", "jester", "小丑", "弄臣" };
+        static readonly string[] MonsterKeys = { "skeleton", "骷髅", "skull", "undead", "zombie", "尸", "demon", "恶魔", "ghoul", "lich", "monster", "怪" };
+        /* 英雄池排序优先级（让常见职业形象排在前面，组合取模时更顺眼） */
+        static readonly string[] HeroPriority = { "wukong", "悟空", "witch", "女巫", "cowboy", "sheriff", "牛仔", "trooper", "half_blood", "半血", "nun", "修女", "missionary", "传教士", "bunny", "兔" };
 
-        /* 怪物候选关键词（骷髅/亡灵/恶魔类做怪物） */
-        static readonly string[] MonsterKeys = { "skeleton", "骷髅", "skull", "undead", "zombie", "demon", "恶魔", "monster", "怪", "ghoul", "clown", "小丑", "jester" };
+        const string HeroDir = "Assets/Resources/DWHeroes";
+        const string MobDir = "Assets/Resources/DWMobs";
 
         [MenuItem("次元大战/② 一键接入已购模型(自动)")]
         public static void AutoWire()
@@ -66,42 +62,75 @@ namespace DW.EditorTools
             Directory.CreateDirectory(ResDir);
             var log = new StringBuilder("===== 自动接入结果 =====\n");
 
-            // 全项目扫描所有「角色」预制体（带蒙皮网格）
             var allChars = AllCharacterPrefabs();
             log.AppendLine($"扫描到角色预制体 {allChars.Count} 个\n");
 
-            // 1. 通用动画控制器：优先用悟空包的人形动作片段
             string wukong = FindFolder("wukong", "悟空");
             AnimatorController ctrl = BuildController(wukong, log);
 
-            // 2. 英雄分配：按关键词从全项目角色池里挑，已用过的不再选
-            var used = new HashSet<string>();
-            foreach (var (key, cls, keys) in HeroRules)
-            {
-                var src = PickByKeywords(allChars, keys, used)
-                          ?? allChars.FirstOrDefault((p) => !used.Contains(p));   // 兜底：随便给个没用过的
-                if (src == null) { log.AppendLine($"hero_{key}（{cls}）：无可用角色，保留占位"); continue; }
-                used.Add(src);
-                SaveCharPrefab(src, $"{ResDir}/hero_{key}.prefab", ctrl, $"hero_{key}（{cls}）", log);
-            }
+            // 分类：小丑→BOSS；骷髅/亡灵→怪物；其余人物→英雄池
+            bool IsBoss(string p) => BossKeys.Any((k) => Lower(p).Contains(k));
+            bool IsMon(string p) => MonsterKeys.Any((k) => Lower(p).Contains(k));
+            var bossSrcs = DedupePacks(allChars.Where(IsBoss).ToList());
+            var monSrcs  = DedupePacks(allChars.Where((p) => IsMon(p) && !IsBoss(p)).ToList());
+            var heroSrcs = DedupePacks(allChars.Where((p) => !IsBoss(p) && !IsMon(p)).ToList());
+            // 英雄池按优先级排序（常见形象在前）
+            heroSrcs = heroSrcs.OrderBy((p) => {
+                for (int i = 0; i < HeroPriority.Length; i++) if (Lower(p).Contains(HeroPriority[i])) return i;
+                return 999;
+            }).ToList();
 
-            // 3. 怪物分配：把骷髅/亡灵类角色做成 mon_t1~t4
-            var monsters = allChars.Where((p) => MonsterKeys.Any((k) => Lower(p).Contains(k))).ToList();
-            if (monsters.Count > 0)
-            {
-                for (int i = 0; i < 4; i++)
-                {
-                    var src = monsters[i % monsters.Count];   // 不足4个就循环复用
-                    SaveCharPrefab(src, $"{ResDir}/mon_t{i + 1}.prefab", ctrl, $"mon_t{i + 1}", log);
-                }
-            }
-            else log.AppendLine("未发现骷髅/怪物类角色，怪物沿用 KayKit 默认模型");
+            // 世界BOSS（小丑）
+            if (bossSrcs.Count > 0)
+                SaveCharPrefab(bossSrcs[0], $"{ResDir}/mon_boss.prefab", ctrl, "世界BOSS(小丑)", log);
+            else log.AppendLine("未发现小丑模型，世界BOSS沿用怪物模型");
+
+            // 英雄池 DWHeroes/h_XX（运行时按「次元×职业」组合取用，用上全部人物）
+            RebuildFolder(HeroDir);
+            int hi = 0;
+            foreach (var src in heroSrcs)
+                SaveCharPrefab(src, $"{HeroDir}/h_{hi++:00}.prefab", ctrl, $"英雄池#{hi} {System.IO.Path.GetFileNameWithoutExtension(src)}", log);
+            if (hi == 0) log.AppendLine("⚠ 英雄池为空，英雄将用占位小人");
+
+            // 怪物池 DWMobs/mob_XX（骷髅等，运行时按怪物id稳定取用）
+            RebuildFolder(MobDir);
+            int mi = 0;
+            foreach (var src in monSrcs)
+                SaveCharPrefab(src, $"{MobDir}/mob_{mi++:00}.prefab", ctrl, $"怪物池#{mi} {System.IO.Path.GetFileNameWithoutExtension(src)}", log);
+            if (mi == 0) log.AppendLine("未发现骷髅/怪物类角色，怪物沿用 KayKit 默认模型");
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log(log.ToString());
             File.WriteAllText("Assets/DW_接入结果.txt", log.ToString());
-            EditorUtility.DisplayDialog("次元大战", log + "\n\n点 ▶ 运行即可看到新模型。\n效果不满意把 Assets/DW_接入结果.txt 发给 Claude 精调。", "好");
+            EditorUtility.DisplayDialog("次元大战",
+                $"英雄池 {hi} 个 · 怪物池 {mi} 个 · BOSS{(bossSrcs.Count > 0 ? "(小丑)" : "无")}\n\n点 ▶ 运行查看。\n把 Assets/DW_接入结果.txt 发给 Claude 可精调分配。", "好");
+        }
+
+        /* 清空并重建文件夹（去掉上次生成的预制体） */
+        static void RebuildFolder(string dir)
+        {
+            if (AssetDatabase.IsValidFolder(dir)) AssetDatabase.DeleteAsset(dir);
+            Directory.CreateDirectory(dir);
+            AssetDatabase.Refresh();
+        }
+
+        /* 同一资源包只取最佳代表：若包内有「full」完整版则只取 full，否则全取（最多4个，防部件刷屏） */
+        static List<string> DedupePacks(List<string> paths)
+        {
+            var res = new List<string>();
+            foreach (var g in paths.GroupBy(TopFolder))
+            {
+                var items = g.ToList();
+                var fulls = items.Where((p) => Lower(p).Contains("full")).ToList();
+                res.AddRange((fulls.Count > 0 ? fulls : items).Take(4));
+            }
+            return res;
+        }
+        static string TopFolder(string p)
+        {
+            var parts = p.Split('/');
+            return parts.Length >= 2 ? parts[0] + "/" + parts[1] : p;
         }
 
         /* 把一个角色源复制成标准命名 Prefab 并挂动画控制器 */
@@ -118,17 +147,6 @@ namespace DW.EditorTools
             PrefabUtility.SaveAsPrefabAsset(inst, dst);
             Object.DestroyImmediate(inst);
             log.AppendLine($"{label} ← {src}  动画:{(ctrl != null && human ? "已挂" : "静态(非人形骨骼)")}");
-        }
-
-        /* 从角色池里按关键词优先级挑一个未使用的 */
-        static string PickByKeywords(List<string> pool, string[] keys, HashSet<string> used)
-        {
-            foreach (var k in keys)
-            {
-                var hit = pool.FirstOrDefault((p) => !used.Contains(p) && Lower(p).Contains(k));
-                if (hit != null) return hit;
-            }
-            return null;
         }
 
         /* 全项目角色预制体（带蒙皮网格、人形优先、完整版优先、排除自己生成的 Resources/DW） */

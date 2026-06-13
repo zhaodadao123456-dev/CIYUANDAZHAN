@@ -432,23 +432,40 @@ namespace DW
             if (r != null) r.material.color = c;
         }
 
-        /* 职业→模型键位（与网页版一致：坦克tech 刺客xiuxian 射手cyber 奶妈magic 战士hunter） */
-        static string ModelKey(string clsId)
+        // 英雄模型池（向导生成于 Resources/DWHeroes），按名字排序保证各端一致
+        GameObject[] heroPool;
+        GameObject[] LoadSorted(string folder)
         {
-            switch (clsId)
-            {
-                case "tank": return "tech";
-                case "assassin": return "xiuxian";
-                case "ranger": return "cyber";
-                case "healer": return "magic";
-                default: return "hunter";
-            }
+            var arr = Resources.LoadAll<GameObject>(folder);
+            System.Array.Sort(arr, (a, b) => string.CompareOrdinal(a.name, b.name));
+            return arr;
+        }
+        static int ClassIdx(string id)
+        {
+            for (int i = 0; i < Data.Classes.Length; i++) if (Data.Classes[i].id == id) return i;
+            return 0;
+        }
+        static int DimIdx(string id)
+        {
+            for (int i = 0; i < Data.Dims.Length; i++) if (Data.Dims[i].id == id) return i;
+            return 0;
         }
 
-        /* 优先用「次元大战→一键接入」生成的正式模型（Resources/DW/hero_*），否则占位小人 */
+        /* 英雄模型按「次元×职业」组合从角色池里确定（确定性，各端一致，用上所有模型）：
+         *  1) 显式覆盖 DW/hero_{dim}_{cls} → 2) 角色池按组合取模 → 3) 占位小人 */
         GameObject MakeHero(string clsId, string dimId)
         {
-            var prefab = Resources.Load<GameObject>("DW/hero_" + ModelKey(clsId));
+            var prefab = Resources.Load<GameObject>("DW/hero_" + dimId + "_" + clsId)
+                       ?? Resources.Load<GameObject>("DW/hero_" + clsId);
+            if (prefab == null)
+            {
+                if (heroPool == null) heroPool = LoadSorted("DWHeroes");
+                if (heroPool.Length > 0)
+                {
+                    int combo = ClassIdx(clsId) * Data.Dims.Length + DimIdx(dimId);
+                    prefab = heroPool[combo % heroPool.Length];
+                }
+            }
             if (prefab == null)
                 return MakeHumanoid(Data.Dim(dimId).accent, clsId == "tank" ? 1.12f : 1f);
             var root = new GameObject("Hero");
@@ -582,7 +599,7 @@ namespace DW
         void AddMonster(string id, float x, float z, string mstate, int hp, int maxHp, int tier, string name)
         {
             var e = new Ent { name = name, tier = tier, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
-            e.go = MakeCreature(tier);
+            e.go = MakeCreature(tier, id);
             e.go.transform.position = e.target;
             e.label = MakeLabel(e.go, 1.1f + tier * 0.45f);
             monsters[id] = e;
@@ -591,11 +608,20 @@ namespace DW
             UpdateLabel(e, "#ffaa33");
         }
 
-        /* 怪物：优先用接入的正式模型（Resources/DW/mon_t*），否则生成敌对小怪占位 */
-        GameObject MakeCreature(int tier)
+        // 怪物模型池（向导生成于 Resources/DWMobs）
+        GameObject[] mobPool;
+
+        /* 怪物模型：tier≥5(世界BOSS)→小丑 DW/mon_boss；普通怪→怪物池按id稳定取；再退 KayKit；最后占位 */
+        GameObject MakeCreature(int tier, string id)
         {
-            int t = Mathf.Clamp(tier, 1, 4);
-            var prefab = Resources.Load<GameObject>("DW/mon_t" + t) ?? Resources.Load<GameObject>("DWMon/mon_t" + t);
+            GameObject prefab = null;
+            if (tier >= 5) prefab = Resources.Load<GameObject>("DW/mon_boss");
+            if (prefab == null)
+            {
+                if (mobPool == null) mobPool = LoadSorted("DWMobs");
+                if (mobPool.Length > 0) prefab = mobPool[Mathf.Abs((id ?? "").GetHashCode()) % mobPool.Length];
+            }
+            if (prefab == null) prefab = Resources.Load<GameObject>("DWMon/mon_t" + Mathf.Clamp(tier, 1, 4));
             if (prefab != null)
             {
                 var root = new GameObject("Monster");
