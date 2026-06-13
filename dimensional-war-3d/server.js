@@ -31,6 +31,7 @@ const SNAP_MS = 100;            // 10Hz 快照
 const MAX_SPEED = 26;            // 位置防作弊：最大移动速度（含翻滚/突进冲刺）
 const MONSTER_RESPAWN_MS = 9000;
 const PLAYER_RESPAWN_MS = 4000;
+const MON_MAX_LEVEL = parseInt(process.env.DW_MON_MAXLEVEL || '100', 10);   // 怪物等级上限（测试可下调）
 const SAFE_R = 20;              // 出生村庄安全区半径
 
 /* 职业表（技能/属性均以服务器为准，定义在共享 data.js） */
@@ -119,7 +120,7 @@ function spawnMonsters(room, dimId) {
   if (!dim) return;
   for (let tier = 1; tier <= 4; tier++) {
     const names = dim.regions[tier - 1].monsters;
-    for (let i = 0; i < 16; i++) {   // 地图扩大后每层更多怪
+    for (let i = 0; i < 28; i++) {   // 怪潮：每层更多怪
       let ang, r;
       if (tier === 4) {
         // T4 怪聚集在 Boss 巢穴
@@ -137,24 +138,27 @@ function spawnMonsters(room, dimId) {
   }
 }
 
-function addMonster(room, { name, tier, x, z }) {
+function addMonster(room, { name, tier, x, z, level }) {
   const id = 'm' + nextMid++;
-  // 等级 1-10：按层级分布（T1:1-3 / T2:3-5 / T3:5-7 / T4:7-10）
-  const lvBase = { 1: 1, 2: 3, 3: 5, 4: 7 }[tier] || 1;
-  const level = Math.min(10, lvBase + Math.floor(rnd(0, 3)));
+  // 等级跨度 1-100：越外圈层级越高（T1:1-10 / T2:11-35 / T3:36-70 / T4:71-100）
+  if (level == null) {
+    const band = { 1: [1, 10], 2: [11, 35], 3: [36, 70], 4: [71, 100] }[tier] || [1, 10];
+    level = band[0] + Math.floor(rnd(0, band[1] - band[0] + 1));
+  }
+  level = clamp(Math.round(level), 1, MON_MAX_LEVEL);
   // 技能：T1纯近战；T2远程弹幕；T3范围震击；T4随机远程/范围
   let skill = 'none';
   if (tier === 2) skill = 'ranged';
   else if (tier === 3) skill = 'aoe';
   else if (tier >= 4) skill = Math.random() < 0.5 ? 'ranged' : 'aoe';
-  // 数值随等级大幅成长（Lv10 怪 ≈ 基础的 ~2.6 倍血、~2.3 倍攻）
-  const hp = Math.round((60 + tier * 70) * (1 + level * 0.18));
+  // 数值随等级成长（更强：Lv100 怪强力但仍可被高级玩家击杀，而非天文数字）
+  const hp = Math.round((60 + tier * 50) * (1 + level * 0.07));
   room.monsters.set(id, {
     id, name, tier, level, skill,
     x, z, spawnX: x, spawnZ: z, ry: rnd(0, 6.28),
     hp, maxHp: hp,
-    atk: Math.round((8 + tier * 7) * (1 + level * 0.14)), speed: 3.0 + tier * 0.35,
-    exp: Math.round((22 + tier * 20) * (1 + level * 0.12)), gold: Math.round((8 + tier * 12) * (1 + level * 0.1)),
+    atk: Math.round((8 + tier * 6) * (1 + level * 0.05)), speed: 3.0 + tier * 0.35,
+    exp: Math.round((22 + tier * 18) * (1 + level * 0.09)), gold: Math.round((8 + tier * 11) * (1 + level * 0.07)),
     state: 'idle', targetId: null, atkT: 0, skillT: 0, dieT: 0, wanderT: 0, wx: x, wz: z,
   });
 }
@@ -176,7 +180,7 @@ function spawnWorldBoss() {
   const bx = Math.cos(ang) * (LAIR_R - 8), bz = Math.sin(ang) * (LAIR_R - 8);
   const name = BOSS_NAMES[dim.id] || '次元主宰';
   room.monsters.set(id, {
-    id, name, tier: 5, boss: true, level: 10, skill: 'none', skillT: 0,
+    id, name, tier: 5, boss: true, level: 100, skill: 'none', skillT: 0,
     x: bx, z: bz, spawnX: bx, spawnZ: bz, ry: 0,
     hp: +process.env.DW_BOSS_HP || 6000, maxHp: +process.env.DW_BOSS_HP || 6000, atk: 58, speed: 4.6,
     exp: 900, gold: 600,
