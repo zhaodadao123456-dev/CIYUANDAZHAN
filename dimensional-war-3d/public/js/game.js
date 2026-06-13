@@ -429,7 +429,7 @@ function onMsg(m) {
     case 'ach': {
       myAch.add(m.id);
       feed(`${m.icon} 达成成就【${m.name}】：${m.desc}`);
-      toast(`${m.icon} 成就解锁：【${m.name}】`);
+      achBanner(m);
       if (panelTab === 'ach') renderPanel();
       break;
     }
@@ -1454,26 +1454,37 @@ function renderPanel() {
       net({ t: 'party', op: 'invite', name: b.dataset.name });
     });
   } else if (panelTab === 'ach') {
+    const pct = achDefs.length ? Math.round(myAch.size / achDefs.length * 100) : 0;
     body.innerHTML = `
-      <div class="panel-sub">🏅 成就（${myAch.size}/${achDefs.length}）</div>
+      <div class="panel-sub">🏅 成就 ${myAch.size}/${achDefs.length}（${pct}%）</div>
+      <div class="ach-bar"><span style="width:${pct}%"></span></div>
+      <div class="ach-grid">
       ${achDefs.map((a) => {
         const got = myAch.has(a.id);
-        return `<div class="inv-row" style="${got ? '' : 'opacity:0.45'}">
-          <span>${a.icon} <b>${a.name}</b> <small class="dim-text">${a.desc}</small></span>
-          <small>${got ? '<span style="color:#ffd166">✔ 已达成</span>' : '<span class="dim-text">未达成</span>'}</small>
+        return `<div class="ach-card ${got ? 'got' : 'locked'}">
+          <div class="ach-ic">${got ? a.icon : '🔒'}</div>
+          <div class="ach-info"><div class="ach-nm">${a.name}</div><div class="ach-ds">${a.desc}</div></div>
+          <span class="ach-chk">${got ? '✔' : ''}</span>
         </div>`;
-      }).join('')}`;
+      }).join('')}</div>`;
   } else if (panelTab === 'rank') {
     const dimIcon2 = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.icon : '❔'; };
+    const dimAcc = (id) => { const d = DIMENSIONS.find((x) => x.id === id); return d ? d.color : '#aab'; };
+    const mine = playerName();
     body.innerHTML = `
-      <div class="panel-sub">🏆 全服排行榜（按等级/PvP击杀）</div>
-      ${rankData.length === 0 ? '<div class="dim-text">加载中…</div>' : rankData.map((r, i) => `
-        <div class="inv-row">
-          <span>${i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1) + '.'} ${dimIcon2(r.dim)} <b>${r.name}</b>
-            ${r.online ? '<span style="color:#2ecc71;font-size:10px">●在线</span>' : ''}
-            ${(CLASS_NAMES[r.dim] || {})[r.cls] ? `<small class="dim-text">${CLASS_NAMES[r.dim][r.cls]}</small>` : ''}</span>
-          <small class="dim-text">Lv.${r.level} ｜ PvP ${r.pvpKills} ｜ 击杀 ${r.kills}${r.ach ? ` ｜ 🏅×${r.ach}` : ''}</small>
-        </div>`).join('')}`;
+      <div class="panel-sub">🏆 全服排行榜（等级 / PvP击杀）</div>
+      ${rankData.length === 0 ? '<div class="dim-text">加载中…</div>' : rankData.map((r, i) => {
+        const pos = i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1);
+        const title = (CLASS_NAMES[r.dim] || {})[r.cls];
+        const cls = `rank-row${i < 3 ? ' top' + (i + 1) : ''}${r.name === mine ? ' self' : ''}`;
+        return `<div class="${cls}">
+          <div class="rank-pos">${pos}</div>
+          <div class="rank-main">
+            <div class="rank-name"><span class="dim-ic">${dimIcon2(r.dim)}</span><span style="color:${dimAcc(r.dim)}">${r.name}</span>${r.online ? '<span class="rank-dot" title="在线"></span>' : ''}</div>
+            <div class="rank-sub">${title ? `<span class="rank-tag">${title}</span>` : ''}Lv.${r.level} ｜ ⚔️PvP ${r.pvpKills} ｜ 🗡️${r.kills}${r.ach ? ` ｜ 🏅×${r.ach}` : ''}</div>
+          </div>
+        </div>`;
+      }).join('')}`;
   } else {
     body.innerHTML = `
       <div class="panel-sub">商店（金币：💰${HUD.gold || 0}）</div>
@@ -1611,6 +1622,18 @@ function levelUpBanner(level) {
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   clearTimeout(levelupTimer);
   levelupTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+}
+
+let achTimer;
+function achBanner(a) {
+  const el = $('ach-banner');
+  if (!el) return toast(`${a.icon} 成就解锁：【${a.name}】`);
+  el.innerHTML = `<div class="ab-ic">${a.icon}</div><div><div class="ab-t">🏅 成就解锁</div><div class="ab-n">${a.name}</div><div class="ab-d">${a.desc}</div></div>`;
+  el.classList.remove('hidden');
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  try { AUDIO.sfx('coin', 0.6); } catch (e) {}
+  clearTimeout(achTimer);
+  achTimer = setTimeout(() => el.classList.add('hidden'), 3200);
 }
 
 let toastTimer;
