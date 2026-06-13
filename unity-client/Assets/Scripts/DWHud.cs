@@ -331,11 +331,16 @@ namespace DW
             var r = new Rect(SW / 2f - 180, SH / 2f - 80, 360, 150);
             guiRects.Add(r);
             GUI.Box(r, "", _box);
+            bool arena = curRoom == "war" || curRoom == "melee";
             GUI.Label(new Rect(r.x, r.y + 16, r.width, 32), "💀 你已阵亡", new GUIStyle(_title) { fontSize = 22 });
+            if (arena)
+                GUI.Label(new Rect(r.x + 10, r.y + 44, r.width - 20, 22),
+                    "<color=#ff9>战场/混战中无法原地复活，只能回本次元</color>",
+                    new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 13 });
             float remain = Mathf.Max(0, 4f - (Time.time - deadAt));
             if (remain > 0)
-                GUI.Label(new Rect(r.x, r.y + 60, r.width, 26), $"复活倒计时 {remain:0.0}s", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
-            else if (GUI.Button(new Rect(r.x + 90, r.y + 60, 180, 40), "⚔ 立即复活", _btn))
+                GUI.Label(new Rect(r.x, r.y + 66, r.width, 26), $"复活倒计时 {remain:0.0}s", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
+            else if (GUI.Button(new Rect(r.x + 90, r.y + 66, 180, 38), arena ? "↩ 回本次元复活" : "⚔ 立即复活", _btn))
                 Send(new { t = "respawn" });
         }
 

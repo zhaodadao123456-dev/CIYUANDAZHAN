@@ -425,7 +425,8 @@ namespace DW
             cam.farClipPlane = 300;
 
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            ground.transform.localScale = new Vector3(16, 1, 16); // 160×160
+            float gscale = (Data.MapHalf * 2f + 40f) / 10f;   // Plane 原始 10×10，铺满整张地图
+            ground.transform.localScale = new Vector3(gscale, 1, gscale);
             Tint(ground, theme.ground);
             worldObjs.Add(ground);
 
@@ -446,10 +447,11 @@ namespace DW
                     if (pf != null) themeProps.Add(pf);
                 }
 
-            for (int i = 0; i < 60; i++)
+            int propCount = Mathf.RoundToInt(Data.MapHalf * 2.2f);   // 随地图变大而变密
+            for (int i = 0; i < propCount; i++)
             {
                 float a = (float)(rng.NextDouble() * Math.PI * 2);
-                float r = 15 + (float)rng.NextDouble() * (Data.MapHalf - 20);
+                float r = 22 + (float)rng.NextDouble() * (Data.MapHalf - 28);
                 var p2 = new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r);
                 if (themeProps.Count > 0)
                 {

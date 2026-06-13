@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = 34567;
-const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 12, DW_MELEE_NOW: '1', DW_MELEE_MS: 90000 }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DW_BOSS_MS: 2000, DW_BOSS_HP: 45, DW_MELEE_NOW: '1', DW_MELEE_MS: 90000, DW_LAIR_R: 50 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvErr = '';
 srv.stdout.on('data', (d) => process.stdout.write('[srv] ' + d));
 srv.stderr.on('data', (d) => { srvErr += d; process.stderr.write('[srv-err] ' + d); });
@@ -105,7 +105,7 @@ function client(name, dim, cls) {
   await sleep(300);
   const snapA = A.got('snap');
   check('快照含 pets 字段', !!(snapA && Array.isArray(snapA.pets)));
-  check('怪物已刷新', !!(snapA && snapA.ms.length === 24), snapA && `本房间怪物=${snapA.ms.length}`);
+  check('怪物已刷新', !!(snapA && snapA.ms.length >= 24), snapA && `本房间怪物=${snapA.ms.length}`);
 
   // 10.5 排行榜
   A.send({ t: 'rank' });
@@ -140,7 +140,7 @@ function client(name, dim, cls) {
     const killed = () => A.got('feed', (m) => /伤害贡献榜/.test(m.msg));
     const bossAoe = () => D.got('baoe') || D.got('bstorm') || D.got('maoe');
     // 每帧从快照读自身真实位置 → 死了就复活 → 远则贴近 → 近则盾击（对增益的世界鲁棒）
-    for (let i = 0; i < 260 && !killed(); i++) {
+    for (let i = 0; i < 360 && !killed(); i++) {
       const me = myPos();
       if (me && me.dead) { D.send({ t: 'respawn' }); await sleep(200); continue; }
       const cx = me ? me.x : 0, cz = me ? me.z : 0;

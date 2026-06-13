@@ -609,13 +609,13 @@ function buildHomeLayout(themeKey, add, rng, theme) {
 
   // 3) 野外散布（避开大道与巢穴方向）
   const lairA = (typeof LAIR_ANGLES !== 'undefined' && LAIR_ANGLES[themeKey]) || 0;
-  const count = themeKey === 'cyber' ? 56 : 72;
+  const count = Math.round((themeKey === 'cyber' ? 56 : 72) * 2.4);   // 地图扩大后加密摆件
   for (let i = 0; i < count; i++) {
     const a = rng() * Math.PI * 2;
     if (inRoad(a)) continue;
     let da = Math.abs(a - lairA);
     if (da > Math.PI) da = Math.PI * 2 - da;
-    const r = 15 + rng() * (MAP_HALF - 20);
+    const r = 22 + rng() * (MAP_HALF - 28);
     if (da < 0.4 && r > LAIR_R - 16) continue;  // 巢穴前留空地
     const o = MODELS.makeProp(themeKey, rng) || fallback();
     o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
@@ -1641,6 +1641,7 @@ function animate() {
       const remain = Math.max(0, 4 - (Date.now() - deadAt) / 1000);
       $('death-cd').textContent = remain > 0 ? remain.toFixed(1) + 's' : '';
       $('btn-respawn').disabled = remain > 0;
+      $('btn-respawn').textContent = (curRoom === 'war' || curRoom === 'melee') ? '↩️ 回本次元复活' : '⚔️ 立即复活';
       if (remain <= 0 && !$('btn-respawn').dataset.auto) {
         $('btn-respawn').dataset.auto = '1';
         setTimeout(() => { net({ t: 'respawn' }); delete $('btn-respawn').dataset.auto; }, 300);

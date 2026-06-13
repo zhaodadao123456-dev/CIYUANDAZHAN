@@ -39,7 +39,7 @@ namespace DW
 
     public static class Data
     {
-        public const float MapHalf = 70f;
+        public const float MapHalf = 210f;   // 与服务器/网页版一致（大幅扩大）
 
         public static Color Hex(string h)
         {

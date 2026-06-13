@@ -13,7 +13,8 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, LAIR_R, CLASSES, RARITIES } = require('./public/js/data.js');
+const { DIMENSIONS, LAIR_ANGLES, MAP_HALF, CLASSES, RARITIES } = require('./public/js/data.js');
+const LAIR_R = +process.env.DW_LAIR_R || require('./public/js/data.js').LAIR_R;   // 可被测试覆盖
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const WAR_INTERVAL = (parseFloat(process.env.WAR_INTERVAL_MINUTES) || 12) * 60000;
@@ -30,7 +31,7 @@ const SNAP_MS = 100;            // 10Hz 快照
 const MAX_SPEED = 26;            // 位置防作弊：最大移动速度（含翻滚/突进冲刺）
 const MONSTER_RESPAWN_MS = 9000;
 const PLAYER_RESPAWN_MS = 4000;
-const SAFE_R = 12;              // 出生村庄安全区半径
+const SAFE_R = 20;              // 出生村庄安全区半径
 
 /* 职业表（技能/属性均以服务器为准，定义在共享 data.js） */
 const CLASS_MAP = Object.fromEntries(CLASSES.map((c) => [c.id, c]));
@@ -68,15 +69,15 @@ function spawnMonsters(room, dimId) {
   if (!dim) return;
   for (let tier = 1; tier <= 4; tier++) {
     const names = dim.regions[tier - 1].monsters;
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 16; i++) {   // 地图扩大后每层更多怪
       let ang, r;
       if (tier === 4) {
         // T4 怪聚集在 Boss 巢穴
-        ang = (LAIR_ANGLES[dimId] || 0) + rnd(-0.12, 0.12);
-        r = LAIR_R + rnd(-3, 3);
+        ang = (LAIR_ANGLES[dimId] || 0) + rnd(-0.18, 0.18);
+        r = LAIR_R + rnd(-8, 8);
       } else {
         ang = rnd(0, Math.PI * 2);
-        r = 16 + tier * 10.5 + rnd(-4, 4); // T1≈26 起，出生村庄(r<SAFE_R)为安全区
+        r = 30 + tier * 42 + rnd(-12, 12); // T1≈72 起，出生村庄(r<SAFE_R)为安全区
       }
       addMonster(room, {
         name: names[i % names.length], tier,
@@ -546,6 +547,8 @@ function handle(ws, m) {
       if (!p.dead || now() - p.dieT < PLAYER_RESPAWN_MS) return;
       p.dead = false;
       p.hp = maxHp(p);
+      // 次元重叠/大混战中不能原地复活，只能回本次元复活
+      if (p.room === 'war' || p.room === 'melee') { joinRoom(p, p.dim); return; }
       const sp = spawnPoint(p);
       p.x = sp.x; p.z = sp.z;
       if (p.pet) { p.pet.hp = p.pet.maxHp; p.pet.x = p.x + 1.2; p.pet.z = p.z + 1.2; }
