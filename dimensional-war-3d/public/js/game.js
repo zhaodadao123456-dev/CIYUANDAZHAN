@@ -213,7 +213,9 @@ function initPreview() {
   preview.scene.background = new THREE.Color(0x0b0b1c);
   preview.scene.fog = new THREE.Fog(0x0b0b1c, 8, 22);
   preview.camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 50);
-  preview.camera.position.set(0, 1.8, 5.2);
+  // 宽屏时相机偏左、英雄显示在右侧，给左侧选择面板让位；窄屏居中
+  preview.camOffset = innerWidth > 760 ? -2.0 : 0;
+  preview.camera.position.set(preview.camOffset, 1.8, 5.2);
   preview.camera.lookAt(0, 0.95, 0);
   preview.scene.add(new THREE.HemisphereLight(0xccddff, 0x202035, 1.0));
   const key = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -224,6 +226,8 @@ function initPreview() {
   preview.scene.add(rim);
   window.addEventListener('resize', () => {
     preview.camera.aspect = innerWidth / innerHeight;
+    preview.camOffset = innerWidth > 760 ? -2.0 : 0;
+    preview.camera.position.x = preview.camOffset;
     preview.camera.updateProjectionMatrix();
   });
 }
@@ -1301,7 +1305,7 @@ function renderPanel() {
       ${['basic', 'q', 'e', 'r'].map((k) => {
         const s = def.skills[k];
         const lv = HUD.sk[k] || 1;
-        return `<div class="skill-row"><b>${s.name}</b> <span class="sk-lv-tag">Lv.${lv}/5</span><br><span class="dim-text">${s.desc || ''}</span></div>`;
+        return `<div class="skill-row"><b>${s.name}</b> <span class="sk-lv-tag">Lv.${lv}</span><br><span class="dim-text">${s.desc || ''}</span></div>`;
       }).join('')}`;
   } else if (panelTab === 'bag') {
     const eq = invData.equip || {};
@@ -1509,7 +1513,7 @@ function renderSkillBar() {
     const lvEl = slot.querySelector('.sk-lv');
     if (lvEl) lvEl.textContent = lv > 1 ? 'Lv' + lv : '';
     const plus = slot.querySelector('.sk-plus');
-    if (plus) plus.classList.toggle('hidden', !(HUD.skPts > 0 && !locked && lv < 5));
+    if (plus) plus.classList.toggle('hidden', !(HUD.skPts > 0 && !locked));   // 技能无上限
   }
   const dPct = Math.max(0, dodgeCd - t) / 1200;
   $('sk-dodge').querySelector('.cd').style.height = (dPct * 100) + '%';

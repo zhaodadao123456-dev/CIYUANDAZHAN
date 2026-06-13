@@ -116,6 +116,24 @@ namespace DW
 
         /* ================= 连接与消息 ================= */
 
+        // 退出当前对局，断开连接并清场，回到次元选择界面
+        void ExitToMenu()
+        {
+            CancelInvoke();
+            try { net?.Close(); } catch (Exception) { }
+            net = null; joinSent = false;
+            foreach (var e in players.Values) if (e.go) Destroy(e.go);
+            foreach (var e in monsters.Values) if (e.go) Destroy(e.go);
+            foreach (var e in pets.Values) if (e.go) Destroy(e.go);
+            foreach (var p in projs.Values) if (p.go) Destroy(p.go);
+            players.Clear(); monsters.Clear(); pets.Clear(); projs.Clear();
+            foreach (var o in worldObjs) if (o) Destroy(o);
+            worldObjs.Clear();
+            if (meGo) Destroy(meGo);
+            panelOpen = false; chatOpen = false;
+            state = State.Menu;
+        }
+
         void Join()
         {
             PlayerPrefs.SetString("dw_ip", serverIp);

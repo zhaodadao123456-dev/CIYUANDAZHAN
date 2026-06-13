@@ -568,8 +568,7 @@ function handle(ws, m) {
       if (!k || p.skPts <= 0) return;
       const sk = clsOf(p).skills[k];
       if (sk.minLvl && p.level < sk.minLvl) return send(p.ws, { t: 'err', msg: `该技能 Lv.${sk.minLvl} 才解锁` });
-      if (p.sk[k] >= 5) return send(p.ws, { t: 'err', msg: '该技能已升满（5级）' });
-      p.sk[k]++; p.skPts--;
+      p.sk[k]++; p.skPts--;   // 技能无上限，可无限强化
       send(p.ws, { t: 'feed', msg: `⬆️ 【${sk.name}】升至 ${p.sk[k]} 级！` });
       sendYou(p); persist(p);
       return;

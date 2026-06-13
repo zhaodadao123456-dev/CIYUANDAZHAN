@@ -183,6 +183,10 @@ namespace DW
             var bagR = new Rect(SW - 56, 10, 44, 40);
             guiRects.Add(bagR);
             if (GUI.Button(bagR, "🎒", _btn)) panelOpen = !panelOpen;
+            // 退出按钮：回到次元选择界面
+            var exitR = new Rect(SW - 56, 56, 44, 40);
+            guiRects.Add(exitR);
+            if (GUI.Button(exitR, "🚪", _btn)) ExitToMenu();
 
             // 消息流
             for (int i = 0; i < feed.Count; i++)
@@ -282,7 +286,7 @@ namespace DW
                     GUI.Label(new Rect(r.x + 6, r.y + 44, slotW - 8, 20), $"<color=#aaa>{cdRemain:0.0}s</color>", _label);
                 else if (GUI.Button(new Rect(r.x + 6, r.y + 44, slotW - 12, 24), "施放", _btn)) Cast(keys[i]);
                 // 技能加点
-                if (MySkPts > 0 && !locked && MySkLvl(keys[i]) < 5)
+                if (MySkPts > 0 && !locked)   // 技能无上限
                 {
                     var pr = new Rect(r.xMax - 26, r.y - 12, 26, 26);
                     guiRects.Add(pr);
@@ -364,7 +368,7 @@ namespace DW
             GUILayout.Space(8);
             GUILayout.Label("<b>技能</b>", _label);
             foreach (var sk in def.skills)
-                GUILayout.Label($"<b>{sk.name}</b> <color=#ffd166>Lv.{MySkLvl(sk.key)}/5</color>\n<size=12><color=#999>{sk.desc}</color></size>", _label);
+                GUILayout.Label($"<b>{sk.name}</b> <color=#ffd166>Lv.{MySkLvl(sk.key)}</color>\n<size=12><color=#999>{sk.desc}</color></size>", _label);
         }
 
         string ItemStats(JObject it)

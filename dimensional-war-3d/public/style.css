@@ -9,11 +9,19 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
 /* ---------- 加入界面 ---------- */
 #join-screen {
   position: fixed; inset: 0; z-index: 50;
-  background: linear-gradient(to bottom,
-    rgba(12,12,28,0.94) 0%, rgba(12,12,28,0.78) 30%,
-    rgba(12,12,28,0.18) 52%, rgba(12,12,28,0.08) 78%, rgba(12,12,28,0.55) 100%);
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  padding: 14px 20px 0;
+  /* 左侧深色、右侧透出英雄预览 */
+  background: linear-gradient(to right,
+    rgba(10,10,24,0.96) 0%, rgba(10,10,24,0.9) 34%,
+    rgba(10,10,24,0.4) 52%, rgba(10,10,24,0.05) 66%, rgba(10,10,24,0) 78%);
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
+  padding: 14px clamp(16px, 5vw, 70px); overflow-y: auto;
+}
+@media (max-width: 760px) {
+  #join-screen {
+    align-items: center; text-align: center;
+    background: linear-gradient(to bottom,
+      rgba(10,10,24,0.95) 0%, rgba(10,10,24,0.7) 45%, rgba(10,10,24,0.2) 70%, rgba(10,10,24,0.6) 100%);
+  }
 }
 .title {
   font-size: 36px;
@@ -22,7 +30,9 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-s
   -webkit-text-fill-color: transparent;
 }
 .subtitle { color: #aab; margin: 6px 0 14px; text-shadow: 0 1px 4px #000; }
-.join-box { width: min(640px, 94vw); text-align: center; }
+.join-box { width: min(460px, 94vw); text-align: left; }
+@media (max-width: 760px) { .join-box { text-align: center; } }
+.dim-card .dc-role { font-size: 11px; }
 .preview-hint { color: #8a8aa3; font-size: 12px; margin-top: 10px; text-shadow: 0 1px 3px #000; }
 .join-box input {
   width: 100%; padding: 12px 16px; font-size: 16px;
