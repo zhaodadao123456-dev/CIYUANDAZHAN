@@ -1018,7 +1018,8 @@ function bossAoE(room, mo, cx, cz, radius, opt) {
 /* 世界BOSS 五大技能轮换（含大范围魔法风暴） */
 function bossCast(room, mo, tgt) {
   const t = now();
-  mo.skIdx = ((mo.skIdx || 0) + 1) % 5;
+  const nSkills = mo.hp < mo.maxHp * 0.7 ? 7 : 5;   // 二阶段(<70%)解锁陨石雨/旋转弹幕
+  mo.skIdx = ((mo.skIdx || 0) + 1) % nSkills;
   const alive = [...room.players.values()].filter((p) => !p.dead && !inSafeZone(room, p.x, p.z));
   const A = mo.atk;
   const tele = mo.enraged ? 800 : 1150;   // 狂暴后预警更短，留给玩家的躲避窗口更紧
@@ -1062,6 +1063,31 @@ function bossCast(room, mo, tgt) {
       for (const pl of alive.slice(0, 3)) {
         bossAoE(room, mo, pl.x, pl.z, 5, { delay: tele, dmgMul: 1.3, dmgType: 'magic', kind: 'baoe',
           note: (l) => `💀 你被【${mo.name}】的陨石砸中，丢失 ${l} 金币。` });
+      }
+      break;
+    }
+    case 5: { // ⑥ 陨石雨：全场随机落 6 颗陨石，错峰落地，逼迫持续走位寻找安全点
+      allCast({ t: 'feed', msg: `☄️ 世界BOSS【${mo.name}】召来【陨石雨】，全场连环轰炸，别站定！` });
+      for (let i = 0; i < 6; i++) {
+        const ax = mo.x + rnd(-13, 13), az = mo.z + rnd(-13, 13);
+        setTimeout(() => bossAoE(room, mo, ax, az, 4.5, { delay: tele, dmgMul: 1.2, dmgType: 'magic', kind: 'baoe',
+          note: (l) => `💀 你被【${mo.name}】的陨石雨击中，丢失 ${l} 金币。` }), i * 260);
+      }
+      break;
+    }
+    case 6: { // ⑦ 旋转弹幕：螺旋状射出弹丸（bullet-hell），需走出弹幕缝隙
+      const arms = mo.enraged ? 10 : 8;
+      const base = Math.random() * Math.PI * 2;
+      for (let k = 0; k < arms; k++) {
+        const ang = base + (k / arms) * Math.PI * 2;
+        const ux = Math.sin(ang), uz = Math.cos(ang);
+        const pid = 'j' + nextMid++;
+        room.projectiles.set(pid, {
+          id: pid, owner: mo.id, fromMonster: true,
+          x: mo.x + ux * 0.6, z: mo.z + uz * 0.6, dx: ux, dz: uz,
+          speed: 13, born: t, life: 3.0, hitR: 1.3, dmg: A * 0.9, dmgType: 'magic',
+        });
+        roomCast(room.id, { t: 'proj', id: pid, owner: mo.id, x: +mo.x.toFixed(2), z: +mo.z.toFixed(2), dx: +ux.toFixed(3), dz: +uz.toFixed(3), speed: 13, dim: 'mon' });
       }
       break;
     }
@@ -1696,18 +1722,26 @@ function tickRoom(room) {
       }
       if (best) { mo.targetId = best.id; mo.state = 'chase'; tgt = best; }
     }
-    // 世界BOSS：40% 血狂暴
-    if (mo.boss && !mo.enraged && mo.hp < mo.maxHp * 0.4) {
+    // 世界BOSS 阶段升级：70% 进入二阶段（解锁陨石雨/旋转弹幕 + 召唤援军），35% 进入狂暴
+    if (mo.boss && !mo.phase2 && mo.maxHp >= 800 && mo.hp < mo.maxHp * 0.7) {
+      mo.phase2 = true;
+      allCast({ t: 'feed', msg: `🌀 世界BOSS【${mo.name}】进入第二阶段！解锁【陨石雨】【旋转弹幕】并召唤援军！` });
+      for (let i = 0; i < 3; i++) {
+        const ang = rnd(0, Math.PI * 2);
+        addMonster(room, { name: mo.name + '·爪牙', tier: 3, x: mo.x + Math.cos(ang) * 4, z: mo.z + Math.sin(ang) * 4, level: 60 });
+      }
+    }
+    if (mo.boss && !mo.enraged && mo.hp < mo.maxHp * 0.35) {
       mo.enraged = true;
       mo.atk = Math.round(mo.atk * 1.5);
       mo.speed *= 1.3;
-      allCast({ t: 'feed', msg: `💢 世界BOSS【${mo.name}】进入狂暴状态！技能更频繁、伤害更高，速速规避！` });
+      allCast({ t: 'feed', msg: `💢 世界BOSS【${mo.name}】血量告急，进入狂暴！技能更频繁、伤害更高，速速规避！` });
     }
     if (tgt) {
       const d = Math.sqrt(dist2(mo.x, mo.z, tgt.x, tgt.z));
       mo.ry = Math.atan2(tgt.x - mo.x, tgt.z - mo.z);
-      // 世界BOSS：5 大技能轮换释放（狂暴后更频繁）
-      if (mo.boss && t - (mo.aoeT || 0) > (mo.enraged ? 2800 : 4500)) {
+      // 世界BOSS：技能轮换释放（阶段越深越频繁）
+      if (mo.boss && t - (mo.aoeT || 0) > (mo.enraged ? 2600 : mo.phase2 ? 3600 : 4500)) {
         mo.aoeT = t;
         bossCast(room, mo, tgt);
       }
