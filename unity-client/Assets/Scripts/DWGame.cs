@@ -406,7 +406,60 @@ namespace DW
             b = CalcBounds(inst);
             inst.transform.localPosition = new Vector3(0, -b.min.y, 0);   // 脚踩地面
             root.AddComponent<DWAnimDriver>();
+            AttachWeapon(inst, clsId);
             return root;
+        }
+
+        /* 按职业给人形模型的右手绑武器（金箍棒/剑），位置可后续微调 */
+        void AttachWeapon(GameObject inst, string clsId)
+        {
+            var an = inst.GetComponentInChildren<Animator>();
+            if (an == null || an.avatar == null || !an.avatar.isHuman) return;
+            var hand = an.GetBoneTransform(HumanBodyBones.RightHand);
+            if (hand == null) return;
+
+            if (clsId == "assassin")          // 悟空 → 金箍棒
+            {
+                var staff = new GameObject("RuyiJinguBang");
+                staff.transform.SetParent(hand, false);
+                staff.transform.localPosition = new Vector3(0.02f, 0.02f, 0f);
+                staff.transform.localRotation = Quaternion.Euler(0, 0, 90); // 横握成棍
+                // 金色棍身
+                var rod = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                rod.transform.SetParent(staff.transform, false);
+                rod.transform.localScale = new Vector3(0.035f, 0.95f, 0.035f);
+                var gold = new Color(0.95f, 0.78f, 0.2f);
+                var rm = rod.GetComponent<Renderer>().material;
+                rm.color = gold; rm.EnableKeyword("_EMISSION");
+                rm.SetColor("_EmissionColor", gold * 0.35f);
+                Object.Destroy(rod.GetComponent<Collider>());
+                // 两端红铜箍
+                foreach (var yy in new[] { 0.95f, -0.95f })
+                {
+                    var cap = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    cap.transform.SetParent(staff.transform, false);
+                    cap.transform.localScale = new Vector3(0.05f, 0.06f, 0.05f);
+                    cap.transform.localPosition = new Vector3(0, yy, 0);
+                    Tint(cap, new Color(0.55f, 0.2f, 0.1f));
+                    Object.Destroy(cap.GetComponent<Collider>());
+                }
+            }
+            else if (clsId == "warrior")      // 半血男 → 剑
+            {
+                var sword = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                sword.name = "Blade";
+                sword.transform.SetParent(hand, false);
+                sword.transform.localScale = new Vector3(0.05f, 0.9f, 0.012f);
+                sword.transform.localPosition = new Vector3(0.02f, 0.45f, 0f);
+                Tint(sword, new Color(0.8f, 0.85f, 0.9f));
+                Object.Destroy(sword.GetComponent<Collider>());
+                var guard = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                guard.transform.SetParent(hand, false);
+                guard.transform.localScale = new Vector3(0.18f, 0.04f, 0.04f);
+                guard.transform.localPosition = new Vector3(0.02f, 0.04f, 0f);
+                Tint(guard, new Color(0.5f, 0.4f, 0.15f));
+                Object.Destroy(guard.GetComponent<Collider>());
+            }
         }
 
         static Bounds CalcBounds(GameObject go)

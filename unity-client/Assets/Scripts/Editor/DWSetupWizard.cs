@@ -181,7 +181,9 @@ namespace DW.EditorTools
                     var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
                     return go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
                 })
-                .OrderBy((p) => Lower(p)).ToList();
+                // 优先「完整」版角色（带 full），避免选到只有局部部件的变体
+                .OrderByDescending((p) => Lower(p).Contains("full") ? 1 : 0)
+                .ThenBy((p) => Lower(p)).ToList();
             if (prefabs.Count > 0) return prefabs;
             return AssetDatabase.FindAssets("t:Model", new[] { folder })
                 .Select(AssetDatabase.GUIDToAssetPath)
@@ -206,15 +208,15 @@ namespace DW.EditorTools
             return list;
         }
 
-        /* 按动作名关键词挑选状态片段 */
+        /* 按动作名关键词挑选状态片段（关键词按优先级排序，越靠前越优先匹配） */
         static Dictionary<string, AnimationClip> PickStates(List<AnimationClip> clips)
         {
             var rules = new (string state, string[] keys)[]
             {
                 ("Idle",   new[] { "idle", "stand" }),
-                ("Run",    new[] { "run", "sprint", "jog", "walk" }),
-                ("Attack1",new[] { "attack", "punch", "slash", "sword", "staff", "hit_" }),
-                ("Skill",  new[] { "cast", "skill", "spin", "spell", "heavy" }),
+                ("Run",    new[] { "jog", "run", "sprint", "walk" }),
+                ("Attack1",new[] { "attackl", "attack_l", "attack", "punch", "slash", "sword", "staff", "hit_" }),
+                ("Skill",  new[] { "attackr", "attack_r", "cast", "skill", "spin", "spell", "heavy", "chest" }),
                 ("Dodge",  new[] { "roll", "dodge", "dash" }),
                 ("Death",  new[] { "death", "die", "dead" }),
             };
@@ -227,6 +229,8 @@ namespace DW.EditorTools
                     if (hit != null) { res[state] = hit; break; }
                 }
             }
+            // 技能动画兜底：实在没有就复用普攻
+            if (!res.ContainsKey("Skill") && res.ContainsKey("Attack1")) res["Skill"] = res["Attack1"];
             return res;
         }
     }
