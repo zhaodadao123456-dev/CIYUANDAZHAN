@@ -529,6 +529,18 @@ namespace DW
                     PlaceProp(themeProps, theme, new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r), 1.6f + (float)rng.NextDouble() * 1.2f, i, rng);
                 }
             }
+
+            // 额外装饰散布：让购买的自然包(Pure Poly 等)铺满地图，不只在障碍点（纯视觉、不挡路）
+            if (themeProps.Count > 0 && obstacles.Count > 0)
+            {
+                int deco = 110;
+                for (int i = 0; i < deco; i++)
+                {
+                    float a = (float)(rng.NextDouble() * Math.PI * 2);
+                    float r = 16 + (float)rng.NextDouble() * (Data.MapHalf - 18);
+                    PlaceProp(themeProps, theme, new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r), 1.0f + (float)rng.NextDouble() * 1.1f, i + 9000, rng);
+                }
+            }
         }
 
         void PlaceProp(List<GameObject> themeProps, DimDef theme, Vector3 at, float scale, int idx, System.Random rng)
