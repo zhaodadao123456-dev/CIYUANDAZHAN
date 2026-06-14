@@ -223,12 +223,43 @@ namespace DW.EditorTools
             }
             if (si == 0) log.AppendLine("未发现可用场景模型，地图沿用 KayKit 道具");
 
+            WireFx(log);
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log(log.ToString());
             File.WriteAllText("Assets/DW_接入结果.txt", log.ToString());
             EditorUtility.DisplayDialog("次元大战",
                 $"英雄池 {hi} 个 · 怪物池 {mi} 个 · BOSS{(bossSrcs.Count > 0 ? "(小丑)" : "无")}\n\n点 ▶ 运行查看。\n把 Assets/DW_接入结果.txt 发给 Claude 可精调分配。", "好");
+        }
+
+        /* 把选定的 Hovl 特效复制进 Resources/DWFx，供运行时按名加载（缺失则运行时程序化兜底） */
+        static void WireFx(StringBuilder log)
+        {
+            var map = new (string name, string[] cands)[]
+            {
+                ("proj",      new[]{ "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Projectiles(transform)/Projectile 16 fire.prefab", "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Projectiles(transform)/Projectile 5 red.prefab" }),
+                ("hit",       new[]{ "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Hit 16 fire.prefab", "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Hit 5 red.prefab" }),
+                ("cast",      new[]{ "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Flash 17 nova violet.prefab", "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Flash 5 red.prefab" }),
+                ("aoe",       new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Energy explosion.prefab", "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Magic attack.prefab" }),
+                ("heal",      new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Leaves buff.prefab" }),
+                ("shield",    new[]{ "Assets/Hovl Studio/Magic circles/Prefabs/Magic shield holy.prefab", "Assets/Hovl Studio/Magic circles/Prefabs/Magic shield runes.prefab" }),
+                ("circle",    new[]{ "Assets/Hovl Studio/Magic circles/Prefabs/Magic circle octagon.prefab", "Assets/Hovl Studio/Magic circles/Prefabs/Magic circle sun.prefab" }),
+                ("slash",     new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Flower slash.prefab" }),
+                ("storm",     new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Meteor shower.prefab", "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Meteor shower 2.prefab" }),
+                ("lightning", new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Lightning strike.prefab" }),
+            };
+            const string fxDir = "Assets/Resources/DWFx";
+            RebuildFolder(fxDir);
+            int n = 0;
+            foreach (var (name, cands) in map)
+            {
+                var src = cands.FirstOrDefault((c) => AssetDatabase.LoadAssetAtPath<GameObject>(c) != null);
+                if (src == null) { log.AppendLine($"特效[{name}] 未找到 Hovl 源 → 运行时程序化兜底"); continue; }
+                if (AssetDatabase.CopyAsset(src, $"{fxDir}/{name}.prefab")) { log.AppendLine($"特效[{name}] ← {src}"); n++; }
+                else log.AppendLine($"特效[{name}] 复制失败：{src}");
+            }
+            log.AppendLine(n == 0 ? "未接入 Hovl 特效（全部程序化兜底）" : $"已接入 {n} 个 Hovl 特效到 Resources/DWFx");
         }
 
         /* 清空并重建文件夹（去掉上次生成的预制体） */

@@ -354,7 +354,7 @@ namespace DW
                 {
                     // 世界BOSS震地：红色冲击波 + 若我在范围附近则镜头震动
                     var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
-                    SpawnShockwave(at, (float?)m["r"] ?? 7f, new Color(1f, 0.2f, 0.27f));
+                    SpawnShockwave(at, (float?)m["r"] ?? 7f, new Color(1f, 0.2f, 0.27f), "aoe");
                     DWAudio.SfxAt("explosion", at, pos, 0.9f);
                     if ((at - pos).sqrMagnitude < 14f * 14f) Shake(0.45f, 0.5f);
                     break;
@@ -363,7 +363,7 @@ namespace DW
                 {
                     // 精英怪范围震击：紫色冲击波
                     var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
-                    SpawnShockwave(at, (float?)m["r"] ?? 4.5f, new Color(0.69f, 0.31f, 1f));
+                    SpawnShockwave(at, (float?)m["r"] ?? 4.5f, new Color(0.69f, 0.31f, 1f), "lightning");
                     DWAudio.SfxAt("explosion", at, pos, 0.6f);
                     if ((at - pos).sqrMagnitude < 9f * 9f) Shake(0.25f, 0.3f);
                     break;
@@ -373,7 +373,7 @@ namespace DW
                     // 世界BOSS大范围魔法风暴：超大紫色冲击波 + 强震
                     var at = new Vector3((float)m["x"], 0.2f, (float)m["z"]);
                     float r = (float?)m["r"] ?? 16f;
-                    SpawnShockwave(at, r, new Color(0.8f, 0.27f, 1f));
+                    SpawnShockwave(at, r, new Color(0.8f, 0.27f, 1f), "storm");
                     DWAudio.SfxAt("explosion", at, pos, 1f);
                     if ((at - pos).sqrMagnitude < r * r) Shake(0.6f, 0.7f);
                     break;
@@ -386,7 +386,8 @@ namespace DW
                         : kind == "heal" ? new Color(0.18f, 0.8f, 0.44f)
                         : kind == "blink" ? new Color(0.91f, 0.27f, 0.58f)
                         : new Color(0.6f, 0.35f, 0.71f);
-                    SpawnShockwave(at, kind == "field" || kind == "emp" ? ((float?)m["r"] ?? 6f) : 2.5f, c);
+                    string dfx = kind == "shield" ? "shield" : kind == "heal" ? "heal" : "circle";
+                    SpawnShockwave(at, kind == "field" || kind == "emp" ? ((float?)m["r"] ?? 6f) : 2.5f, c, dfx);
                     DWAudio.SfxAt(kind == "blink" ? "dodge" : kind == "heal" ? "coin" : "explosion", at, pos, 0.6f);
                     break;
                 }
@@ -908,7 +909,8 @@ namespace DW
                     if ((string)m["by"] == myId)
                     {
                         DWAudio.SfxAt("hit", e.target, pos, crit ? 0.85f : 0.6f);
-                        SpawnSparks(e.target + Vector3.up * 1.0f, crit ? new Color(1f, 0.85f, 0.2f) : new Color(1f, 0.95f, 0.8f), crit ? 16 : 8, crit ? 4.5f : 3.2f);
+                        if (SpawnFx("hit", e.target + Vector3.up * 1.0f, Quaternion.identity, crit ? 1.3f : 0.9f, 2f) == null)
+                            SpawnSparks(e.target + Vector3.up * 1.0f, crit ? new Color(1f, 0.85f, 0.2f) : new Color(1f, 0.95f, 0.8f), crit ? 16 : 8, crit ? 4.5f : 3.2f);
                     }
                 }
             }
@@ -941,11 +943,21 @@ namespace DW
             Tint(go, c);
             var l = go.AddComponent<Light>();
             l.color = c; l.range = 6; l.intensity = 2.2f;
-            var tr = go.AddComponent<TrailRenderer>();
-            tr.time = 0.22f; tr.startWidth = 0.5f; tr.endWidth = 0.02f; tr.numCapVertices = 2;
-            tr.material = TrailMat(); tr.startColor = c; tr.endColor = new Color(c.r, c.g, c.b, 0f);
-            tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            projs[id] = new Proj { go = go, dir = new Vector3(dx, 0, dz), speed = speed, dieAt = Time.time + 3f };
+            var dir = new Vector3(dx, 0, dz);
+            var fx = SpawnFx("proj", go.transform.position, dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity, 1f, 0f, killScripts: true);
+            if (fx != null)
+            {
+                fx.transform.SetParent(go.transform, true);   // 跟随服务器驱动的弹体移动
+                var mr = go.GetComponent<MeshRenderer>(); if (mr != null) mr.enabled = false;   // 隐藏程序化球，只显示 Hovl 弹道
+            }
+            else
+            {
+                var tr = go.AddComponent<TrailRenderer>();
+                tr.time = 0.22f; tr.startWidth = 0.5f; tr.endWidth = 0.02f; tr.numCapVertices = 2;
+                tr.material = TrailMat(); tr.startColor = c; tr.endColor = new Color(c.r, c.g, c.b, 0f);
+                tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            projs[id] = new Proj { go = go, dir = dir, speed = speed, dieAt = Time.time + 3f };
         }
 
         /* ================= 操控/移动/相机 ================= */
@@ -1156,17 +1168,18 @@ namespace DW
                 : key == "q" ? new Color(0.3f, 0.85f, 1f)
                 : key == "e" ? new Color(1f, 0.6f, 0.1f)
                 : new Color(1f, 0.25f, 0.55f);
-            if (kind == "aoe" || kind == "aoeheal")
-                SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c);
-            else if (kind == "heal")
-            { SpawnShockwave(at + Vector3.up * 0.1f, 2.5f, new Color(0.3f, 1f, 0.5f)); }
+            Quaternion face = dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity;
+            if (kind == "aoe")
+                SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "aoe");
+            else if (kind == "aoeheal" || kind == "heal")
+                SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, new Color(0.3f, 1f, 0.5f), "heal");
             else if (kind == "dashmelee")
-                SpawnShockwave(at + dir * 1.5f + Vector3.up * 0.6f, 2.2f, c);
-            else   // melee / proj：身前火花迸射 + 短促光闪
+                SpawnShockwave(at + dir * 1.5f + Vector3.up * 0.3f, 2.4f, c, "slash");
+            else   // melee / proj：身前施法闪光（近战再加一刀斩击）
             {
-                Vector3 p = at + dir * 1.3f + Vector3.up * 1.0f;
-                SpawnSparks(p, c, 14, 5.5f);
-                SpawnFlash(p, c, 1.4f);
+                Vector3 p = at + dir * 1.2f + Vector3.up * 1.0f;
+                if (SpawnFx("cast", p, face, 1f, 1.5f) == null) { SpawnSparks(p, c, 14, 5.5f); SpawnFlash(p, c, 1.4f); }
+                else if (kind == "melee") SpawnFx("slash", p, face, 1f, 1.2f);
             }
         }
 
@@ -1216,8 +1229,14 @@ namespace DW
         }
 
         // 地面扩散光环 + 火花迸射 + 一闪而过的点光（被技能/BOSS/次元技共用）
-        void SpawnShockwave(Vector3 at, float radius, Color c)
+        void SpawnShockwave(Vector3 at, float radius, Color c, string fx = "aoe")
         {
+            // 有对应 Hovl 特效就用它（+一束补光），否则程序化光环兜底
+            if (SpawnFx(fx, new Vector3(at.x, 0.12f, at.z), Quaternion.identity, Mathf.Clamp(radius / 4f, 0.7f, 3.5f), 3f) != null)
+            {
+                SpawnFlash(new Vector3(at.x, 0.6f, at.z), c, radius * 0.7f);
+                return;
+            }
             var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Destroy(go.GetComponent<Collider>());
             go.name = "ringfx";
@@ -1310,6 +1329,28 @@ namespace DW
         {
             if (_trailMat == null) _trailMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = Texture2D.whiteTexture };
             return _trailMat;
+        }
+
+        // ---- Hovl 等已购特效（向导复制进 Resources/DWFx），按名加载；缺失则返回 null 由调用方程序化兜底 ----
+        static readonly Dictionary<string, GameObject> _fxCache = new Dictionary<string, GameObject>();
+        static GameObject FxPrefab(string name)
+        {
+            if (_fxCache.TryGetValue(name, out var p)) return p;
+            p = Resources.Load<GameObject>("DWFx/" + name);
+            _fxCache[name] = p;
+            return p;
+        }
+        GameObject SpawnFx(string name, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f, bool killScripts = false)
+        {
+            var pf = FxPrefab(name);
+            if (pf == null) return null;
+            var go = Instantiate(pf, at, rot);
+            if (!Mathf.Approximately(scale, 1f)) go.transform.localScale *= scale;
+            if (killScripts)
+                foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true)) if (mb != null) mb.enabled = false;  // 关掉自带位移脚本（弹道由我们驱动）
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            if (life > 0) Destroy(go, life);
+            return go;
         }
 
         void UpdateCamera()
