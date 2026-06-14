@@ -205,6 +205,8 @@ namespace DW
                     state = State.Connecting;
                 }
             }
+            if (!hudBuilt) BuildHud();
+            RefreshHud();
             if (state != State.Playing) return;
 
             UpdateInput();
@@ -1073,15 +1075,18 @@ namespace DW
                 captureReadyAt = Time.time + (dimSkillCd > 0 ? dimSkillCd : 3f);
                 Send(new { t = "dimskill" });   // 各次元专属技能（猎人=捕捉）
             }
-            if (Input.GetKeyDown(KeyCode.Space) && Time.time > dodgeReadyAt)
-            {
-                dodgeReadyAt = Time.time + 1.2f;
-                var mv = MoveVec();
-                burstDir = mv.sqrMagnitude > 0.01f ? mv.normalized : new Vector3(Mathf.Sin(ry), 0, Mathf.Cos(ry));
-                burstSpeed = 21f;
-                burstUntil = Time.time + 0.24f;
-                DWAudio.Sfx("dodge", 0.6f);
-            }
+            if (Input.GetKeyDown(KeyCode.Space)) DoDodge();
+        }
+
+        void DoDodge()
+        {
+            if (meDead || Time.time <= dodgeReadyAt) return;
+            dodgeReadyAt = Time.time + 1.2f;
+            var mv = MoveVec();
+            burstDir = mv.sqrMagnitude > 0.01f ? mv.normalized : new Vector3(Mathf.Sin(ry), 0, Mathf.Cos(ry));
+            burstSpeed = 21f;
+            burstUntil = Time.time + 0.24f;
+            DWAudio.Sfx("dodge", 0.6f);
         }
 
         Vector3 EntPos(string id)

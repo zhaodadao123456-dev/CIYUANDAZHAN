@@ -124,22 +124,7 @@ namespace DW
 
         void GuiHud()
         {
-            // 左上：状态
-            var tl = new Rect(12, 10, 410, 132);
-            guiRects.Add(tl);
-            GUI.Box(tl, "", _box);
-            int hp = you != null ? (int?)you["hp"] ?? 0 : 0;
-            int maxHp = you != null ? (int?)you["maxHp"] ?? 1 : 1;
-            int shield = you != null ? (int?)you["shield"] ?? 0 : 0;
-            int exp = you != null ? (int?)you["exp"] ?? 0 : 0;
-            int expNeed = you != null ? (int?)you["expNeed"] ?? 1 : 1;
-            int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
-            var roomName = curRoom == "war" ? "🌀 重叠战场" : curRoom == "melee" ? "🔥 大混战" : Data.Dim(myDim).name;
-            GUI.Label(new Rect(20, 16, 390, 24), $"<b>{roomName}</b> ｜ {Data.ClassTitle(myDim, myCls)}", _label);
-            DrawBar(new Rect(20, 46, 386, 22), (float)hp / maxHp, new Color(0.2f, 0.85f, 0.3f), shield > 0 ? $"{hp}/{maxHp}  🛡{shield}" : $"{hp}/{maxHp}");
-            DrawBar(new Rect(20, 72, 386, 10), (float)exp / expNeed, Data.Hex("#ffd166"), "");
-            GUI.Label(new Rect(20, 88, 390, 24),
-                $"Lv.{MyLevel} ｜ 💰{gold}" + (MySkPts > 0 ? $" ｜ <color=#ffd166>✨技能点×{MySkPts}</color>" : ""), _label);
+            // 左上状态面板 & 技能栏 & 攻击键已由 UGUI(DWUguiHud) 接管，IMGUI 只画其余覆盖层
 
             // 战场横幅
             if (warInfo != null && (bool?)warInfo["active"] == true)
@@ -209,7 +194,7 @@ namespace DW
 
             GuiParty();
             GuiMinimap();
-            GuiSkillBar();
+            // GuiSkillBar();  // 由 UGUI 接管
             if (panelOpen) GuiPanel();
             if (meDead) GuiDeath();
             if (chatOpen) GuiChat();
