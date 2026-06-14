@@ -40,6 +40,23 @@ namespace DW.EditorTools
                     sb.AppendLine($"[动画] {clip.name}  时长:{clip.length:0.00}s  人形:{(clip.isHumanMotion ? "是" : "否")}  来自:{path}");
                 }
             }
+            sb.AppendLine("\n--- 特效预制体（Hovl 等带粒子的，可接到技能/受击）---");
+            int vfxN = 0;
+            foreach (var guid in AssetDatabase.FindAssets("t:GameObject"))
+            {
+                if (vfxN >= 200) { sb.AppendLine("…(已达上限，其余省略)"); break; }
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!path.StartsWith("Assets/") || path.StartsWith("Assets/Resources/")) continue;
+                if (!Lower(path).EndsWith(".prefab")) continue;
+                bool hovl = Lower(path).Contains("hovl");
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (go == null) continue;
+                if (!hovl && go.GetComponentInChildren<ParticleSystem>(true) == null) continue;
+                sb.AppendLine($"[特效] {path}");
+                vfxN++;
+            }
+            if (vfxN == 0) sb.AppendLine("（未发现特效预制体）");
+
             var outPath = "Assets/DW_资源清单.txt";
             File.WriteAllText(outPath, sb.ToString());
             AssetDatabase.Refresh();
