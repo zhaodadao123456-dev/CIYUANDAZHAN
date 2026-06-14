@@ -223,7 +223,8 @@ namespace DW.EditorTools
             }
             if (si == 0) log.AppendLine("未发现可用场景模型，地图沿用 KayKit 道具");
 
-            WireFx(log);
+            // 注意：不在这里自动接入 Hovl 特效——它在内置管线下常变粉。
+            // 需要时单独点菜单「③ 接入Hovl特效」；默认用程序化特效（按次元配色，不会变粉）。
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -231,6 +232,17 @@ namespace DW.EditorTools
             File.WriteAllText("Assets/DW_接入结果.txt", log.ToString());
             EditorUtility.DisplayDialog("次元大战",
                 $"英雄池 {hi} 个 · 怪物池 {mi} 个 · BOSS{(bossSrcs.Count > 0 ? "(小丑)" : "无")}\n\n点 ▶ 运行查看。\n把 Assets/DW_接入结果.txt 发给 Claude 可精调分配。", "好");
+        }
+
+        [MenuItem("次元大战/③ 接入Hovl特效(变粉就别用)")]
+        public static void WireFxMenu()
+        {
+            var log = new StringBuilder("===== 接入 Hovl 特效 =====\n");
+            WireFx(log);
+            AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
+            Debug.Log(log.ToString());
+            EditorUtility.DisplayDialog("次元大战",
+                log.ToString() + "\n\n进游戏看技能特效：若变粉，删掉 Assets/Resources/DWFx 文件夹即回到程序化特效（按次元配色，不会粉）。", "好");
         }
 
         /* 把选定的 Hovl 特效复制进 Resources/DWFx，供运行时按名加载（缺失则运行时程序化兜底） */

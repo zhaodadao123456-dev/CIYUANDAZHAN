@@ -1370,11 +1370,29 @@ namespace DW
             _fxCache[name] = p;
             return p;
         }
+        // 检测特效是否用了缺失/不可用的 shader（在内置管线会渲染成洋红）→ 跳过改用程序化兜底
+        static readonly Dictionary<GameObject, bool> _fxBroken = new Dictionary<GameObject, bool>();
+        static bool FxBroken(GameObject pf)
+        {
+            if (_fxBroken.TryGetValue(pf, out var b)) return b;
+            b = false;
+            foreach (var r in pf.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (var m in r.sharedMaterials)
+                {
+                    var sh = m != null ? m.shader : null;
+                    if (sh == null || !sh.isSupported || sh.name == "Hidden/InternalErrorShader") { b = true; break; }
+                }
+                if (b) break;
+            }
+            _fxBroken[pf] = b;
+            return b;
+        }
         GameObject SpawnFx(string name, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f, bool killScripts = false, string dim = null)
         {
             var pf = dim != null ? FxPrefab(name + "_" + dim) : null;   // 优先次元专属变体
             if (pf == null) pf = FxPrefab(name);
-            if (pf == null) return null;
+            if (pf == null || FxBroken(pf)) return null;   // 缺失或 shader 不可用(变粉) → 交给程序化兜底
             var go = Instantiate(pf, at, rot);
             if (!Mathf.Approximately(scale, 1f)) go.transform.localScale *= scale;
             if (killScripts)
