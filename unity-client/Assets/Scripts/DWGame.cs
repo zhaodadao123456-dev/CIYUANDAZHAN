@@ -905,7 +905,11 @@ namespace DW
                     e.hp = hp;
                     bool crit = (int?)m["crit"] == 1;
                     FloatText((crit ? amt + " 暴击!" : amt.ToString()), e.target, (string)m["by"] == myId ? Color.yellow : Color.white);
-                    if ((string)m["by"] == myId) DWAudio.SfxAt("hit", e.target, pos, crit ? 0.85f : 0.6f);
+                    if ((string)m["by"] == myId)
+                    {
+                        DWAudio.SfxAt("hit", e.target, pos, crit ? 0.85f : 0.6f);
+                        SpawnSparks(e.target + Vector3.up * 1.0f, crit ? new Color(1f, 0.85f, 0.2f) : new Color(1f, 0.95f, 0.8f), crit ? 16 : 8, crit ? 4.5f : 3.2f);
+                    }
                 }
             }
             else if (kind == "pet")
@@ -931,11 +935,16 @@ namespace DW
         void SpawnProj(string id, float x, float z, float dx, float dz, float speed, Color c)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.transform.localScale = Vector3.one * 0.55f;
+            Destroy(go.GetComponent<Collider>());
+            go.transform.localScale = Vector3.one * 0.5f;
             go.transform.position = new Vector3(x, 1.1f, z);
             Tint(go, c);
             var l = go.AddComponent<Light>();
             l.color = c; l.range = 6; l.intensity = 2.2f;
+            var tr = go.AddComponent<TrailRenderer>();
+            tr.time = 0.22f; tr.startWidth = 0.5f; tr.endWidth = 0.02f; tr.numCapVertices = 2;
+            tr.material = TrailMat(); tr.startColor = c; tr.endColor = new Color(c.r, c.g, c.b, 0f);
+            tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             projs[id] = new Proj { go = go, dir = new Vector3(dx, 0, dz), speed = speed, dieAt = Time.time + 3f };
         }
 
@@ -1153,15 +1162,11 @@ namespace DW
             { SpawnShockwave(at + Vector3.up * 0.1f, 2.5f, new Color(0.3f, 1f, 0.5f)); }
             else if (kind == "dashmelee")
                 SpawnShockwave(at + dir * 1.5f + Vector3.up * 0.6f, 2.2f, c);
-            else   // melee / proj：身前一道弧光
+            else   // melee / proj：身前火花迸射 + 短促光闪
             {
-                var fx = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                Destroy(fx.GetComponent<Collider>());
-                fx.transform.position = at + dir * 1.2f + Vector3.up * 1.1f;
-                fx.transform.localScale = new Vector3(1.8f, 0.3f, 1.0f);
-                var mat = fx.GetComponent<Renderer>().material;
-                mat.color = c; mat.EnableKeyword("_EMISSION"); mat.SetColor("_EmissionColor", c * 2f);
-                fx.AddComponent<Shockwave>().radius = 2.2f;
+                Vector3 p = at + dir * 1.3f + Vector3.up * 1.0f;
+                SpawnSparks(p, c, 14, 5.5f);
+                SpawnFlash(p, c, 1.4f);
             }
         }
 
@@ -1210,15 +1215,101 @@ namespace DW
             shakeUntil = Mathf.Max(shakeUntil, Time.time + dur);
         }
 
+        // 地面扩散光环 + 火花迸射 + 一闪而过的点光（被技能/BOSS/次元技共用）
         void SpawnShockwave(Vector3 at, float radius, Color c)
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(go.GetComponent<Collider>());
+            go.name = "ringfx";
+            go.transform.position = new Vector3(at.x, 0.06f, at.z);
+            go.transform.rotation = Quaternion.Euler(90, 0, 0);   // 平铺地面
+            var r = go.GetComponent<MeshRenderer>();
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            var mat = new Material(Shader.Find("Sprites/Default")) { mainTexture = RingTex() };
+            r.material = mat;
+            var fx = go.AddComponent<RingFx>(); fx.radius = radius; fx.col = c;
+            var l = go.AddComponent<Light>(); l.color = c; l.range = radius * 2.2f; l.intensity = 4f;
+            SpawnSparks(new Vector3(at.x, 0.6f, at.z), c, Mathf.Clamp((int)(radius * 4f), 12, 36), Mathf.Clamp(radius, 3f, 8f));
+        }
+
+        // 火花迸射（内置 ParticleSystem，无需素材）
+        void SpawnSparks(Vector3 at, Color c, int count, float speed)
+        {
+            var go = new GameObject("sparks");
             go.transform.position = at;
-            Tint(go, c);
-            var l = go.AddComponent<Light>();
-            l.color = c; l.range = radius * 2.2f; l.intensity = 4f;
-            var fx = go.AddComponent<Shockwave>();
-            fx.radius = radius;
+            var ps = go.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.duration = 0.6f; main.loop = false; main.playOnAwake = false;
+            main.startLifetime = 0.5f; main.startSpeed = speed; main.startSize = 0.22f;
+            main.startColor = c; main.gravityModifier = 0.6f; main.maxParticles = count + 8;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var em = ps.emission; em.rateOverTime = 0f;
+            em.SetBursts(new[] { new ParticleSystem.Burst(0f, (short)count) });
+            var sh = ps.shape; sh.shapeType = ParticleSystemShapeType.Sphere; sh.radius = 0.2f;
+            var colol = ps.colorOverLifetime; colol.enabled = true;
+            var grad = new Gradient();
+            grad.SetKeys(new[] { new GradientColorKey(c, 0f), new GradientColorKey(c, 1f) },
+                         new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+            colol.color = grad;
+            var sol = ps.sizeOverLifetime; sol.enabled = true;
+            sol.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.EaseInOut(0, 1, 1, 0));
+            var rend = ps.GetComponent<ParticleSystemRenderer>();
+            rend.material = SparkMat();
+            rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            ps.Clear(); ps.Play();
+            Destroy(go, 1.3f);
+        }
+
+        // 一闪而过的点光
+        void SpawnFlash(Vector3 at, Color c, float range)
+        {
+            var go = new GameObject("flash"); go.transform.position = at;
+            var l = go.AddComponent<Light>(); l.color = c; l.range = range * 3f; l.intensity = 4.5f;
+            go.AddComponent<LightFade>();
+        }
+
+        // ---- 程序化贴图/材质（生成一次缓存）----
+        static Texture2D _ringTex, _dotTex, _whiteTex;
+        static Material _sparkMat, _trailMat;
+        static Texture2D RingTex()
+        {
+            if (_ringTex != null) return _ringTex;
+            const int N = 128; var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f, v = (y + 0.5f) / N * 2f - 1f;
+                    float d = Mathf.Sqrt(u * u + v * v);
+                    float a = d > 1f ? 0f : Mathf.Clamp01(1f - Mathf.Abs(d - 0.74f) / 0.24f); a *= a;
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                }
+            t.SetPixels32(px); t.Apply(false); _ringTex = t; return t;
+        }
+        static Texture2D DotTex()
+        {
+            if (_dotTex != null) return _dotTex;
+            const int N = 32; var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f, v = (y + 0.5f) / N * 2f - 1f;
+                    float a = Mathf.Clamp01(1f - Mathf.Sqrt(u * u + v * v)); a *= a;
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                }
+            t.SetPixels32(px); t.Apply(false); _dotTex = t; return t;
+        }
+        static Material SparkMat()
+        {
+            if (_sparkMat == null) _sparkMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = DotTex() };
+            return _sparkMat;
+        }
+        static Material TrailMat()
+        {
+            if (_trailMat == null) _trailMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = Texture2D.whiteTexture };
+            return _trailMat;
         }
 
         void UpdateCamera()
@@ -1301,19 +1392,34 @@ namespace DW
         }
     }
 
-    public class Shockwave : MonoBehaviour
+    // 地面扩散光环：平铺四边形随时间放大并淡出（替代旧的实心圆盘）
+    public class RingFx : MonoBehaviour
     {
-        public float radius = 7f;
-        float born;
-        Light l;
+        public float radius = 5f;
+        public Color col = Color.white;
+        float born; Material mat; Light l;
+        void Start() { born = Time.time; var r = GetComponent<MeshRenderer>(); if (r != null) mat = r.material; l = GetComponent<Light>(); }
+        void Update()
+        {
+            float k = (Time.time - born) / 0.55f;
+            if (k >= 1f) { Destroy(gameObject); return; }
+            float d = Mathf.Lerp(radius * 0.5f, radius * 2.1f, Mathf.Sqrt(k));   // 直径，缓出
+            transform.localScale = new Vector3(d, d, 1f);
+            if (mat != null) { var c = col; c.a = (1f - k) * 0.95f; mat.color = c; }
+            if (l != null) l.intensity = 4f * (1f - k);
+        }
+    }
+
+    // 一闪而过的点光淡出
+    public class LightFade : MonoBehaviour
+    {
+        float born; Light l;
         void Start() { born = Time.time; l = GetComponent<Light>(); }
         void Update()
         {
-            float k = (Time.time - born) / 0.5f;
+            float k = (Time.time - born) / 0.25f;
             if (k >= 1f) { Destroy(gameObject); return; }
-            float s = radius * 2f * k;
-            transform.localScale = new Vector3(s, 0.4f, s);
-            if (l != null) l.intensity = 4f * (1f - k);
+            if (l != null) l.intensity = 4.5f * (1f - k);
         }
     }
 
