@@ -225,7 +225,7 @@ namespace DW
             var p = MkImg(name, root, bg, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, topY), new Vector2(w, 44));
             txt = MkTxt("t", p.transform, "", 22, Color.white, TextAnchor.MiddleLeft,
                 new Vector2(0, 0), new Vector2(1, 1), new Vector2(0, 0.5f), new Vector2(20, 0), new Vector2(-180, 0));
-            p.SetActive(false);
+            p.gameObject.SetActive(false);
             return p.gameObject;
         }
 
