@@ -64,16 +64,9 @@ namespace DW
                 }
                 case State.Playing: GuiHud(); break;
             }
-            if (Time.time < toastUntil)
+            // toast 与升级横幅由 UGUI 接管（仅登录/连接态仍用 IMGUI toast）
+            if (state != State.Playing && Time.time < toastUntil)
                 GUI.Label(new Rect(0, SH - 150, SW, 30), $"<b>{toastMsg}</b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 17 });
-            if (Time.time < levelUpUntil)
-            {
-                string extra = levelUpLevel == 3 ? "　E技能解锁！" : levelUpLevel == 5 ? "　R技能解锁！" : "";
-                var st = new GUIStyle(_title) { fontSize = 40, normal = { textColor = new Color(1f, 0.82f, 0.25f) } };
-                GUI.Label(new Rect(0, SH * 0.28f, SW, 56), $"🆙 升级！ Lv.{levelUpLevel}", st);
-                GUI.Label(new Rect(0, SH * 0.28f + 50, SW, 26), $"<color=#ffd166>获得技能点{extra}</color>",
-                    new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 16 });
-            }
         }
 
         void GuiMenu()
@@ -124,48 +117,8 @@ namespace DW
 
         void GuiHud()
         {
-            // 左上状态面板 & 技能栏 & 攻击键已由 UGUI(DWUguiHud) 接管，IMGUI 只画其余覆盖层
-
-            // 战场横幅
-            if (warInfo != null && (bool?)warInfo["active"] == true)
-            {
-                var wr = new Rect(SW / 2f - 260, 8, 520, 36);
-                guiRects.Add(wr);
-                GUI.Box(wr, "", _box);
-                string a = (string)warInfo["a"], b = (string)warInfo["b"];
-                GUI.Label(new Rect(wr.x + 10, wr.y + 6, 360, 24),
-                    $"🌀 {Data.Dim(a).name} {warInfo["killsA"]} : {warInfo["killsB"]} {Data.Dim(b).name}", _label);
-                if (myDim == a || myDim == b)
-                {
-                    if (GUI.Button(new Rect(wr.xMax - 130, wr.y + 4, 122, 28), curRoom == "war" ? "↩ 撤离战场" : "⚔ 进入战场", _btn))
-                        Send(new { t = "war", enter = curRoom == "war" ? 0 : 1 });
-                }
-            }
-
-            // 世界BOSS横幅
-            if (bossInfo != null)
-            {
-                bool warOn = warInfo != null && (bool?)warInfo["active"] == true;
-                var br = new Rect(SW / 2f - 240, warOn ? 50 : 8, 480, 30);
-                guiRects.Add(br);
-                GUI.Box(br, "", _box);
-                string bd = (string)bossInfo["dim"];
-                string btxt = bd == myDim
-                    ? $"🔥 世界BOSS【{bossInfo["name"]}】就在本次元巢穴！讨伐必得史诗装备！"
-                    : $"🔥 世界BOSS【{bossInfo["name"]}】肆虐【{Data.Dim(bd).name}】…";
-                GUI.Label(new Rect(br.x + 10, br.y + 4, 464, 22), $"<color=#ff7766>{btxt}</color>", _label);
-            }
-
-            // 五次元大混战横幅 + 进入/撤离按钮
-            if (meleeInfo != null && (bool?)meleeInfo["active"] == true)
-            {
-                var mr = new Rect(SW / 2f - 230, 86, 460, 30);
-                guiRects.Add(mr);
-                GUI.Box(mr, "", _box);
-                GUI.Label(new Rect(mr.x + 10, mr.y + 4, 320, 22), "<color=#ff7fd0>🔥 五次元大混战进行中！存活最多次元大胜</color>", _label);
-                if (GUI.Button(new Rect(mr.xMax - 120, mr.y + 3, 112, 24), curRoom == "melee" ? "↩ 撤离" : "⚔ 杀入混战", _btn))
-                    Send(new { t = "melee", enter = curRoom == "melee" ? 0 : 1 });
-            }
+            // 状态/技能/攻击/横幅/信息流/升级/提示/死亡/背包面板 均由 UGUI(DWUguiHud) 接管。
+            // IMGUI 仅保留：虚拟摇杆、队伍小血条、小地图、聊天输入。
 
             // 虚拟摇杆（触屏）
             if (moveTouchId >= 0)
@@ -176,27 +129,8 @@ namespace DW
                 GUI.Box(new Rect(cur.x - 20, cur.y - 20, 40, 40), "●");
             }
 
-            // 右上按钮
-            var bagR = new Rect(SW - 56, 10, 44, 40);
-            guiRects.Add(bagR);
-            if (GUI.Button(bagR, "🎒", _btn)) panelOpen = !panelOpen;
-            // 退出按钮：回到次元选择界面
-            var exitR = new Rect(SW - 56, 56, 44, 40);
-            guiRects.Add(exitR);
-            if (GUI.Button(exitR, "🚪", _btn)) ExitToMenu();
-
-            // 消息流
-            for (int i = 0; i < feed.Count; i++)
-            {
-                if (Time.time - feedAt[i] > 12f) continue;
-                GUI.Label(new Rect(SW - 430, 60 + i * 22, 420, 22), $"<size=13>{feed[i]}</size>", _label);
-            }
-
             GuiParty();
             GuiMinimap();
-            // GuiSkillBar();  // 由 UGUI 接管
-            if (panelOpen) GuiPanel();
-            if (meDead) GuiDeath();
             if (chatOpen) GuiChat();
             else GUI.Label(new Rect(12, SH - 24, 300, 20), "<size=11><color=#888>按 T 聊天</color></size>", _label);
         }

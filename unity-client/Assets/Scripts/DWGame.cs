@@ -1017,6 +1017,9 @@ namespace DW
                 var t = Input.GetTouch(i);
                 if (t.phase == TouchPhase.Began)
                 {
+                    // 点在 UGUI 按钮/面板上时不触发移动/转视角
+                    var esT = UnityEngine.EventSystems.EventSystem.current;
+                    if (esT != null && esT.IsPointerOverGameObject(t.fingerId)) continue;
                     var guiPos = new Vector2(t.position.x / uiScale, (Screen.height - t.position.y) / uiScale);
                     bool overGui = false;
                     foreach (var r in guiRects) if (r.Contains(guiPos)) { overGui = true; break; }
@@ -1065,7 +1068,9 @@ namespace DW
                 if (Time.time - deadAt > 4f && Input.GetKeyDown(KeyCode.Space)) Send(new { t = "respawn" });
                 return;
             }
-            if (!touching && Input.GetMouseButtonDown(0) && !MouseOverGui()) Cast("basic");
+            var es = UnityEngine.EventSystems.EventSystem.current;
+            bool overUgui = es != null && es.IsPointerOverGameObject();
+            if (!touching && Input.GetMouseButtonDown(0) && !MouseOverGui() && !overUgui) Cast("basic");
             if (Input.GetKeyDown(KeyCode.Q)) Cast("q");
             if (Input.GetKeyDown(KeyCode.E)) Cast("e");
             if (Input.GetKeyDown(KeyCode.R)) Cast("r");

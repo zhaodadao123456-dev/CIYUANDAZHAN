@@ -20,6 +20,13 @@ namespace DW
         Image uHpFill, uExpFill;
         Text uHpText, uStatusTop, uStatusBot;
 
+        // 覆盖层
+        GameObject uWar, uBoss, uMelee, uLevelUp, uToast, uDeath;
+        Text uWarTxt, uBossTxt, uMeleeTxt, uLevelUpTxt, uToastTxt, uDeathTxt, uRespawnTxt;
+        Button uWarBtn, uMeleeBtn, uRespawnBtn;
+        Text uWarBtnTxt, uMeleeBtnTxt;
+        Text[] uFeed;
+
         class USkill
         {
             public string key;          // basic/q/e/r/dodge/dim
@@ -178,7 +185,112 @@ namespace DW
             MkTxt("AtkTxt", atk.transform, "⚔\n攻击", 34, Color.white, TextAnchor.MiddleCenter,
                 Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
+            BuildOverlays(root);
+            BuildPanelUI(root);
             hudBuilt = true;
+        }
+
+        // ---- 顶部横幅 / 信息流 / 升级 / 提示 / 死亡 ----
+        GameObject MkBanner(Transform root, string name, Color bg, float topY, float w, out Text txt)
+        {
+            var p = MkImg(name, root, bg, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, topY), new Vector2(w, 44));
+            txt = MkTxt("t", p.transform, "", 22, Color.white, TextAnchor.MiddleLeft,
+                new Vector2(0, 0), new Vector2(1, 1), new Vector2(0, 0.5f), new Vector2(20, 0), new Vector2(-180, 0));
+            p.SetActive(false);
+            return p.gameObject;
+        }
+
+        void BuildOverlays(Transform root)
+        {
+            uWar = MkBanner(root, "WarBanner", new Color(0.27f, 0.06f, 0.12f, 0.85f), -14, 720, out uWarTxt);
+            uWarBtn = MkBtn("Btn", uWar.transform, new Color(0.82f, 0.23f, 0.35f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-8, 0), new Vector2(160, 34),
+                () => Send(new { t = "war", enter = curRoom == "war" ? 0 : 1 }));
+            uWarBtnTxt = MkTxt("t", uWarBtn.transform, "", 20, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uBoss = MkBanner(root, "BossBanner", new Color(0.3f, 0.05f, 0.05f, 0.85f), -64, 720, out uBossTxt);
+            uMelee = MkBanner(root, "MeleeBanner", new Color(0.3f, 0.06f, 0.24f, 0.88f), -114, 720, out uMeleeTxt);
+            uMeleeBtn = MkBtn("Btn", uMelee.transform, new Color(0.85f, 0.25f, 0.6f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-8, 0), new Vector2(160, 34),
+                () => Send(new { t = "melee", enter = curRoom == "melee" ? 0 : 1 }));
+            uMeleeBtnTxt = MkTxt("t", uMeleeBtn.transform, "", 20, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
+            // 信息流（右上 6 行）
+            uFeed = new Text[6];
+            for (int i = 0; i < 6; i++)
+                uFeed[i] = MkTxt("Feed" + i, root, "", 20, Color.white, TextAnchor.UpperRight,
+                    new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-20, -150 - i * 30), new Vector2(620, 28));
+
+            // 升级横幅（中上）
+            uLevelUp = MkImg("LevelUp", root, new Color(1f, 0.6f, 0.15f, 0.92f), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -200), new Vector2(420, 70)).gameObject;
+            uLevelUpTxt = MkTxt("t", uLevelUp.transform, "", 34, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uLevelUp.SetActive(false);
+
+            // 顶部提示 toast（屏幕中下）
+            uToast = MkImg("Toast", root, new Color(0, 0, 0, 0.7f), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 230), new Vector2(760, 44)).gameObject;
+            uToastTxt = MkTxt("t", uToast.transform, "", 22, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uToast.SetActive(false);
+
+            // 死亡全屏
+            uDeath = MkImg("Death", root, new Color(0.4f, 0, 0, 0.45f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero).gameObject;
+            var dbox = MkImg("box", uDeath.transform, new Color(0.08f, 0.05f, 0.08f, 0.95f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 240));
+            MkTxt("t", dbox.transform, "💀 你已阵亡", 40, new Color(1f, 0.5f, 0.5f), TextAnchor.UpperCenter, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -28), new Vector2(-20, 50));
+            uDeathTxt = MkTxt("cd", dbox.transform, "", 24, Color.white, TextAnchor.MiddleCenter, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -100), new Vector2(-20, 40));
+            uRespawnBtn = MkBtn("rb", dbox.transform, new Color(0.3f, 0.4f, 0.85f), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 36), new Vector2(280, 64), () => Send(new { t = "respawn" }));
+            uRespawnTxt = MkTxt("t", uRespawnBtn.transform, "复活", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uDeath.SetActive(false);
+        }
+
+        void RefreshOverlays()
+        {
+            // 战场横幅
+            bool warOn = warInfo != null && (bool?)warInfo["active"] == true;
+            uWar.SetActive(warOn);
+            if (warOn)
+            {
+                string a = (string)warInfo["a"], b = (string)warInfo["b"];
+                uWarTxt.text = $"🌀 {Data.Dim(a).name} {warInfo["killsA"]} : {warInfo["killsB"]} {Data.Dim(b).name}";
+                bool mine = myDim == a || myDim == b;
+                uWarBtn.gameObject.SetActive(mine);
+                uWarBtnTxt.text = curRoom == "war" ? "↩ 撤离" : "⚔ 进入";
+            }
+            // BOSS 横幅
+            bool bossOn = bossInfo != null;
+            uBoss.SetActive(bossOn);
+            if (bossOn)
+            {
+                string bd = (string)bossInfo["dim"];
+                uBossTxt.text = bd == myDim ? $"🔥 世界BOSS【{bossInfo["name"]}】就在本次元巢穴！" : $"🔥 世界BOSS【{bossInfo["name"]}】肆虐【{Data.Dim(bd).name}】";
+            }
+            // 大混战横幅
+            bool meleeOn = meleeInfo != null && (bool?)meleeInfo["active"] == true;
+            uMelee.SetActive(meleeOn);
+            if (meleeOn) uMeleeBtnTxt.text = curRoom == "melee" ? "↩ 撤离" : "⚔ 杀入";
+
+            // 信息流
+            for (int i = 0; i < uFeed.Length; i++)
+            {
+                if (i < feed.Count && Time.time - feedAt[i] < 12f) uFeed[i].text = feed[i];
+                else uFeed[i].text = "";
+            }
+
+            // 升级
+            bool lu = Time.time < levelUpUntil;
+            uLevelUp.SetActive(lu);
+            if (lu) uLevelUpTxt.text = $"🆙 升级！Lv.{levelUpLevel}" + (levelUpLevel == 3 ? "  E解锁" : levelUpLevel == 5 ? "  R解锁" : "");
+
+            // toast
+            bool t = Time.time < toastUntil;
+            uToast.SetActive(t);
+            if (t) uToastTxt.text = toastMsg;
+
+            // 死亡
+            uDeath.SetActive(meDead);
+            if (meDead)
+            {
+                float remain = Mathf.Max(0, 4f - (Time.time - deadAt));
+                bool arena = curRoom == "war" || curRoom == "melee";
+                uDeathTxt.text = arena ? "战场/混战中无法原地复活，回本次元复活" : (remain > 0 ? $"复活倒计时 {remain:0.0}s" : "可以复活了");
+                uRespawnBtn.interactable = remain <= 0;
+                uRespawnTxt.text = arena ? "↩ 回本次元复活" : "⚔ 立即复活";
+            }
         }
 
         void OnSkillTap(string key)
@@ -207,6 +319,9 @@ namespace DW
             uHpText.text = shield > 0 ? $"{hp}/{maxHp}  🛡{shield}" : $"{hp}/{maxHp}";
             uExpFill.fillAmount = Mathf.Clamp01((float)exp / expNeed);
             uStatusBot.text = $"Lv.{MyLevel} ｜ 💰{gold}" + (MySkPts > 0 ? $"  ✨×{MySkPts}" : "");
+
+            RefreshOverlays();
+            RefreshPanel();
 
             var def = Data.Cls(myCls);
             foreach (var us in uSkills)
@@ -244,6 +359,200 @@ namespace DW
             float f = total > 0 ? Mathf.Clamp01(remain / total) : 0;
             us.cd.fillAmount = f;
             us.cdText.text = remain > 0.05f ? remain.ToString("0.0") : "";
+        }
+
+        // ====================== 背包/商店/属性 面板 ======================
+        GameObject uPanel;
+        RectTransform uPanelContent;
+        Text[] uTabTxt;
+        string uPanelSig = "";
+
+        void BuildPanelUI(Transform root)
+        {
+            // 右上 🎒 开关
+            var bag = MkBtn("BagBtn", root, new Color(0.18f, 0.2f, 0.36f, 0.95f),
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -24), new Vector2(76, 76),
+                () => panelOpen = !panelOpen);
+            MkTxt("t", bag.transform, "🎒", 34, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            // 退出
+            var exit = MkBtn("ExitBtn", root, new Color(0.36f, 0.18f, 0.2f, 0.95f),
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-110, -24), new Vector2(76, 76),
+                () => ExitToMenu());
+            MkTxt("t", exit.transform, "🚪", 34, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
+            // 面板
+            uPanel = MkImg("Panel", root, new Color(0.07f, 0.08f, 0.16f, 0.97f),
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -112), new Vector2(680, 760)).gameObject;
+            // 顶部标签
+            string[] tabs = { "📊 属性", "🎒 背包", "🛒 商店" };
+            uTabTxt = new Text[tabs.Length];
+            float tw = 680f / (tabs.Length + 1);
+            for (int i = 0; i < tabs.Length; i++)
+            {
+                int idx = i;
+                var tb = MkBtn("Tab" + i, uPanel.transform, new Color(0.12f, 0.13f, 0.24f, 1f),
+                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(i * tw, 0), new Vector2(tw, 56),
+                    () => { panelTab = idx; uPanelSig = ""; });
+                uTabTxt[i] = MkTxt("t", tb.transform, tabs[i], 22, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+            var close = MkBtn("Close", uPanel.transform, new Color(0.3f, 0.12f, 0.14f, 1f),
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(0, 0), new Vector2(tw, 56), () => panelOpen = false);
+            MkTxt("t", close.transform, "✕", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
+            // 滚动列表
+            var sr = MkRect("Scroll", uPanel.transform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(0.5f, 0.5f), new Vector2(0, -28), new Vector2(-16, -72));
+            var srImg = sr.gameObject.AddComponent<Image>(); srImg.color = new Color(0, 0, 0, 0.15f); srImg.sprite = WhiteSprite();
+            var scroll = sr.gameObject.AddComponent<ScrollRect>();
+            scroll.horizontal = false; scroll.vertical = true; scroll.scrollSensitivity = 24;
+            var vp = MkRect("Viewport", sr, Vector2.zero, Vector2.one, new Vector2(0, 1), Vector2.zero, Vector2.zero);
+            var vpImg = vp.gameObject.AddComponent<Image>(); vpImg.color = new Color(1, 1, 1, 0.01f); vpImg.sprite = WhiteSprite();
+            vp.gameObject.AddComponent<Mask>().showMaskGraphic = false;
+            scroll.viewport = vp;
+            uPanelContent = MkRect("Content", vp, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), Vector2.zero, new Vector2(0, 0));
+            var vlg = uPanelContent.gameObject.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 6; vlg.padding = new RectOffset(10, 10, 10, 10);
+            vlg.childControlWidth = true; vlg.childControlHeight = true; vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
+            var csf = uPanelContent.gameObject.AddComponent<ContentSizeFitter>();
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            scroll.content = uPanelContent;
+
+            uPanel.SetActive(false);
+        }
+
+        RectTransform AddRow(float h)
+        {
+            var go = new GameObject("row", typeof(RectTransform));
+            go.transform.SetParent(uPanelContent, false);
+            var le = go.AddComponent<LayoutElement>(); le.minHeight = h; le.preferredHeight = h;
+            var bg = go.AddComponent<Image>(); bg.sprite = WhiteSprite(); bg.color = new Color(1, 1, 1, 0.05f); bg.raycastTarget = false;
+            var hl = go.AddComponent<HorizontalLayoutGroup>();
+            hl.spacing = 8; hl.childAlignment = TextAnchor.MiddleLeft; hl.padding = new RectOffset(8, 8, 2, 2);
+            hl.childControlWidth = true; hl.childControlHeight = true; hl.childForceExpandWidth = false; hl.childForceExpandHeight = true;
+            return (RectTransform)go.transform;
+        }
+
+        void RowIcon(Transform row, Color c, string label)
+        {
+            var go = new GameObject("ic", typeof(RectTransform));
+            go.transform.SetParent(row, false);
+            var le = go.AddComponent<LayoutElement>(); le.minWidth = 38; le.preferredWidth = 38;
+            var img = go.AddComponent<Image>(); img.sprite = WhiteSprite(); img.color = c; img.raycastTarget = false;
+            var t = MkTxt("t", go.transform, label, 16, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        }
+
+        void RowLabel(Transform row, string s)
+        {
+            var go = new GameObject("lbl", typeof(RectTransform));
+            go.transform.SetParent(row, false);
+            var le = go.AddComponent<LayoutElement>(); le.flexibleWidth = 1;
+            var t = go.AddComponent<Text>();
+            t.text = s; t.fontSize = 18; t.color = Color.white; t.alignment = TextAnchor.MiddleLeft;
+            t.font = cjkFont; t.horizontalOverflow = HorizontalWrapMode.Wrap; t.verticalOverflow = VerticalWrapMode.Overflow; t.raycastTarget = false;
+        }
+
+        void RowBtn(Transform row, string s, Color c, System.Action onClick)
+        {
+            var img = MkImg("b", row, c, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            img.raycastTarget = true;
+            var le = img.gameObject.AddComponent<LayoutElement>(); le.minWidth = 80; le.preferredWidth = 80;
+            var b = img.gameObject.AddComponent<Button>(); b.targetGraphic = img; b.onClick.AddListener(() => onClick());
+            MkTxt("t", img.transform, s, 18, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        }
+
+        string PanelSig()
+        {
+            int inv = invData != null ? invData.Count : 0;
+            int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
+            int lv = MyLevel;
+            return $"{panelTab}|{inv}|{gold}|{lv}|{(equipData != null ? equipData.ToString().Length : 0)}";
+        }
+
+        void RefreshPanel()
+        {
+            if (uPanel == null) return;
+            uPanel.SetActive(panelOpen);
+            for (int i = 0; i < uTabTxt.Length; i++)
+                uTabTxt[i].color = (i == panelTab) ? new Color(1f, 0.84f, 0.3f) : new Color(0.7f, 0.72f, 0.85f);
+            if (!panelOpen) return;
+            var sig = PanelSig();
+            if (sig == uPanelSig) return;   // 数据没变不重建
+            uPanelSig = sig;
+            RepopulatePanel();
+        }
+
+        void RepopulatePanel()
+        {
+            for (int i = uPanelContent.childCount - 1; i >= 0; i--) Destroy(uPanelContent.GetChild(i).gameObject);
+            if (panelTab == 0) PanelStats();
+            else if (panelTab == 1) PanelBag();
+            else PanelShop();
+        }
+
+        void PanelStats()
+        {
+            if (you == null) { var r = AddRow(40); RowLabel(r.transform, "加载中…"); return; }
+            var def = Data.Cls(myCls);
+            void Line(string s) { var r = AddRow(34); RowLabel(r.transform, s); }
+            Line($"<b>{def.icon} {Data.ClassTitle(myDim, myCls)}</b>（{def.role}）");
+            Line($"📈 等级 Lv.{you["level"]}（{you["exp"]}/{you["expNeed"]}）");
+            Line($"❤ 生命：{you["hp"]}/{you["maxHp"]}");
+            Line($"⚔ 物攻 {you["patk"]}    🔮 法攻 {you["matk"]}");
+            Line($"🛡 物防 {you["armor"]}    ✨ 法防 {you["mres"]}");
+            Line($"👟 移速 {you["spd"]}    💰 金币 {you["gold"]}");
+            Line($"🗡 击杀 野怪{you["kills"]} / 玩家{you["pvpKills"]}");
+            Line($"✨ 技能点：{MySkPts}");
+            Line("<b>技能</b>");
+            foreach (var sk in def.skills) Line($"<color=#ffd166>{sk.name}</color> Lv.{MySkLvl(sk.key)}\n<size=13><color=#999>{sk.desc}</color></size>");
+        }
+
+        Color RarCol(JObject it) => Data.RarityColors[Mathf.Clamp((int?)it["rar"] ?? 0, 0, 4)];
+        string ItemLine(JObject it)
+        {
+            string st = "";
+            foreach (var k in new[] { "patk", "matk", "armor", "mres", "hp", "spd" })
+                if (it[k] != null) st += $"{(k == "patk" ? "物攻" : k == "matk" ? "法攻" : k == "armor" ? "物防" : k == "mres" ? "法防" : k == "hp" ? "生命" : "移速")}+{it[k]} ";
+            return $"<color=#{ColorUtility.ToHtmlStringRGB(RarCol(it))}>{it["name"]}</color>\n<size=13>{st}</size>";
+        }
+
+        void PanelBag()
+        {
+            var hr = AddRow(30); RowLabel(hr.transform, "<b>已装备</b>");
+            if (equipData != null)
+                foreach (var slot in Data.SlotNames)
+                {
+                    var it = equipData[slot.Key] as JObject;
+                    var r = AddRow(46);
+                    if (it == null) { RowIcon(r.transform, new Color(0.3f, 0.3f, 0.35f), slot.Value.Substring(0, 1)); RowLabel(r.transform, $"{slot.Value}：<color=#777>空</color>"); }
+                    else { RowIcon(r.transform, RarCol(it), slot.Value.Substring(0, 1)); RowLabel(r.transform, ItemLine(it)); var sk = slot.Key; RowBtn(r.transform, "卸下", new Color(0.4f, 0.3f, 0.12f), () => Send(new { t = "unequip", slot = sk })); }
+                }
+            var br = AddRow(30); RowLabel(br.transform, $"<b>背包</b>（{(invData != null ? invData.Count : 0)}/24）");
+            if (invData != null)
+                for (int i = 0; i < invData.Count; i++)
+                {
+                    var it = (JObject)invData[i]; int idx = i; int val = (int?)it["val"] ?? 0;
+                    string slotName; Data.SlotNames.TryGetValue((string)it["slot"] ?? "", out slotName);
+                    var r = AddRow(46);
+                    RowIcon(r.transform, RarCol(it), string.IsNullOrEmpty(slotName) ? "装" : slotName.Substring(0, 1));
+                    RowLabel(r.transform, ItemLine(it));
+                    RowBtn(r.transform, "装备", new Color(0.16f, 0.3f, 0.45f), () => Send(new { t = "equip", i = idx }));
+                    RowBtn(r.transform, $"卖{val * 2 / 5}", new Color(0.3f, 0.2f, 0.12f), () => Send(new { t = "sell", i = idx }));
+                }
+        }
+
+        void PanelShop()
+        {
+            int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
+            var hr = AddRow(30); RowLabel(hr.transform, $"<b>商店</b>（💰{gold}）");
+            if (shopData == null) return;
+            foreach (JObject it in shopData)
+            {
+                string slotName; Data.SlotNames.TryGetValue((string)it["slot"] ?? "", out slotName);
+                var r = AddRow(46);
+                RowIcon(r.transform, RarCol(it), string.IsNullOrEmpty(slotName) ? "装" : slotName.Substring(0, 1));
+                RowLabel(r.transform, ItemLine(it));
+                var id = (string)it["id"];
+                RowBtn(r.transform, $"💰{it["price"]}", new Color(0.32f, 0.28f, 0.12f), () => Send(new { t = "buy", id = id }));
+            }
         }
     }
 }
