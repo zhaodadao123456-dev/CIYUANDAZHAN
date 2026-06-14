@@ -131,7 +131,7 @@ namespace DW
 
             // 清运行时生成的图标/特效/贴图缓存：编辑器关闭 Domain Reload 时防止引用到上次已销毁的对象
             _kindIcons.Clear(); _slotIcons.Clear(); _pngIcons.Clear(); _fxCache.Clear();
-            _groundTex = _ringTex = _dotTex = _whiteTex = null;
+            _groundTex = _ringTex = _dotTex = null;
             _sparkMat = _trailMat = null;
         }
 
@@ -1257,7 +1257,7 @@ namespace DW
             r.receiveShadows = false;
             var mat = new Material(Shader.Find("Sprites/Default")) { mainTexture = RingTex() };
             r.material = mat;
-            var fx = go.AddComponent<RingFx>(); fx.radius = radius; fx.col = c;
+            var ring = go.AddComponent<RingFx>(); ring.radius = radius; ring.col = c;
             var l = go.AddComponent<Light>(); l.color = c; l.range = radius * 2.2f; l.intensity = 4f;
             SpawnSparks(new Vector3(at.x, 0.6f, at.z), c, Mathf.Clamp((int)(radius * 4f), 12, 36), Mathf.Clamp(radius, 3f, 8f));
         }
@@ -1299,7 +1299,7 @@ namespace DW
         }
 
         // ---- 程序化贴图/材质（生成一次缓存）----
-        static Texture2D _ringTex, _dotTex, _whiteTex;
+        static Texture2D _ringTex, _dotTex;
         static Material _sparkMat, _trailMat;
         // 程序化地面纹理：灰度网格 + 细噪点（白底，运行时被地面材质的次元色相乘着色），让大平面不再死板
         static Texture2D _groundTex;
