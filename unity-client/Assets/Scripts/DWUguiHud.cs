@@ -27,6 +27,16 @@ namespace DW
         Text uWarBtnTxt, uMeleeBtnTxt;
         Text[] uFeed;
 
+        // 队伍小血条（左侧，状态面板下方）池化复用
+        class UPartyRow { public GameObject go; public Text name; public Image hpFill; }
+        readonly List<UPartyRow> uParty = new List<UPartyRow>();
+
+        // 小地图（左下角）：RawImage + 每帧重绘的 Texture2D
+        RawImage uMini;
+        Texture2D uMiniTex;
+        Color32[] uMiniBuf, uMiniBg;
+        const int MiniN = 128;
+
         class USkill
         {
             public string key;          // basic/q/e/r/dodge/dim
@@ -186,6 +196,8 @@ namespace DW
                 Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
             BuildOverlays(root);
+            BuildParty(root);
+            BuildMinimap(root);
             BuildPanelUI(root);
             hudBuilt = true;
         }
@@ -321,6 +333,8 @@ namespace DW
             uStatusBot.text = $"Lv.{MyLevel} ｜ 💰{gold}" + (MySkPts > 0 ? $"  ✨×{MySkPts}" : "");
 
             RefreshOverlays();
+            RefreshParty();
+            RefreshMinimap();
             RefreshPanel();
 
             var def = Data.Cls(myCls);
@@ -359,6 +373,117 @@ namespace DW
             float f = total > 0 ? Mathf.Clamp01(remain / total) : 0;
             us.cd.fillAmount = f;
             us.cdText.text = remain > 0.05f ? remain.ToString("0.0") : "";
+        }
+
+        // ====================== 队伍小血条（左侧） ======================
+        void BuildParty(Transform root)
+        {
+            // 状态面板高 188、距顶 24，故从 ~ -228 起向下排
+            const int maxRows = 5;
+            for (int i = 0; i < maxRows; i++)
+            {
+                var box = MkImg("Party" + i, root, new Color(0.06f, 0.07f, 0.14f, 0.7f),
+                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -228 - i * 56), new Vector2(300, 50));
+                var name = MkTxt("n", box.transform, "", 18, Color.white, TextAnchor.UpperLeft,
+                    new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(10, -4), new Vector2(-16, 24));
+                MkImg("bg", box.transform, new Color(0, 0, 0, 0.6f),
+                    new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(10, 8), new Vector2(-20, 12));
+                var fill = MkImg("fill", box.transform, new Color(0.2f, 0.85f, 0.3f, 1f),
+                    new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(11, 9), new Vector2(-22, 10));
+                fill.type = Image.Type.Filled; fill.fillMethod = Image.FillMethod.Horizontal; fill.fillOrigin = 0;
+                box.gameObject.SetActive(false);
+                uParty.Add(new UPartyRow { go = box.gameObject, name = name, hpFill = fill });
+            }
+        }
+
+        void RefreshParty()
+        {
+            int n = partyMembers != null ? partyMembers.Count : 0;
+            for (int i = 0; i < uParty.Count; i++)
+            {
+                bool on = i < n;
+                if (uParty[i].go.activeSelf != on) uParty[i].go.SetActive(on);
+                if (!on) continue;
+                var m = (JObject)partyMembers[i];
+                int hp = (int?)m["hp"] ?? 0, max = (int?)m["maxHp"] ?? 1;
+                uParty[i].name.text = $"👤 {m["name"]} Lv.{m["level"]}";
+                uParty[i].hpFill.fillAmount = Mathf.Clamp01((float)hp / Mathf.Max(1, max));
+            }
+        }
+
+        // ====================== 小地图（左下角） ======================
+        void BuildMinimap(Transform root)
+        {
+            // 边框 + 画布（左下角，避开底部技能栏与右下攻击键）
+            var frame = MkImg("MiniFrame", root, new Color(0.5f, 0.55f, 0.7f, 0.5f),
+                new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(20, 20), new Vector2(228, 228));
+            var go = new GameObject("Minimap", typeof(RectTransform));
+            go.transform.SetParent(frame.transform, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = new Vector2(3, 3); rt.offsetMax = new Vector2(-3, -3);
+            uMini = go.AddComponent<RawImage>();
+            uMini.raycastTarget = false;
+            uMiniTex = new Texture2D(MiniN, MiniN, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            uMini.texture = uMiniTex;
+            uMiniBuf = new Color32[MiniN * MiniN];
+            uMiniBg = new Color32[MiniN * MiniN];
+            var bg = new Color32(8, 11, 24, 168);
+            for (int i = 0; i < uMiniBg.Length; i++) uMiniBg[i] = bg;
+        }
+
+        void MiniDot(int cx, int cy, int rad, Color32 c)
+        {
+            int x0 = Mathf.Max(0, cx - rad), x1 = Mathf.Min(MiniN - 1, cx + rad);
+            int y0 = Mathf.Max(0, cy - rad), y1 = Mathf.Min(MiniN - 1, cy + rad);
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                    uMiniBuf[y * MiniN + x] = c;
+        }
+
+        // 世界坐标(x,z) → 小地图像素（z 向上为北）
+        void MiniPx(float x, float z, out int px, out int py)
+        {
+            float half = Data.MapHalf, span = half * 2f;
+            px = Mathf.Clamp(Mathf.RoundToInt((x + half) / span * (MiniN - 1)), 0, MiniN - 1);
+            py = Mathf.Clamp(Mathf.RoundToInt((z + half) / span * (MiniN - 1)), 0, MiniN - 1);
+        }
+
+        void RefreshMinimap()
+        {
+            if (uMiniTex == null) return;
+            System.Array.Copy(uMiniBg, uMiniBuf, uMiniBuf.Length);
+            int px, py;
+            // 障碍
+            foreach (var o in obstacles) { MiniPx(o.x, o.y, out px, out py); MiniDot(px, py, 0, new Color32(150, 163, 191, 128)); }
+            // 安全区中心
+            MiniPx(0, 0, out px, out py); MiniDot(px, py, 2, new Color32(102, 217, 128, 200));
+            // BOSS 巢穴方向
+            if (curRoom != "war" && curRoom != "melee")
+            {
+                float la = Data.LairAngle(myDim);
+                MiniPx(Mathf.Cos(la) * Data.LairR, Mathf.Sin(la) * Data.LairR, out px, out py);
+                MiniDot(px, py, 3, new Color32(255, 77, 69, 230));
+            }
+            // 怪物 / BOSS
+            foreach (var e in monsters.Values)
+            {
+                if (e.dead || e.go == null) continue;
+                var p = e.go.transform.position; MiniPx(p.x, p.z, out px, out py);
+                if (e.tier >= 5) MiniDot(px, py, 3, new Color32(255, 33, 69, 255));
+                else MiniDot(px, py, 1, new Color32(255, 120, 69, 255));
+            }
+            // 其他玩家
+            foreach (var e in players.Values)
+            {
+                if (e.go == null) continue;
+                var p = e.go.transform.position; MiniPx(p.x, p.z, out px, out py);
+                MiniDot(px, py, 2, e.dim == myDim ? new Color32(92, 240, 122, 255) : new Color32(255, 171, 51, 255));
+            }
+            // 自己（白）
+            MiniPx(pos.x, pos.z, out px, out py); MiniDot(px, py, 2, new Color32(255, 255, 255, 255));
+            uMiniTex.SetPixels32(uMiniBuf);
+            uMiniTex.Apply(false);
         }
 
         // ====================== 背包/商店/属性 面板 ======================

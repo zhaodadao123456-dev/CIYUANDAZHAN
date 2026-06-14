@@ -117,8 +117,8 @@ namespace DW
 
         void GuiHud()
         {
-            // 状态/技能/攻击/横幅/信息流/升级/提示/死亡/背包面板 均由 UGUI(DWUguiHud) 接管。
-            // IMGUI 仅保留：虚拟摇杆、队伍小血条、小地图、聊天输入。
+            // 状态/技能/攻击/横幅/信息流/升级/提示/死亡/背包面板/队伍血条/小地图 均由 UGUI(DWUguiHud) 接管。
+            // IMGUI 仅保留：虚拟摇杆、聊天输入。
 
             // 虚拟摇杆（触屏）
             if (moveTouchId >= 0)
@@ -129,73 +129,8 @@ namespace DW
                 GUI.Box(new Rect(cur.x - 20, cur.y - 20, 40, 40), "●");
             }
 
-            GuiParty();
-            GuiMinimap();
             if (chatOpen) GuiChat();
             else GUI.Label(new Rect(12, SH - 24, 300, 20), "<size=11><color=#888>按 T 聊天</color></size>", _label);
-        }
-
-        void GuiParty()
-        {
-            if (partyMembers == null || partyMembers.Count == 0) return;
-            float y = 130;
-            foreach (var mTok in partyMembers)
-            {
-                var m = (JObject)mTok;
-                var r = new Rect(12, y, 190, 40);
-                guiRects.Add(r);
-                GUI.Box(r, "", _box);
-                int hp = (int?)m["hp"] ?? 0, max = (int?)m["maxHp"] ?? 1;
-                GUI.Label(new Rect(r.x + 8, r.y + 2, 180, 18), $"<size=12>👤 {m["name"]} Lv.{m["level"]}</size>", _label);
-                DrawBar(new Rect(r.x + 8, r.y + 24, 174, 8), (float)hp / max, Color.green, "");
-                y += 44;
-            }
-        }
-
-        /* 小地图（右下角，地图扩大后导航） */
-        void GuiMinimap()
-        {
-            float S = 150f, pad = 6f;
-            var box = new Rect(SW - S - 12, SH - S - 104, S, S);
-            guiRects.Add(box);
-            GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.66f);
-            GUI.DrawTexture(box, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            float half = Data.MapHalf;
-            System.Func<float, float, Vector2> toPx = (x, z) => new Vector2(
-                box.x + pad + (x + half) / (half * 2) * (S - pad * 2),
-                box.y + pad + (z + half) / (half * 2) * (S - pad * 2));
-            System.Action<Vector2, float, Color> dot = (p, sz, c) => {
-                GUI.color = c; GUI.DrawTexture(new Rect(p.x - sz, p.y - sz, sz * 2, sz * 2), Texture2D.whiteTexture);
-            };
-            // 障碍
-            foreach (var o in obstacles) dot(toPx(o.x, o.y), 1f, new Color(0.6f, 0.64f, 0.75f, 0.5f));
-            // 安全区中心
-            dot(toPx(0, 0), 2.5f, new Color(0.4f, 0.85f, 0.5f, 0.8f));
-            // BOSS 巢穴方向
-            if (curRoom != "war" && curRoom != "melee")
-            {
-                float la = Data.LairAngle(myDim);
-                dot(toPx(Mathf.Cos(la) * Data.LairR, Mathf.Sin(la) * Data.LairR), 3f, new Color(1f, 0.3f, 0.27f, 0.9f));
-            }
-            // 怪物 / BOSS
-            foreach (var e in monsters.Values)
-            {
-                if (e.dead || e.go == null) continue;
-                var p = e.go.transform.position;
-                if (e.tier >= 5) dot(toPx(p.x, p.z), 4f, new Color(1f, 0.13f, 0.27f));
-                else dot(toPx(p.x, p.z), 1.2f, new Color(1f, 0.47f, 0.27f));
-            }
-            // 其他玩家
-            foreach (var e in players.Values)
-            {
-                if (e.go == null) continue;
-                var p = e.go.transform.position;
-                dot(toPx(p.x, p.z), 2.2f, e.dim == myDim ? new Color(0.36f, 0.94f, 0.48f) : new Color(1f, 0.67f, 0.2f));
-            }
-            // 自己
-            dot(toPx(pos.x, pos.z), 2.6f, Color.white);
-            GUI.color = Color.white;
         }
 
         void GuiChat()
@@ -225,17 +160,6 @@ namespace DW
             GUI.SetNextControlName("dw_chat");
             chatText = GUI.TextField(r, chatText, 60);
             GUI.FocusControl("dw_chat");
-        }
-
-        void DrawBar(Rect r, float pct, Color c, string txt)
-        {
-            GUI.color = new Color(0, 0, 0, 0.6f);
-            GUI.DrawTexture(r, Texture2D.whiteTexture);
-            GUI.color = c;
-            GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, (r.width - 2) * Mathf.Clamp01(pct), r.height - 2), Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            if (txt.Length > 0)
-                GUI.Label(new Rect(r.x, r.y - 3, r.width, r.height + 6), $"<size=12><b> {txt}</b></size>", _label);
         }
 
         /* 技能效果类型 → 颜色（图标按效果上色，不同职业技能类型不同→图标也不同） */
