@@ -128,6 +128,11 @@ namespace DW
                 cgo.AddComponent<AudioListener>();
             }
             cam.gameObject.tag = "MainCamera";
+
+            // 清运行时生成的图标/特效/贴图缓存：编辑器关闭 Domain Reload 时防止引用到上次已销毁的对象
+            _kindIcons.Clear(); _slotIcons.Clear(); _pngIcons.Clear(); _fxCache.Clear();
+            _groundTex = _ringTex = _dotTex = _whiteTex = null;
+            _sparkMat = _trailMat = null;
         }
 
         /* ================= 连接与消息 ================= */
@@ -473,6 +478,10 @@ namespace DW
             float gscale = (Data.MapHalf * 2f + 40f) / 10f;   // Plane 原始 10×10，铺满整张地图
             ground.transform.localScale = new Vector3(gscale, 1, gscale);
             Matte(ground, theme.ground);   // 哑光地面，去掉中央高光白斑
+            var gmat = ground.GetComponent<Renderer>().material;   // 叠一层程序化网格纹理（按次元色着色），不再是纯色大平面
+            gmat.mainTexture = GroundTex();
+            float tiles = (10f * gscale) / 5f;                     // 每 ~5 米一格
+            gmat.mainTextureScale = new Vector2(tiles, tiles);
             worldObjs.Add(ground);
 
             var sun = new GameObject("Sun").AddComponent<Light>();
@@ -1290,6 +1299,26 @@ namespace DW
         // ---- 程序化贴图/材质（生成一次缓存）----
         static Texture2D _ringTex, _dotTex, _whiteTex;
         static Material _sparkMat, _trailMat;
+        // 程序化地面纹理：灰度网格 + 细噪点（白底，运行时被地面材质的次元色相乘着色），让大平面不再死板
+        static Texture2D _groundTex;
+        static Texture2D GroundTex()
+        {
+            if (_groundTex != null) return _groundTex;
+            const int N = 128;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear, anisoLevel = 2 };
+            var rng = new System.Random(7);
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float v = 1f + (float)(rng.NextDouble() * 0.10 - 0.05);   // 细微明暗噪点
+                    if (x < 1 || y < 1) v *= 0.70f;                            // 格线（每块边缘压暗）
+                    byte b = (byte)Mathf.Clamp(v * 255f, 0, 255);
+                    px[y * N + x] = new Color32(b, b, b, 255);
+                }
+            t.SetPixels32(px); t.Apply(true); _groundTex = t; return t;
+        }
+
         static Texture2D RingTex()
         {
             if (_ringTex != null) return _ringTex;
