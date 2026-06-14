@@ -754,7 +754,7 @@ namespace DW
             var e = new Ent { name = name, tier = tier, level = level, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
             e.go = MakeCreature(tier, id);
             e.go.transform.position = e.target;
-            e.plateH = 2.1f + tier * 0.55f;
+            e.plateH = tier >= 5 ? (1.6f + tier * 0.55f) * 3f + 1.2f : 2.1f + tier * 0.55f;   // BOSS 放大3倍后名牌抬高到头顶
             monsters[id] = e;
             e.dead = mstate == "dead";
             e.go.SetActive(!e.dead);
@@ -780,6 +780,7 @@ namespace DW
                 var inst = Instantiate(prefab, root.transform);
                 var b = CalcBounds(inst);
                 float target = 1.6f + tier * 0.55f;   // 放大怪物（BOSS tier5 更大）
+                if (tier >= 5) target *= 3f;           // 世界BOSS体型再放大3倍
                 inst.transform.localScale = Vector3.one * (target / Mathf.Max(0.1f, b.size.y));
                 b = CalcBounds(inst);
                 inst.transform.localPosition = new Vector3(0, -b.min.y, 0);
@@ -790,6 +791,7 @@ namespace DW
             // 占位：身子+头+獠牙状，统一敌对橙红色，避免和地面同色糊成团
             var go = new GameObject("Monster");
             float s = 0.55f + tier * 0.28f;
+            if (tier >= 5) s *= 3f;   // 世界BOSS体型放大3倍（占位模型同样）
             var enemy = Color.Lerp(new Color(0.55f, 0.12f, 0.10f), new Color(0.95f, 0.45f, 0.10f), (tier - 1) / 3f);
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.transform.SetParent(go.transform, false);
