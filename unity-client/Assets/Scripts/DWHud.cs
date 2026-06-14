@@ -49,70 +49,8 @@ namespace DW
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(uiScale, uiScale, 1f));
             EnsureStyles();
             guiRects.Clear();
-            switch (state)
-            {
-                case State.Menu: GuiMenu(); break;
-                case State.Connecting:
-                {
-                    GUI.Label(new Rect(0, SH / 2f - 40, SW, 40), "🌌 正在连接次元…", _title);
-                    GUI.Label(new Rect(0, SH / 2f + 2, SW, 24),
-                        $"<size=13>{serverIp}</size>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter });
-                    var cancelR = new Rect(SW / 2f - 70, SH / 2f + 36, 140, 34);
-                    guiRects.Add(cancelR);
-                    if (GUI.Button(cancelR, "✕ 取消", _btn)) { net?.Close(); state = State.Menu; }
-                    break;
-                }
-                case State.Playing: GuiHud(); break;
-            }
-            // toast 与升级横幅由 UGUI 接管（仅登录/连接态仍用 IMGUI toast）
-            if (state != State.Playing && Time.time < toastUntil)
-                GUI.Label(new Rect(0, SH - 150, SW, 30), $"<b>{toastMsg}</b>", new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = 17 });
-        }
-
-        void GuiMenu()
-        {
-            float w = 460, h = 480;
-            var r = new Rect((SW - w) / 2, (SH - h) / 2, w, h);
-            guiRects.Add(r);
-            GUI.Box(r, "", _box);
-            GUILayout.BeginArea(new Rect(r.x + 24, r.y + 16, w - 48, h - 32));
-            GUILayout.Label("🌌 次元大战", _title);
-            GUILayout.Space(8);
-            GUILayout.Label("服务器地址（IP 或 IP:端口）", _label);
-            serverIp = GUILayout.TextField(serverIp, GUILayout.Height(30));
-            GUILayout.Label("降临者之名", _label);
-            playerName = GUILayout.TextField(playerName, 12, GUILayout.Height(30));
-
-            GUILayout.Label("选择次元", _label);
-            GUILayout.BeginHorizontal();
-            for (int i = 0; i < Data.Dims.Length; i++)
-            {
-                GUI.backgroundColor = i == dimIdx ? Data.Dims[i].accent : Color.white;
-                if (GUILayout.Button(Data.Dims[i].name.Replace("世界", ""), _btn, GUILayout.Height(34))) dimIdx = i;
-            }
-            GUI.backgroundColor = Color.white;
-            GUILayout.EndHorizontal();
-            if (Data.Dims[dimIdx].id == "hunter")
-                GUILayout.Label("<color=#ffd166>次元天赋：可捕捉野怪当宝宝（F键）</color>", _label);
-
-            GUILayout.Label("选择职业", _label);
-            GUILayout.BeginHorizontal();
-            for (int i = 0; i < Data.Classes.Length; i++)
-            {
-                GUI.backgroundColor = i == clsIdx ? Data.Hex("#ffd166") : Color.white;
-                var title = Data.ClassTitle(Data.Dims[dimIdx].id, Data.Classes[i].id);
-                if (GUILayout.Button($"{title}\n({Data.Classes[i].role})", _btn, GUILayout.Height(46))) clsIdx = i;
-            }
-            GUI.backgroundColor = Color.white;
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(14);
-            GUI.enabled = playerName.Trim().Length > 0;
-            if (GUILayout.Button("⚔ 降临次元", new GUIStyle(_btn) { fontSize = 20 }, GUILayout.Height(46))) Join();
-            GUI.enabled = true;
-            GUILayout.Space(6);
-            GUILayout.Label("<size=12>WASD移动 · 右键转视角 · 左键普攻 · QER技能 · 空格翻滚 · F捕捉 · B面板</size>", _label);
-            GUILayout.EndArea();
+            // 登录/连接界面已迁到 UGUI(DWUguiHud)；IMGUI 仅画游戏内摇杆/聊天
+            if (state == State.Playing) GuiHud();
         }
 
         void GuiHud()

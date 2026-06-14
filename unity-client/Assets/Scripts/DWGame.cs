@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace DW
 {
@@ -57,12 +58,18 @@ namespace DW
         class Ent
         {
             public GameObject go;
-            public TextMesh label;
             public Vector3 target;
             public float tRy;
             public int hp, maxHp, level, tier;
             public string name, dim, cls, anim = "idle";
             public bool dead, isMonster, isPet;
+            // UGUI 头顶名牌（屏幕空间，逐帧由世界坐标投影定位）
+            public GameObject plate;
+            public RectTransform plateRt;
+            public Image plateFill;
+            public Text plateName;
+            public float plateH;
+            public string plateSig;
         }
         readonly Dictionary<string, Ent> players = new Dictionary<string, Ent>();
         readonly Dictionary<string, Ent> monsters = new Dictionary<string, Ent>();
@@ -131,9 +138,9 @@ namespace DW
             CancelInvoke();
             try { net?.Close(); } catch (Exception) { }
             net = null; joinSent = false;
-            foreach (var e in players.Values) if (e.go) Destroy(e.go);
-            foreach (var e in monsters.Values) if (e.go) Destroy(e.go);
-            foreach (var e in pets.Values) if (e.go) Destroy(e.go);
+            foreach (var e in players.Values) { DestroyPlate(e); if (e.go) Destroy(e.go); }
+            foreach (var e in monsters.Values) { DestroyPlate(e); if (e.go) Destroy(e.go); }
+            foreach (var e in pets.Values) { DestroyPlate(e); if (e.go) Destroy(e.go); }
             foreach (var p in projs.Values) if (p.go) Destroy(p.go);
             players.Clear(); monsters.Clear(); pets.Clear(); projs.Clear();
             foreach (var o in worldObjs) if (o) Destroy(o);
@@ -403,9 +410,9 @@ namespace DW
         void EnterRoom(string roomId, JObject m)
         {
             curRoom = roomId;
-            foreach (var e in players.Values) Destroy(e.go);
-            foreach (var e in monsters.Values) Destroy(e.go);
-            foreach (var e in pets.Values) Destroy(e.go);
+            foreach (var e in players.Values) { DestroyPlate(e); Destroy(e.go); }
+            foreach (var e in monsters.Values) { DestroyPlate(e); Destroy(e.go); }
+            foreach (var e in pets.Values) { DestroyPlate(e); Destroy(e.go); }
             foreach (var p in projs.Values) Destroy(p.go);
             players.Clear(); monsters.Clear(); pets.Clear(); projs.Clear();
             obstacles.Clear();
@@ -712,40 +719,6 @@ namespace DW
             return root;
         }
 
-        TextMesh MakeLabel(GameObject parent, float height)
-        {
-            var go = new GameObject("Label");
-            go.transform.SetParent(parent.transform, false);
-            go.transform.localPosition = new Vector3(0, height, 0);
-            // 黑色描边（背后4个偏移副本，子物体），文字在 UpdateLabel 同步
-            foreach (var off in new[] { new Vector2(1, 0), new Vector2(-1, 0), new Vector2(0, 1), new Vector2(0, -1) })
-            {
-                var sgo = new GameObject("Outline");
-                sgo.transform.SetParent(go.transform, false);
-                sgo.transform.localPosition = new Vector3(off.x * 0.012f, off.y * 0.012f, 0.002f);
-                var stm = sgo.AddComponent<TextMesh>();
-                ConfigLabel(stm, sgo);
-                stm.color = Color.black;
-            }
-            var tm = go.AddComponent<TextMesh>();
-            ConfigLabel(tm, go);
-            return tm;
-        }
-
-        void ConfigLabel(TextMesh tm, GameObject go)
-        {
-            tm.anchor = TextAnchor.MiddleCenter;
-            tm.alignment = TextAlignment.Center;
-            tm.characterSize = 0.05f;   // 头顶名字缩小
-            tm.fontSize = 60;
-            tm.fontStyle = FontStyle.Bold;
-            if (cjkFont != null)
-            {
-                tm.font = cjkFont;
-                go.GetComponent<MeshRenderer>().material = cjkFont.material;
-            }
-        }
-
         void AddPlayer(JObject p)
         {
             var id = (string)p["id"];
@@ -761,9 +734,8 @@ namespace DW
             };
             e.go = MakeHero(e.cls, dim);
             e.go.transform.position = e.target;
-            e.label = MakeLabel(e.go, 3.0f);
+            e.plateH = 3.0f;
             players[id] = e;
-            UpdateLabel(e, dim == myDim ? "#7CFC9A" : "#ff7788");
         }
 
         void AddMonster(string id, float x, float z, string mstate, int hp, int maxHp, int tier, string name, int level = 1)
@@ -771,11 +743,10 @@ namespace DW
             var e = new Ent { name = name, tier = tier, level = level, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
             e.go = MakeCreature(tier, id);
             e.go.transform.position = e.target;
-            e.label = MakeLabel(e.go, 2.1f + tier * 0.55f);
+            e.plateH = 2.1f + tier * 0.55f;
             monsters[id] = e;
             e.dead = mstate == "dead";
             e.go.SetActive(!e.dead);
-            UpdateLabel(e, "#ffaa33");
         }
 
         // 怪物模型池（向导生成于 Resources/DWMobs）
@@ -845,30 +816,14 @@ namespace DW
             body.transform.localPosition = new Vector3(0, s * 0.5f, 0);
             Tint(body, Data.Hex("#7CFC9A"));
             e.go.transform.position = e.target;
-            e.label = MakeLabel(e.go, s + 0.8f);
+            e.plateH = s + 0.8f;
             pets[ownerId] = e;
-            UpdateLabel(e, "#7CFC9A");
-        }
-
-        void UpdateLabel(Ent e, string colorHex)
-        {
-            if (e.label == null) return;
-            Color c;
-            ColorUtility.TryParseHtmlString(colorHex, out c);
-            e.label.color = c;
-            string title = e.isPet ? e.name : $"{e.name} Lv.{e.level}";
-            e.label.text = $"{title}\n{e.hp}/{e.maxHp}";
-            foreach (Transform ch in e.label.transform)   // 同步描边副本文字
-            {
-                var ot = ch.GetComponent<TextMesh>();
-                if (ot != null) ot.text = e.label.text;
-            }
         }
 
         void RemoveEnt(Dictionary<string, Ent> dict, string id)
         {
             Ent e;
-            if (dict.TryGetValue(id, out e)) { Destroy(e.go); dict.Remove(id); }
+            if (dict.TryGetValue(id, out e)) { DestroyPlate(e); Destroy(e.go); dict.Remove(id); }
         }
 
         void OnSnap(JObject m)
@@ -886,7 +841,7 @@ namespace DW
                 e.anim = (string)a[4];
                 int hp = (int)a[5], max = (int)a[6], lvl = (int)a[7];
                 e.dead = (int)a[8] == 1;
-                if (e.hp != hp || e.level != lvl) { e.hp = hp; e.maxHp = max; e.level = lvl; UpdateLabel(e, e.dim == myDim ? "#7CFC9A" : "#ff7788"); }
+                if (e.hp != hp || e.level != lvl) { e.hp = hp; e.maxHp = max; e.level = lvl; }
             }
             foreach (var id in new List<string>(players.Keys)) if (!seen.Contains(id)) RemoveEnt(players, id);
 
@@ -907,7 +862,7 @@ namespace DW
                 bool deadNow = (string)a[4] == "dead";
                 if (deadNow != e.dead) { e.dead = deadNow; e.go.SetActive(!deadNow); }
                 int hp = (int)a[5];
-                if (e.hp != hp) { e.hp = hp; UpdateLabel(e, "#ffaa33"); }
+                if (e.hp != hp) e.hp = hp;
             }
             foreach (var id in new List<string>(monsters.Keys)) if (!seenM.Contains(id)) RemoveEnt(monsters, id);
 
@@ -925,7 +880,7 @@ namespace DW
                     }
                     e.target = new Vector3((float)a[2], 0, (float)a[3]);
                     int hp = (int)a[6];
-                    if (e.hp != hp) { e.hp = hp; UpdateLabel(e, "#7CFC9A"); }
+                    if (e.hp != hp) e.hp = hp;
                 }
             foreach (var id in new List<string>(pets.Keys)) if (!seenPet.Contains(id)) RemoveEnt(pets, id);
         }
@@ -947,7 +902,7 @@ namespace DW
                 Ent e;
                 if (monsters.TryGetValue(id, out e))
                 {
-                    e.hp = hp; UpdateLabel(e, "#ffaa33");
+                    e.hp = hp;
                     bool crit = (int?)m["crit"] == 1;
                     FloatText((crit ? amt + " 暴击!" : amt.ToString()), e.target, (string)m["by"] == myId ? Color.yellow : Color.white);
                     if ((string)m["by"] == myId) DWAudio.SfxAt("hit", e.target, pos, crit ? 0.85f : 0.6f);
@@ -956,7 +911,7 @@ namespace DW
             else if (kind == "pet")
             {
                 Ent e;
-                if (pets.TryGetValue(id, out e)) { e.hp = hp; UpdateLabel(e, "#7CFC9A"); }
+                if (pets.TryGetValue(id, out e)) e.hp = hp;
             }
             else
             {
@@ -966,7 +921,7 @@ namespace DW
                     Ent e;
                     if (players.TryGetValue(id, out e))
                     {
-                        e.hp = hp; UpdateLabel(e, e.dim == myDim ? "#7CFC9A" : "#ff7788");
+                        e.hp = hp;
                         FloatText(amt.ToString(), e.target, Color.white);
                     }
                 }
@@ -982,20 +937,6 @@ namespace DW
             var l = go.AddComponent<Light>();
             l.color = c; l.range = 6; l.intensity = 2.2f;
             projs[id] = new Proj { go = go, dir = new Vector3(dx, 0, dz), speed = speed, dieAt = Time.time + 3f };
-        }
-
-        void FloatText(string txt, Vector3 at, Color c)
-        {
-            var go = new GameObject("dmg");
-            go.transform.position = at + new Vector3(UnityEngine.Random.Range(-0.4f, 0.4f), 2.4f, 0);
-            var tm = go.AddComponent<TextMesh>();
-            tm.text = txt;
-            tm.color = c;
-            tm.anchor = TextAnchor.MiddleCenter;
-            tm.characterSize = 0.12f;
-            tm.fontSize = 46;
-            if (cjkFont != null) { tm.font = cjkFont; go.GetComponent<MeshRenderer>().material = cjkFont.material; }
-            go.AddComponent<FloatUp>();
         }
 
         /* ================= 操控/移动/相机 ================= */
@@ -1298,17 +1239,11 @@ namespace DW
 
         void LateUpdate()
         {
-            if (cam == null) return;
-            // 名牌面向相机
-            foreach (var e in players.Values) Billboard(e);
-            foreach (var e in monsters.Values) Billboard(e);
-            foreach (var e in pets.Values) Billboard(e);
-        }
-
-        void Billboard(Ent e)
-        {
-            if (e.label != null && e.go.activeSelf)
-                e.label.transform.rotation = cam.transform.rotation;
+            if (cam == null || state != State.Playing) return;
+            // UGUI 名牌：逐帧把世界坐标投影到屏幕、更新血条（在相机移动后）
+            UpdatePlateGroup(players, false);
+            UpdatePlateGroup(monsters, true);
+            UpdatePlateGroup(pets, false);
         }
 
         /* ================= 提示信息 ================= */
@@ -1382,15 +1317,26 @@ namespace DW
         }
     }
 
-    public class FloatUp : MonoBehaviour
+    // 屏幕空间伤害/治疗飘字：向上飘动并淡出
+    public class UiFloat : MonoBehaviour
     {
         float born;
-        void Start() { born = Time.time; }
+        RectTransform rt;
+        Text txt;
+        Color c0;
+        void Start()
+        {
+            born = Time.time;
+            rt = (RectTransform)transform;
+            txt = GetComponent<Text>();
+            if (txt != null) c0 = txt.color;
+        }
         void Update()
         {
-            transform.position += Vector3.up * 1.6f * Time.deltaTime;
-            if (Camera.main != null) transform.rotation = Camera.main.transform.rotation;
-            if (Time.time - born > 1.1f) Destroy(gameObject);
+            float a = Time.time - born;
+            if (rt != null) rt.localPosition += Vector3.up * 70f * Time.deltaTime;
+            if (txt != null) { var c = c0; c.a = Mathf.Clamp01(1.2f - a); txt.color = c; }
+            if (a > 1.1f) Destroy(gameObject);
         }
     }
 }

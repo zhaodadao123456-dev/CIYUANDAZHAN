@@ -37,6 +37,19 @@ namespace DW
         Color32[] uMiniBuf, uMiniBg;
         const int MiniN = 128;
 
+        // 头顶名牌 / 飘字所在的世界画布（屏幕空间，在 3D 之上、HUD 之下）
+        Canvas plateCanvas;
+        RectTransform plateRoot;
+
+        // 登录/连接界面（UGUI，替代 IMGUI GuiMenu）
+        Canvas menuCanvas;
+        GameObject menuForm, menuConnecting;
+        InputField uIp, uName;
+        Button[] uDimBtns, uClsBtns;
+        Text[] uClsTxt;
+        Button uJoinBtn;
+        Text uHunterHint, uConnTxt, uMenuToast;
+
         class USkill
         {
             public string key;          // basic/q/e/r/dodge/dim
@@ -200,6 +213,8 @@ namespace DW
             BuildParty(root);
             BuildMinimap(root);
             BuildPanelUI(root);
+            BuildWorldCanvas();
+            BuildMenu();
             hudBuilt = true;
         }
 
@@ -318,6 +333,8 @@ namespace DW
             if (!hudBuilt) return;
             bool playing = state == State.Playing;
             if (hudCanvas.enabled != playing) hudCanvas.enabled = playing;
+            RefreshMenu(playing);   // 登录/连接界面（非游戏态显示）
+            if (plateCanvas != null && plateCanvas.enabled != playing) plateCanvas.enabled = playing;
             if (!playing) return;
 
             int hp = you != null ? (int?)you["hp"] ?? 0 : 0;
@@ -671,6 +688,216 @@ namespace DW
             MiniPx(pos.x, pos.z, out px, out py); MiniDot(px, py, 2, new Color32(255, 255, 255, 255));
             uMiniTex.SetPixels32(uMiniBuf);
             uMiniTex.Apply(false);
+        }
+
+        // ====================== 头顶名牌（怪物/玩家/宠物血条）+ 伤害飘字 ======================
+        void BuildWorldCanvas()
+        {
+            EnsureEventSystem();
+            var go = new GameObject("DW_World_Canvas");
+            DontDestroyOnLoad(go);
+            plateCanvas = go.AddComponent<Canvas>();
+            plateCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            plateCanvas.sortingOrder = 5;   // 世界之上、HUD(10) 之下
+            var scaler = go.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+            plateRoot = (RectTransform)go.transform;
+        }
+
+        void EnsurePlate(Ent e, bool monster)
+        {
+            bool boss = monster && e.tier >= 5;
+            float w = boss ? 300 : 168;
+            var box = MkRect("plate", plateRoot, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(w, 42));
+            e.plate = box.gameObject; e.plateRt = box;
+            e.plateName = MkTxt("n", box, "", boss ? 24 : 17, Color.white, TextAnchor.LowerCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, 0), new Vector2(0, 24));
+            MkImg("bg", box, new Color(0, 0, 0, 0.66f),
+                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 2), new Vector2(-14, boss ? 12 : 9));
+            e.plateFill = MkImg("fill", box, Color.green,
+                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 3), new Vector2(-16, boss ? 10 : 7));
+            e.plateFill.type = Image.Type.Filled; e.plateFill.fillMethod = Image.FillMethod.Horizontal; e.plateFill.fillOrigin = 0;
+        }
+
+        void UpdatePlateGroup(Dictionary<string, Ent> dict, bool monster)
+        {
+            if (plateRoot == null) return;
+            foreach (var e in dict.Values)
+            {
+                if (e.go == null || e.dead || !e.go.activeSelf) { if (e.plate != null) e.plate.SetActive(false); continue; }
+                Vector3 sp = cam.WorldToScreenPoint(e.go.transform.position + Vector3.up * (e.plateH > 0 ? e.plateH : 2.2f));
+                if (sp.z <= 0.2f) { if (e.plate != null) e.plate.SetActive(false); continue; }
+                if (e.plate == null) EnsurePlate(e, monster);
+                if (!e.plate.activeSelf) e.plate.SetActive(true);
+                Vector2 lp;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(plateRoot, sp, null, out lp);
+                e.plateRt.localPosition = lp;
+                e.plateFill.fillAmount = Mathf.Clamp01((float)e.hp / Mathf.Max(1, e.maxHp));
+                string sig = e.name + "|" + e.level;
+                if (sig != e.plateSig)
+                {
+                    e.plateSig = sig;
+                    bool friendly = !monster && (e.isPet || e.dim == myDim);
+                    bool boss = monster && e.tier >= 5;
+                    e.plateName.text = e.isPet ? e.name : $"{e.name} Lv.{e.level}";
+                    e.plateName.color = boss ? new Color(1f, 0.84f, 0.3f) : monster ? new Color(1f, 0.72f, 0.45f)
+                        : friendly ? new Color(0.55f, 0.98f, 0.62f) : new Color(1f, 0.5f, 0.55f);
+                    e.plateFill.color = friendly ? new Color(0.25f, 0.85f, 0.32f) : boss ? new Color(1f, 0.5f, 0.16f) : new Color(0.92f, 0.34f, 0.34f);
+                }
+            }
+        }
+
+        void DestroyPlate(Ent e)
+        {
+            if (e != null && e.plate != null)
+            {
+                Destroy(e.plate);
+                e.plate = null; e.plateRt = null; e.plateFill = null; e.plateName = null; e.plateSig = null;
+            }
+        }
+
+        // 屏幕空间伤害/治疗飘字（由世界坐标投影），向上飘+淡出由 UiFloat 驱动
+        void FloatText(string txt, Vector3 at, Color c)
+        {
+            if (plateRoot == null || cam == null) return;
+            Vector3 sp = cam.WorldToScreenPoint(at + new Vector3(UnityEngine.Random.Range(-0.5f, 0.5f), 2.4f, 0));
+            if (sp.z <= 0.2f) return;
+            var t = MkTxt("dmg", plateRoot, txt, 34, c, TextAnchor.MiddleCenter,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(260, 46));
+            t.fontStyle = FontStyle.Bold;
+            Vector2 lp;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(plateRoot, sp, null, out lp);
+            t.rectTransform.localPosition = lp;
+            t.gameObject.AddComponent<UiFloat>();
+        }
+
+        // ====================== 登录 / 连接界面（UGUI，替代 IMGUI GuiMenu） ======================
+        void BuildMenu()
+        {
+            EnsureEventSystem();
+            var go = new GameObject("DW_Menu_Canvas");
+            DontDestroyOnLoad(go);
+            menuCanvas = go.AddComponent<Canvas>();
+            menuCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            menuCanvas.sortingOrder = 30;   // 盖住世界/HUD
+            var scaler = go.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+            go.AddComponent<GraphicRaycaster>();
+            var root = go.transform;
+            MkImg("dim", root, new Color(0.02f, 0.03f, 0.07f, 0.97f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uMenuToast = MkTxt("toast", root, "", 22, new Color(1f, 0.85f, 0.5f), TextAnchor.LowerCenter,
+                new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 60), new Vector2(960, 40));
+
+            // ---- 表单 ----
+            var panel = MkImg("Form", root, new Color(0.07f, 0.08f, 0.16f, 0.99f),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(760, 880));
+            menuForm = panel.gameObject;
+            var pt = panel.transform;
+            float pw = 760;
+            Text Label(string s, float yy) => MkTxt("l", pt, s, 22, new Color(0.78f, 0.8f, 0.92f), TextAnchor.UpperLeft,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, yy), new Vector2(-56, 30));
+
+            MkTxt("title", pt, "🌌 次元大战", 50, new Color(1f, 0.9f, 0.6f), TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -26), new Vector2(0, 64));
+            float y = -104;
+            Label("服务器地址（IP 或 IP:端口）", y); y -= 34;
+            uIp = MkInput(pt, serverIp, 64, y, v => serverIp = v); y -= 66;
+            Label("降临者之名", y); y -= 34;
+            uName = MkInput(pt, playerName, 12, y, v => playerName = v); y -= 66;
+
+            Label("选择次元", y); y -= 34;
+            uDimBtns = new Button[Data.Dims.Length];
+            float dw = (pw - 48 - (Data.Dims.Length - 1) * 8) / Data.Dims.Length;
+            for (int i = 0; i < Data.Dims.Length; i++)
+            {
+                int idx = i;
+                float xc = -pw / 2 + 24 + dw / 2 + i * (dw + 8);
+                uDimBtns[i] = MkBtn("dim" + i, pt, new Color(0.16f, 0.17f, 0.28f, 1f),
+                    new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(dw, 54),
+                    () => dimIdx = idx);
+                MkTxt("t", uDimBtns[i].transform, Data.Dims[i].name.Replace("世界", ""), 19, Color.white, TextAnchor.MiddleCenter,
+                    Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+            y -= 62;
+            uHunterHint = MkTxt("hh", pt, "", 18, new Color(1f, 0.82f, 0.4f), TextAnchor.UpperLeft,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-56, 26)); y -= 30;
+
+            Label("选择职业", y); y -= 34;
+            uClsBtns = new Button[Data.Classes.Length];
+            uClsTxt = new Text[Data.Classes.Length];
+            float cw = (pw - 48 - (Data.Classes.Length - 1) * 8) / Data.Classes.Length;
+            for (int i = 0; i < Data.Classes.Length; i++)
+            {
+                int idx = i;
+                float xc = -pw / 2 + 24 + cw / 2 + i * (cw + 8);
+                uClsBtns[i] = MkBtn("cls" + i, pt, new Color(0.16f, 0.17f, 0.28f, 1f),
+                    new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(cw, 74),
+                    () => clsIdx = idx);
+                uClsTxt[i] = MkTxt("t", uClsBtns[i].transform, "", 17, Color.white, TextAnchor.MiddleCenter,
+                    Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+            y -= 92;
+            uJoinBtn = MkBtn("join", pt, new Color(0.85f, 0.35f, 0.2f, 1f),
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-56, 64), () => Join());
+            MkTxt("t", uJoinBtn.transform, "⚔ 降临次元", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            y -= 76;
+            MkTxt("hint", pt, "WASD移动 · 右键转视角 · 左键普攻 · QER技能 · 空格翻滚 · F捕捉 · B面板", 15, new Color(0.6f, 0.62f, 0.74f), TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-40, 24));
+
+            // ---- 连接中 ----
+            menuConnecting = MkRect("Conn", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(700, 240)).gameObject;
+            uConnTxt = MkTxt("c", menuConnecting.transform, "🌌 正在连接次元…", 34, Color.white, TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -20), new Vector2(0, 110));
+            var cancel = MkBtn("cancel", menuConnecting.transform, new Color(0.5f, 0.2f, 0.22f, 1f),
+                new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 24), new Vector2(220, 56),
+                () => { try { net?.Close(); } catch { } state = State.Menu; });
+            MkTxt("t", cancel.transform, "✕ 取消", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            menuConnecting.SetActive(false);
+        }
+
+        InputField MkInput(Transform parent, string val, int limit, float yy, UnityEngine.Events.UnityAction<string> onChange)
+        {
+            var bg = MkImg("inp", parent, new Color(0.12f, 0.13f, 0.22f, 1f),
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, yy), new Vector2(-56, 54));
+            bg.raycastTarget = true;
+            var inp = bg.gameObject.AddComponent<InputField>();
+            var txt = MkTxt("t", bg.transform, "", 24, Color.white, TextAnchor.MiddleLeft,
+                new Vector2(0, 0), new Vector2(1, 1), new Vector2(0.5f, 0.5f), new Vector2(14, 0), new Vector2(-28, -8));
+            txt.supportRichText = false;
+            inp.textComponent = txt;
+            inp.targetGraphic = bg;
+            inp.text = val ?? "";
+            inp.characterLimit = limit;
+            inp.onValueChanged.AddListener(onChange);
+            return inp;
+        }
+
+        void RefreshMenu(bool playing)
+        {
+            if (menuCanvas == null) return;
+            bool show = !playing;
+            if (menuCanvas.enabled != show) menuCanvas.enabled = show;
+            if (!show) return;
+            uMenuToast.text = Time.time < toastUntil ? toastMsg : "";
+            bool connecting = state == State.Connecting;
+            if (menuForm.activeSelf == connecting) menuForm.SetActive(!connecting);
+            if (menuConnecting.activeSelf != connecting) menuConnecting.SetActive(connecting);
+            if (connecting) { uConnTxt.text = $"🌌 正在连接次元…\n<size=20>{serverIp}</size>"; return; }
+            for (int i = 0; i < uDimBtns.Length; i++)
+                ((Image)uDimBtns[i].targetGraphic).color = i == dimIdx ? Data.Dims[i].accent : new Color(0.16f, 0.17f, 0.28f, 1f);
+            for (int i = 0; i < uClsBtns.Length; i++)
+            {
+                ((Image)uClsBtns[i].targetGraphic).color = i == clsIdx ? new Color(0.85f, 0.7f, 0.2f, 1f) : new Color(0.16f, 0.17f, 0.28f, 1f);
+                uClsTxt[i].text = $"{Data.ClassTitle(Data.Dims[dimIdx].id, Data.Classes[i].id)}\n<size=14>({Data.Classes[i].role})</size>";
+            }
+            uHunterHint.text = Data.Dims[dimIdx].id == "hunter" ? "次元天赋：可捕捉野怪当宝宝（F键）" : "";
+            uJoinBtn.interactable = (playerName ?? "").Trim().Length > 0;
         }
 
         // ====================== 背包/商店/属性 面板 ======================
