@@ -552,6 +552,7 @@ namespace DW
                 o.transform.position = at;
                 o.transform.rotation = Quaternion.Euler(0, (float)(rng.NextDouble() * 360), 0);
                 o.transform.localScale = Vector3.one * Mathf.Max(1.4f, scale);
+                FixPinkMaterials(o, Color.Lerp(theme.ground * 2f, theme.accent, 0.25f));   // 换掉变粉(不兼容shader)的材质
                 worldObjs.Add(o);
             }
             else
@@ -589,6 +590,28 @@ namespace DW
         }
 
         /* 哑光：去掉高光/金属感，避免地面中央出现刺眼白斑 */
+        // 把用了「不兼容/缺失 shader」(会渲染成洋红) 的材质换成普通 Standard 材质，避免场景道具变粉
+        static Material _pinkFixMat;
+        static void FixPinkMaterials(GameObject go, Color tint)
+        {
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = r.sharedMaterials;
+                bool bad = false;
+                foreach (var m in mats)
+                {
+                    var sh = m != null ? m.shader : null;
+                    if (sh == null || !sh.isSupported || sh.name == "Hidden/InternalErrorShader") { bad = true; break; }
+                }
+                if (!bad) continue;
+                if (_pinkFixMat == null) { _pinkFixMat = new Material(Shader.Find("Standard")); }
+                var fix = new Material(_pinkFixMat) { color = tint };
+                var arr = new Material[mats.Length];
+                for (int i = 0; i < arr.Length; i++) arr[i] = fix;
+                r.sharedMaterials = arr;
+            }
+        }
+
         static void Matte(GameObject go, Color c)
         {
             var r = go.GetComponent<Renderer>();
