@@ -58,7 +58,7 @@
   - `DWData.cs` `DWNet.cs` `DWAudio.cs`(CC0 音频，M 键静音) `DWGame`内动画驱动 `DWAnimDriver`。
   - `Editor/DWSetupWizard.cs` — 菜单「次元大战 → ① 生成资源清单 / ② 一键接入已购模型」：扫描全工程角色，**小丑(LittleWitch1)→世界BOSS**、**骷髅→怪物池(DWMobs)**、其余人物→英雄池(DWHeroes)按次元分配(次元规则:修仙←悟空/魔法←半血/科技←士兵v1/赛博←士兵v2/猎人←牛仔女警长，其余补满)、静态道具→场景池(DWScene 给地图)、**已购特效(Hovl)按映射复制进 `Resources/DWFx`**(proj/hit/cast/aoe/heal/shield/circle/slash/storm/lightning)。排除 URP/HDRP 变体(内置管线会变粉)、残缺部件、**特效/粒子预制体(IsEffectPrefab，防 FX_Waterfall 混进英雄)**，优先 .prefab、折叠颜色变体。①清单还会列出特效预制体路径。
   - `Editor/DWiOSPostBuild.cs` — iOS 打包自动放行明文 ws://（否则真机连不上服务器）。
-- `Assets/Resources/`：`DWMon`(KayKit 怪物 glb)、`DWProps`(KayKit 场景 glb)、`DWAudio`(音频)；向导生成 `DW`(hero_/mon_boss)、`DWHeroes`、`DWMobs`、`DWScene`、`DWFx`(Hovl 特效，运行时 `FxPrefab/SpawnFx` 按名加载，缺失则程序化兜底)。
+- `Assets/Resources/`：`DWMon`(KayKit 怪物 glb)、`DWProps`(KayKit 场景 glb)、`DWAudio`(音频)、**`DWIcons`(game-icons.net 白色 PNG 图标，CC BY，运行时着色；技能/装备/背包/退出/攻击)**；向导生成 `DW`(hero_/mon_boss)、`DWHeroes`、`DWMobs`、`DWScene`、`DWFx`(Hovl 特效，运行时 `FxPrefab/SpawnFx` 按名加载，缺失则程序化兜底)。
 - 用户已买的资源包（不在仓库，在用户本地 Assets/）：悟空、半血男女/教会侍从、女巫、牛仔女警长、修女、兔女郎、小丑(LittleWitch1)、骷髅合集、科幻士兵、黑暗地牢(场景)、**Pure Poly 终极低多边形自然包(场景，已用于 DWScene)**、**Hovl Studio 特效(AAA Projectiles/AOE Magic spells/Magic circles/3D Lasers，已接入 DWFx)**、RPG_FPS 工业道具、MapMagic(地形工具,未用,与平面坐标冲突)、各种武器包。
 
 ## 当前状态 / 路线图（改动后请更新这里）
@@ -66,7 +66,7 @@
 - ✅ 网页版功能 + UI 完善（玩家可在 iPhone Safari 直接玩，体验最好）。
 - ✅ Unity 客户端：连服务器、模型一键接入、碰撞、横屏、音效；**UI 已全面迁到 UGUI（含队伍血条、小地图、头顶名牌血条、伤害飘字、登录界面）**，IMGUI 仅剩虚拟摇杆 + 聊天输入。技能/装备图标均为程序化 SDF 字形。
 - ✅ 美术接入：Pure Poly 自然包铺满地图(向导场景池)、五次元专属英雄(含猎人←牛仔)、**Hovl 特效已接到技能/弹道/击中/BOSS范围技/次元技**(程序化兜底)；战斗程序特效(地面光环/火花/拖尾)亦在。
-- ⏳ **待办**：Unity UGUI 布局需按真机截图**微调坐标/大小/锚点**（盲改，未预览，队伍条/小地图同样需校准）；**Hovl 特效在用户项目里变粉（shader 与内置管线不兼容/未导入）——删 `Resources/DWFx` 即回退到「按次元配色」的程序化特效（不粉、已够好看）**；Hovl 若修好 shader 可享次元元素变体；物品图标仍为品质色块；用户在做 iOS 真机 Xcode 打包。
+- ⏳ **待办**：Unity UGUI 布局需按真机截图**微调坐标/大小/锚点**（盲改，未预览，队伍条/小地图同样需校准）；**Hovl 特效在用户项目里变粉（shader 与内置管线不兼容/未导入）——删 `Resources/DWFx` 即回退到「按次元配色」的程序化特效（不粉、已够好看）**；Hovl 若修好 shader 可享次元元素变体；**技能/装备/背包/退出/攻击图标已换 game-icons.net 真图标(白图运行时着色，缺失回退 SDF)**；用户在做 iOS 真机 Xcode 打包。
 - 🔧 移动端优化：小地图限 ~12.5Hz 重绘；头顶名牌仅在等级变化时重建文本（省每帧字符串分配）。技能特效按次元配色（科技蓝/修仙绿/赛博粉/魔法紫/猎人橙）+ 按 kind 变形。
 - ❌ 暂不做：MapMagic 3D 地形（与"服务器 2D 平面坐标、脚踩 y=0"冲突，会悬空/陷地，需大改才行）。
 

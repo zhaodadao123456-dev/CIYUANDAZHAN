@@ -1,0 +1,25 @@
+UI / skill / item icons in this folder are from game-icons.net
+License: Creative Commons Attribution 3.0 (CC BY 3.0) — https://creativecommons.org/licenses/by/3.0/
+Recolored to white-on-transparent for runtime tinting.
+
+Authors: Lorc (https://lorcblog.blogspot.com) and Delapouite (https://delapouite.com)
+Source: https://game-icons.net
+
+icon            <- game-icons author/name
+skill_proj      <- lorc/high-shot
+skill_aoe       <- lorc/explosion-rays
+skill_melee     <- lorc/crossed-swords
+skill_dashmelee <- lorc/sword-slice
+skill_heal      <- delapouite/health-potion
+skill_dodge     <- lorc/dodging
+skill_dim       <- lorc/magic-swirl
+slot_weapon     <- lorc/broadsword
+slot_helmet     <- lorc/visored-helm
+slot_armor      <- lorc/breastplate
+slot_boots      <- lorc/boot-stomp
+slot_acc        <- lorc/gem-pendant
+ui_bag          <- delapouite/school-bag
+ui_exit         <- delapouite/exit-door
+ui_attack       <- lorc/crossed-swords
+
+Please keep this attribution (e.g. in the game's credits screen) per CC BY 3.0.

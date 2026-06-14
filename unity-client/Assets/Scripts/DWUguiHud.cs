@@ -207,8 +207,7 @@ namespace DW
             var atk = MkBtn("AttackBtn", root, new Color(0.95f, 0.45f, 0.25f, 0.95f),
                 new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-40, 60), new Vector2(170, 170),
                 () => Cast("basic"));
-            MkTxt("AtkTxt", atk.transform, "攻击", 34, Color.white, TextAnchor.MiddleCenter,
-                Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            BtnIcon(atk.transform, "ui_attack", "攻击", 96, 34);
 
             BuildOverlays(root);
             BuildParty(root);
@@ -361,14 +360,14 @@ namespace DW
             {
                 if (us.key == "dodge")
                 {
-                    us.icon.sprite = KindIcon("dodge"); us.icon.color = Color.white;
+                    SetSkillIcon(us, "dodge", false);
                     us.nameText.text = "翻滚闪避"; us.lvText.text = "";
                     SetCd(us, Mathf.Max(0, dodgeReadyAt - Time.time), 1.2f);
                     us.plus.SetActive(false);
                 }
                 else if (us.key == "dim")
                 {
-                    us.icon.sprite = KindIcon("dim"); us.icon.color = Color.white;
+                    SetSkillIcon(us, "dim", false);
                     us.nameText.text = dimSkillName; us.lvText.text = "";
                     SetCd(us, Mathf.Max(0, captureReadyAt - Time.time), dimSkillCd > 0 ? dimSkillCd : 3f);
                     us.plus.SetActive(false);
@@ -377,8 +376,7 @@ namespace DW
                 {
                     var sk = def.Skill(us.key);
                     bool locked = sk.minLvl > 0 && MyLevel < sk.minLvl;
-                    us.icon.sprite = KindIcon(sk.kind);
-                    us.icon.color = locked ? new Color(0.5f, 0.5f, 0.5f, 1f) : Color.white;   // 未解锁→压暗
+                    SetSkillIcon(us, sk.kind, locked);
                     us.nameText.text = locked ? sk.name + "(锁)" : sk.name;
                     us.lvText.text = "Lv" + MySkLvl(us.key);
                     float ready; readyAt.TryGetValue(us.key, out ready);
@@ -434,6 +432,44 @@ namespace DW
             var sp = Sprite.Create(tex, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
             _kindIcons[kind] = sp;
             return sp;
+        }
+
+        // ====================== 美术图标（game-icons.net CC BY，存 Resources/DWIcons，白图运行时着色；缺失→SDF 兜底） ======================
+        static readonly Dictionary<string, Sprite> _pngIcons = new Dictionary<string, Sprite>();
+        static Sprite PngIcon(string name)
+        {
+            if (_pngIcons.TryGetValue(name, out var sp)) return sp;
+            var t = Resources.Load<Texture2D>("DWIcons/" + name);
+            sp = t != null ? Sprite.Create(t, new Rect(0, 0, t.width, t.height), new Vector2(0.5f, 0.5f), 100f) : null;
+            _pngIcons[name] = sp;
+            return sp;
+        }
+        // 技能格图标：优先 PNG（按效果色着色），否则程序化 SDF
+        void SetSkillIcon(USkill us, string kind, bool locked)
+        {
+            var png = PngIcon("skill_" + kind);
+            if (png != null)
+            {
+                us.icon.sprite = png;
+                Color c = IconBg(kind);
+                us.icon.color = locked ? new Color(c.r * 0.45f, c.g * 0.45f, c.b * 0.45f, 1f) : c;
+            }
+            else
+            {
+                us.icon.sprite = KindIcon(kind);
+                us.icon.color = locked ? new Color(0.5f, 0.5f, 0.5f, 1f) : Color.white;
+            }
+        }
+        // 按钮图标：有 PNG 放图标，否则放回退文字
+        void BtnIcon(Transform parent, string iconName, string fallbackText, float iconSize, int fontSize)
+        {
+            var png = PngIcon(iconName);
+            if (png != null)
+            {
+                var img = MkImg("ic", parent, Color.white, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(iconSize, iconSize));
+                img.sprite = png; img.preserveAspect = true;
+            }
+            else MkTxt("t", parent, fallbackText, fontSize, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
         }
 
         // 各效果类型的白色字形（SDF，归一化坐标 [-1,1]，负值=图形内部）
@@ -915,12 +951,12 @@ namespace DW
             var bag = MkBtn("BagBtn", root, new Color(0.18f, 0.2f, 0.36f, 0.95f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -24), new Vector2(76, 76),
                 () => panelOpen = !panelOpen);
-            MkTxt("t", bag.transform, "背包", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            BtnIcon(bag.transform, "ui_bag", "背包", 46, 26);
             // 退出
             var exit = MkBtn("ExitBtn", root, new Color(0.36f, 0.18f, 0.2f, 0.95f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-110, -24), new Vector2(76, 76),
                 () => ExitToMenu());
-            MkTxt("t", exit.transform, "退出", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            BtnIcon(exit.transform, "ui_exit", "退出", 46, 26);
 
             // 面板
             uPanel = MkImg("Panel", root, new Color(0.07f, 0.08f, 0.16f, 0.97f),
@@ -979,7 +1015,10 @@ namespace DW
             go.transform.SetParent(row, false);
             var le = go.AddComponent<LayoutElement>(); le.minWidth = 40; le.preferredWidth = 40;
             var img = go.AddComponent<Image>();
-            img.sprite = SlotIcon(slot, bg); img.color = Color.white; img.preserveAspect = true; img.raycastTarget = false;
+            var png = PngIcon("slot_" + slot);
+            if (png != null) { img.sprite = png; img.color = bg; }          // 白图标按品质色着色
+            else { img.sprite = SlotIcon(slot, bg); img.color = Color.white; }
+            img.preserveAspect = true; img.raycastTarget = false;
         }
 
         void RowLabel(Transform row, string s)
