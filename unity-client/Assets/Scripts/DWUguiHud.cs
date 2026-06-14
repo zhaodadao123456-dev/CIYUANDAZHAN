@@ -206,7 +206,7 @@ namespace DW
             var atk = MkBtn("AttackBtn", root, new Color(0.95f, 0.45f, 0.25f, 0.95f),
                 new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-40, 60), new Vector2(170, 170),
                 () => Cast("basic"));
-            MkTxt("AtkTxt", atk.transform, "⚔\n攻击", 34, Color.white, TextAnchor.MiddleCenter,
+            MkTxt("AtkTxt", atk.transform, "攻击", 34, Color.white, TextAnchor.MiddleCenter,
                 Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
             BuildOverlays(root);
@@ -259,7 +259,7 @@ namespace DW
             // 死亡全屏
             uDeath = MkImg("Death", root, new Color(0.4f, 0, 0, 0.45f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero).gameObject;
             var dbox = MkImg("box", uDeath.transform, new Color(0.08f, 0.05f, 0.08f, 0.95f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 240));
-            MkTxt("t", dbox.transform, "💀 你已阵亡", 40, new Color(1f, 0.5f, 0.5f), TextAnchor.UpperCenter, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -28), new Vector2(-20, 50));
+            MkTxt("t", dbox.transform, "你已阵亡", 40, new Color(1f, 0.5f, 0.5f), TextAnchor.UpperCenter, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -28), new Vector2(-20, 50));
             uDeathTxt = MkTxt("cd", dbox.transform, "", 24, Color.white, TextAnchor.MiddleCenter, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -100), new Vector2(-20, 40));
             uRespawnBtn = MkBtn("rb", dbox.transform, new Color(0.3f, 0.4f, 0.85f), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 36), new Vector2(280, 64), () => Send(new { t = "respawn" }));
             uRespawnTxt = MkTxt("t", uRespawnBtn.transform, "复活", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
@@ -274,10 +274,10 @@ namespace DW
             if (warOn)
             {
                 string a = (string)warInfo["a"], b = (string)warInfo["b"];
-                uWarTxt.text = $"🌀 {Data.Dim(a).name} {warInfo["killsA"]} : {warInfo["killsB"]} {Data.Dim(b).name}";
+                uWarTxt.text = $"{Data.Dim(a).name} {warInfo["killsA"]} : {warInfo["killsB"]} {Data.Dim(b).name}";
                 bool mine = myDim == a || myDim == b;
                 uWarBtn.gameObject.SetActive(mine);
-                uWarBtnTxt.text = curRoom == "war" ? "↩ 撤离" : "⚔ 进入";
+                uWarBtnTxt.text = curRoom == "war" ? "撤离" : "进入";
             }
             // BOSS 横幅
             bool bossOn = bossInfo != null;
@@ -285,12 +285,12 @@ namespace DW
             if (bossOn)
             {
                 string bd = (string)bossInfo["dim"];
-                uBossTxt.text = bd == myDim ? $"🔥 世界BOSS【{bossInfo["name"]}】就在本次元巢穴！" : $"🔥 世界BOSS【{bossInfo["name"]}】肆虐【{Data.Dim(bd).name}】";
+                uBossTxt.text = bd == myDim ? $"世界BOSS【{bossInfo["name"]}】就在本次元巢穴！" : $"世界BOSS【{bossInfo["name"]}】肆虐【{Data.Dim(bd).name}】";
             }
             // 大混战横幅
             bool meleeOn = meleeInfo != null && (bool?)meleeInfo["active"] == true;
             uMelee.SetActive(meleeOn);
-            if (meleeOn) uMeleeBtnTxt.text = curRoom == "melee" ? "↩ 撤离" : "⚔ 杀入";
+            if (meleeOn) uMeleeBtnTxt.text = curRoom == "melee" ? "撤离" : "杀入";
 
             // 信息流
             for (int i = 0; i < uFeed.Length; i++)
@@ -302,7 +302,7 @@ namespace DW
             // 升级
             bool lu = Time.time < levelUpUntil;
             uLevelUp.SetActive(lu);
-            if (lu) uLevelUpTxt.text = $"🆙 升级！Lv.{levelUpLevel}" + (levelUpLevel == 3 ? "  E解锁" : levelUpLevel == 5 ? "  R解锁" : "");
+            if (lu) uLevelUpTxt.text = $"升级！Lv.{levelUpLevel}" + (levelUpLevel == 3 ? "  E解锁" : levelUpLevel == 5 ? "  R解锁" : "");
 
             // toast
             bool t = Time.time < toastUntil;
@@ -317,7 +317,7 @@ namespace DW
                 bool arena = curRoom == "war" || curRoom == "melee";
                 uDeathTxt.text = arena ? "战场/混战中无法原地复活，回本次元复活" : (remain > 0 ? $"复活倒计时 {remain:0.0}s" : "可以复活了");
                 uRespawnBtn.interactable = remain <= 0;
-                uRespawnTxt.text = arena ? "↩ 回本次元复活" : "⚔ 立即复活";
+                uRespawnTxt.text = arena ? "回本次元复活" : "立即复活";
             }
         }
 
@@ -343,12 +343,12 @@ namespace DW
             int exp = you != null ? (int?)you["exp"] ?? 0 : 0;
             int expNeed = you != null ? (int?)you["expNeed"] ?? 1 : 1;
             int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
-            var roomName = curRoom == "war" ? "🌀 重叠战场" : curRoom == "melee" ? "🔥 大混战" : Data.Dim(myDim).name;
+            var roomName = curRoom == "war" ? "重叠战场" : curRoom == "melee" ? "大混战" : Data.Dim(myDim).name;
             uStatusTop.text = $"{roomName} ｜ {Data.ClassTitle(myDim, myCls)}";
             uHpFill.fillAmount = Mathf.Clamp01((float)hp / maxHp);
-            uHpText.text = shield > 0 ? $"{hp}/{maxHp}  🛡{shield}" : $"{hp}/{maxHp}";
+            uHpText.text = shield > 0 ? $"{hp}/{maxHp}  盾{shield}" : $"{hp}/{maxHp}";
             uExpFill.fillAmount = Mathf.Clamp01((float)exp / expNeed);
-            uStatusBot.text = $"Lv.{MyLevel} ｜ 💰{gold}" + (MySkPts > 0 ? $"  ✨×{MySkPts}" : "");
+            uStatusBot.text = $"Lv.{MyLevel} ｜ 金{gold}" + (MySkPts > 0 ? $"  技能点×{MySkPts}" : "");
 
             RefreshOverlays();
             RefreshParty();
@@ -378,7 +378,7 @@ namespace DW
                     bool locked = sk.minLvl > 0 && MyLevel < sk.minLvl;
                     us.icon.sprite = KindIcon(sk.kind);
                     us.icon.color = locked ? new Color(0.5f, 0.5f, 0.5f, 1f) : Color.white;   // 未解锁→压暗
-                    us.nameText.text = locked ? sk.name + "🔒" : sk.name;
+                    us.nameText.text = locked ? sk.name + "(锁)" : sk.name;
                     us.lvText.text = "Lv" + MySkLvl(us.key);
                     float ready; readyAt.TryGetValue(us.key, out ready);
                     SetCd(us, Mathf.Max(0, ready - Time.time), Mathf.Max(0.1f, sk.cdMs / 1000f));
@@ -610,7 +610,7 @@ namespace DW
                 if (!on) continue;
                 var m = (JObject)partyMembers[i];
                 int hp = (int?)m["hp"] ?? 0, max = (int?)m["maxHp"] ?? 1;
-                uParty[i].name.text = $"👤 {m["name"]} Lv.{m["level"]}";
+                uParty[i].name.text = $"{m["name"]} Lv.{m["level"]}";
                 uParty[i].hpFill.fillAmount = Mathf.Clamp01((float)hp / Mathf.Max(1, max));
             }
         }
@@ -803,7 +803,7 @@ namespace DW
             Text Label(string s, float yy) => MkTxt("l", pt, s, 22, new Color(0.78f, 0.8f, 0.92f), TextAnchor.UpperLeft,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, yy), new Vector2(-56, 30));
 
-            MkTxt("title", pt, "🌌 次元大战", 50, new Color(1f, 0.9f, 0.6f), TextAnchor.UpperCenter,
+            MkTxt("title", pt, "次元大战", 50, new Color(1f, 0.9f, 0.6f), TextAnchor.UpperCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -26), new Vector2(0, 64));
             float y = -104;
             Label("服务器地址（IP 或 IP:端口）", y); y -= 34;
@@ -845,19 +845,19 @@ namespace DW
             y -= 92;
             uJoinBtn = MkBtn("join", pt, new Color(0.85f, 0.35f, 0.2f, 1f),
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-56, 64), () => Join());
-            MkTxt("t", uJoinBtn.transform, "⚔ 降临次元", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            MkTxt("t", uJoinBtn.transform, "降临次元", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             y -= 76;
             MkTxt("hint", pt, "WASD移动 · 右键转视角 · 左键普攻 · QER技能 · 空格翻滚 · F捕捉 · B面板", 15, new Color(0.6f, 0.62f, 0.74f), TextAnchor.UpperCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-40, 24));
 
             // ---- 连接中 ----
             menuConnecting = MkRect("Conn", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(700, 240)).gameObject;
-            uConnTxt = MkTxt("c", menuConnecting.transform, "🌌 正在连接次元…", 34, Color.white, TextAnchor.UpperCenter,
+            uConnTxt = MkTxt("c", menuConnecting.transform, "正在连接次元…", 34, Color.white, TextAnchor.UpperCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -20), new Vector2(0, 110));
             var cancel = MkBtn("cancel", menuConnecting.transform, new Color(0.5f, 0.2f, 0.22f, 1f),
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 24), new Vector2(220, 56),
                 () => { try { net?.Close(); } catch { } state = State.Menu; });
-            MkTxt("t", cancel.transform, "✕ 取消", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            MkTxt("t", cancel.transform, "取消", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             menuConnecting.SetActive(false);
         }
 
@@ -888,7 +888,7 @@ namespace DW
             bool connecting = state == State.Connecting;
             if (menuForm.activeSelf == connecting) menuForm.SetActive(!connecting);
             if (menuConnecting.activeSelf != connecting) menuConnecting.SetActive(connecting);
-            if (connecting) { uConnTxt.text = $"🌌 正在连接次元…\n<size=20>{serverIp}</size>"; return; }
+            if (connecting) { uConnTxt.text = $"正在连接次元…\n<size=20>{serverIp}</size>"; return; }
             for (int i = 0; i < uDimBtns.Length; i++)
                 ((Image)uDimBtns[i].targetGraphic).color = i == dimIdx ? Data.Dims[i].accent : new Color(0.16f, 0.17f, 0.28f, 1f);
             for (int i = 0; i < uClsBtns.Length; i++)
@@ -908,22 +908,22 @@ namespace DW
 
         void BuildPanelUI(Transform root)
         {
-            // 右上 🎒 开关
+            // 右上 背包 开关
             var bag = MkBtn("BagBtn", root, new Color(0.18f, 0.2f, 0.36f, 0.95f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -24), new Vector2(76, 76),
                 () => panelOpen = !panelOpen);
-            MkTxt("t", bag.transform, "🎒", 34, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            MkTxt("t", bag.transform, "背包", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             // 退出
             var exit = MkBtn("ExitBtn", root, new Color(0.36f, 0.18f, 0.2f, 0.95f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-110, -24), new Vector2(76, 76),
                 () => ExitToMenu());
-            MkTxt("t", exit.transform, "🚪", 34, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            MkTxt("t", exit.transform, "退出", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
             // 面板
             uPanel = MkImg("Panel", root, new Color(0.07f, 0.08f, 0.16f, 0.97f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -112), new Vector2(680, 760)).gameObject;
             // 顶部标签
-            string[] tabs = { "📊 属性", "🎒 背包", "🛒 商店" };
+            string[] tabs = { "属性", "背包", "商店" };
             uTabTxt = new Text[tabs.Length];
             float tw = 680f / (tabs.Length + 1);
             for (int i = 0; i < tabs.Length; i++)
@@ -936,7 +936,7 @@ namespace DW
             }
             var close = MkBtn("Close", uPanel.transform, new Color(0.3f, 0.12f, 0.14f, 1f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(0, 0), new Vector2(tw, 56), () => panelOpen = false);
-            MkTxt("t", close.transform, "✕", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            MkTxt("t", close.transform, "关", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
             // 滚动列表
             var sr = MkRect("Scroll", uPanel.transform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(0.5f, 0.5f), new Vector2(0, -28), new Vector2(-16, -72));
@@ -1032,14 +1032,14 @@ namespace DW
             if (you == null) { var r = AddRow(40); RowLabel(r.transform, "加载中…"); return; }
             var def = Data.Cls(myCls);
             void Line(string s) { var r = AddRow(34); RowLabel(r.transform, s); }
-            Line($"<b>{def.icon} {Data.ClassTitle(myDim, myCls)}</b>（{def.role}）");
-            Line($"📈 等级 Lv.{you["level"]}（{you["exp"]}/{you["expNeed"]}）");
-            Line($"❤ 生命：{you["hp"]}/{you["maxHp"]}");
-            Line($"⚔ 物攻 {you["patk"]}    🔮 法攻 {you["matk"]}");
-            Line($"🛡 物防 {you["armor"]}    ✨ 法防 {you["mres"]}");
-            Line($"👟 移速 {you["spd"]}    💰 金币 {you["gold"]}");
-            Line($"🗡 击杀 野怪{you["kills"]} / 玩家{you["pvpKills"]}");
-            Line($"✨ 技能点：{MySkPts}");
+            Line($"<b>{Data.ClassTitle(myDim, myCls)}</b>（{def.role}）");
+            Line($"等级 Lv.{you["level"]}（{you["exp"]}/{you["expNeed"]}）");
+            Line($"生命：{you["hp"]}/{you["maxHp"]}");
+            Line($"物攻 {you["patk"]}    法攻 {you["matk"]}");
+            Line($"物防 {you["armor"]}    法防 {you["mres"]}");
+            Line($"移速 {you["spd"]}    金币 {you["gold"]}");
+            Line($"击杀 野怪{you["kills"]} / 玩家{you["pvpKills"]}");
+            Line($"技能点：{MySkPts}");
             Line("<b>技能</b>");
             foreach (var sk in def.skills) Line($"<color=#ffd166>{sk.name}</color> Lv.{MySkLvl(sk.key)}\n<size=13><color=#999>{sk.desc}</color></size>");
         }
@@ -1080,7 +1080,7 @@ namespace DW
         void PanelShop()
         {
             int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
-            var hr = AddRow(30); RowLabel(hr.transform, $"<b>商店</b>（💰{gold}）");
+            var hr = AddRow(30); RowLabel(hr.transform, $"<b>商店</b>（{gold}金）");
             if (shopData == null) return;
             foreach (JObject it in shopData)
             {
@@ -1088,7 +1088,7 @@ namespace DW
                 RowIcon(r.transform, RarCol(it), (string)it["slot"] ?? "");
                 RowLabel(r.transform, ItemLine(it));
                 var id = (string)it["id"];
-                RowBtn(r.transform, $"💰{it["price"]}", new Color(0.32f, 0.28f, 0.12f), () => Send(new { t = "buy", id = id }));
+                RowBtn(r.transform, $"{it["price"]}金", new Color(0.32f, 0.28f, 0.12f), () => Send(new { t = "buy", id = id }));
             }
         }
     }

@@ -189,7 +189,7 @@ namespace DW
 
         void Update()
         {
-            if (Input.GetKeyDown(KeyCode.M)) Toast(DWAudio.ToggleMute() ? "🔇 已静音" : "🔊 已开启声音");
+            if (Input.GetKeyDown(KeyCode.M)) Toast(DWAudio.ToggleMute() ? "已静音" : "已开启声音");
             // 处理网络消息
             if (net != null)
             {
@@ -348,7 +348,7 @@ namespace DW
                 case "pinvite":
                     inviteFrom = (string)m["from"];
                     inviteUntil = Time.time + 30f;
-                    Toast($"👥 {inviteFrom} 邀请你组队 —— 按 Y 接受 / N 拒绝");
+                    Toast($"{inviteFrom} 邀请你组队 —— 按 Y 接受 / N 拒绝");
                     break;
                 case "baoe":
                 {
@@ -390,15 +390,15 @@ namespace DW
                     DWAudio.SfxAt(kind == "blink" ? "dodge" : kind == "heal" ? "coin" : "explosion", at, pos, 0.6f);
                     break;
                 }
-                case "rooted": rootedUntil = Time.time + ((float?)m["ms"] ?? 2000) / 1000f; Toast("🔮 你被禁锢了！"); break;
+                case "rooted": rootedUntil = Time.time + ((float?)m["ms"] ?? 2000) / 1000f; Toast("你被禁锢了！"); break;
                 case "feed": Feed((string)m["msg"]); break;
-                case "chat": Feed($"💬 {(string)m["name"]}：{(string)m["msg"]}"); break;
+                case "chat": Feed($"{(string)m["name"]}：{(string)m["msg"]}"); break;
                 case "ach":
                     Toast($"{(string)m["icon"]} 成就解锁：【{(string)m["name"]}】");
                     Feed($"{(string)m["icon"]} 达成成就【{(string)m["name"]}】：{(string)m["desc"]}");
                     DWAudio.Sfx("coin", 0.7f);
                     break;
-                case "err": Toast("⚠ " + (string)m["msg"]); break;
+                case "err": Toast((string)m["msg"]); break;
             }
         }
 
@@ -807,7 +807,7 @@ namespace DW
 
         void AddPet(string ownerId, int tier, float x, float z, int hp, int maxHp, string name)
         {
-            var e = new Ent { name = "🐾" + name, tier = tier, hp = hp, maxHp = maxHp, isPet = true, target = new Vector3(x, 0, z) };
+            var e = new Ent { name = "宠 " + name, tier = tier, hp = hp, maxHp = maxHp, isPet = true, target = new Vector3(x, 0, z) };
             e.go = new GameObject("Pet");
             var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             body.transform.SetParent(e.go.transform, false);
@@ -1091,7 +1091,7 @@ namespace DW
             float ready;
             readyAt.TryGetValue(key, out ready);
             if (Time.time < ready) return;
-            if (def.minLvl > 0 && MyLevel < def.minLvl) { Toast($"⚠ 【{def.name}】需要 Lv.{def.minLvl} 解锁"); return; }
+            if (def.minLvl > 0 && MyLevel < def.minLvl) { Toast($"【{def.name}】需要 Lv.{def.minLvl} 解锁"); return; }
             readyAt[key] = Time.time + def.cdMs / 1000f;
 
             // 自动瞄准最近敌人

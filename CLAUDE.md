@@ -34,6 +34,7 @@
 - **不要**把模型标识、`[1m]` 等写进任何提交/代码/文档。
 - C# 在 `using System;` 下别用裸 `Object.Destroy`（与 System.Object 冲突）→ 用 `Destroy(...)`。
 - 改完 Unity 文件用大括号配平自检：`{ 数量 } 应等于 } 数量`。
+- **Unity 端 UGUI/IMGUI 文本不要用 emoji**：动态 CJK 系统字体（PingFang/雅黑等）不含 emoji 字形，会显示成空方块/消失（如 🎒🚪💰🌀）。用中文文字或程序化 SDF 图标代替。注意服务器下发的 feed/toast 文本若含 emoji，在 Unity 端也会缺字（网页端正常）——属已知遗留。
 
 ## 服务器架构（`dimensional-war-3d/server.js`，权威）
 - WebSocket `/ws`，客户端发 `{t:...}` 消息；服务器 ~20Hz tick、~10Hz 快照(`snap`)。
