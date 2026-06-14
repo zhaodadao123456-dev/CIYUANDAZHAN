@@ -69,7 +69,7 @@ namespace DW
             public Image plateFill;
             public Text plateName;
             public float plateH;
-            public string plateSig;
+            public int plateLvl = -1;
         }
         readonly Dictionary<string, Ent> players = new Dictionary<string, Ent>();
         readonly Dictionary<string, Ent> monsters = new Dictionary<string, Ent>();

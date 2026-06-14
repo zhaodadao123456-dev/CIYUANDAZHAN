@@ -654,9 +654,12 @@ namespace DW
             py = Mathf.Clamp(Mathf.RoundToInt((z + half) / span * (MiniN - 1)), 0, MiniN - 1);
         }
 
+        float uMiniNext;
         void RefreshMinimap()
         {
             if (uMiniTex == null) return;
+            if (Time.time < uMiniNext) return;          // ~12.5Hz 重绘即可，省移动端 CPU
+            uMiniNext = Time.time + 0.08f;
             System.Array.Copy(uMiniBg, uMiniBuf, uMiniBuf.Length);
             int px, py;
             // 障碍
@@ -737,10 +740,9 @@ namespace DW
                 RectTransformUtility.ScreenPointToLocalPointInRectangle(plateRoot, sp, null, out lp);
                 e.plateRt.localPosition = lp;
                 e.plateFill.fillAmount = Mathf.Clamp01((float)e.hp / Mathf.Max(1, e.maxHp));
-                string sig = e.name + "|" + e.level;
-                if (sig != e.plateSig)
+                if (e.level != e.plateLvl)   // 名字固定、只在等级变化时重建文本（省每帧字符串分配）
                 {
-                    e.plateSig = sig;
+                    e.plateLvl = e.level;
                     bool friendly = !monster && (e.isPet || e.dim == myDim);
                     bool boss = monster && e.tier >= 5;
                     e.plateName.text = e.isPet ? e.name : $"{e.name} Lv.{e.level}";
@@ -756,7 +758,7 @@ namespace DW
             if (e != null && e.plate != null)
             {
                 Destroy(e.plate);
-                e.plate = null; e.plateRt = null; e.plateFill = null; e.plateName = null; e.plateSig = null;
+                e.plate = null; e.plateRt = null; e.plateFill = null; e.plateName = null; e.plateLvl = -1;
             }
         }
 
