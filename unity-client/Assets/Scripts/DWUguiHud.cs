@@ -497,6 +497,71 @@ namespace DW
             return -Mathf.Sqrt(d.x) * Mathf.Sign(d.y);
         }
 
+        // ---- 装备图标：按部位画字形（剑/盔/盾/靴/项链），底色=品质色，缓存 (slot,品质色) ----
+        readonly Dictionary<string, Sprite> _slotIcons = new Dictionary<string, Sprite>();
+
+        Sprite SlotIcon(string slot, Color bg)
+        {
+            string key = (string.IsNullOrEmpty(slot) ? "?" : slot) + ":" + ColorUtility.ToHtmlStringRGB(bg);
+            if (_slotIcons.TryGetValue(key, out var cached)) return cached;
+            const int N = 64;
+            var buf = new Color32[N * N];
+            Color bgDark = new Color(bg.r * 0.42f, bg.g * 0.42f, bg.b * 0.5f, 1f);
+            float feather = 2.4f / N;
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f;
+                    float v = (y + 0.5f) / N * 2f - 1f;
+                    var p = new Vector2(u, v);
+                    float edge = Mathf.Clamp01(1f - 0.5f * Mathf.Max(Mathf.Abs(u), Mathf.Abs(v)));
+                    Color baseCol = Color.Lerp(bgDark, bg, edge);
+                    float d = SlotGlyphSdf(slot, p);
+                    float cov = Mathf.Clamp01(0.5f - d / feather);
+                    buf[y * N + x] = Color.Lerp(baseCol, Color.white, cov);
+                }
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            tex.SetPixels32(buf); tex.Apply(false);
+            var sp = Sprite.Create(tex, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
+            _slotIcons[key] = sp;
+            return sp;
+        }
+
+        static float SlotGlyphSdf(string slot, Vector2 p)
+        {
+            switch (slot)
+            {
+                case "weapon":   // 剑
+                {
+                    float blade = SdBox(p - new Vector2(0, 0.02f), new Vector2(0.08f, 0.42f));
+                    float tip = SdTri(p, new Vector2(0, 0.62f), new Vector2(-0.12f, 0.4f), new Vector2(0.12f, 0.4f));
+                    float guard = SdBox(p - new Vector2(0, -0.4f), new Vector2(0.3f, 0.07f));
+                    float grip = SdBox(p - new Vector2(0, -0.56f), new Vector2(0.07f, 0.12f));
+                    return Mathf.Min(Mathf.Min(blade, tip), Mathf.Min(guard, grip));
+                }
+                case "helmet":   // 头盔（圆顶+帽檐）
+                    return Mathf.Min(
+                        Mathf.Max(SdCircle(p - new Vector2(0, 0.02f), 0.46f), -(p.y + 0.06f)),
+                        SdBox(p - new Vector2(0, -0.12f), new Vector2(0.56f, 0.08f)));
+                case "armor":    // 护甲/盾
+                    return Mathf.Min(
+                        SdBox(p - new Vector2(0, 0.16f), new Vector2(0.4f, 0.3f)),
+                        SdTri(p, new Vector2(0, -0.6f), new Vector2(-0.4f, -0.14f), new Vector2(0.4f, -0.14f)));
+                case "boots":    // 靴
+                    return Mathf.Min(
+                        SdBox(p - new Vector2(-0.06f, 0.12f), new Vector2(0.16f, 0.42f)),
+                        SdBox(p - new Vector2(0.12f, -0.4f), new Vector2(0.34f, 0.13f)));
+                case "acc":      // 饰品（项链：圆环+吊坠）
+                {
+                    float ring = Mathf.Abs(SdCircle(p - new Vector2(0, -0.06f), 0.34f)) - 0.08f;
+                    float gem = SdBox(Rot45(p - new Vector2(0, 0.46f)), new Vector2(0.13f, 0.13f));
+                    return Mathf.Min(ring, gem);
+                }
+                default:         // 通用装备（菱形）
+                    return SdBox(Rot45(p), new Vector2(0.34f, 0.34f));
+            }
+        }
+
         // ====================== 队伍小血条（左侧） ======================
         void BuildParty(Transform root)
         {
@@ -678,13 +743,13 @@ namespace DW
             return (RectTransform)go.transform;
         }
 
-        void RowIcon(Transform row, Color c, string label)
+        void RowIcon(Transform row, Color bg, string slot)
         {
             var go = new GameObject("ic", typeof(RectTransform));
             go.transform.SetParent(row, false);
-            var le = go.AddComponent<LayoutElement>(); le.minWidth = 38; le.preferredWidth = 38;
-            var img = go.AddComponent<Image>(); img.sprite = WhiteSprite(); img.color = c; img.raycastTarget = false;
-            var t = MkTxt("t", go.transform, label, 16, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            var le = go.AddComponent<LayoutElement>(); le.minWidth = 40; le.preferredWidth = 40;
+            var img = go.AddComponent<Image>();
+            img.sprite = SlotIcon(slot, bg); img.color = Color.white; img.preserveAspect = true; img.raycastTarget = false;
         }
 
         void RowLabel(Transform row, string s)
@@ -769,17 +834,16 @@ namespace DW
                 {
                     var it = equipData[slot.Key] as JObject;
                     var r = AddRow(46);
-                    if (it == null) { RowIcon(r.transform, new Color(0.3f, 0.3f, 0.35f), slot.Value.Substring(0, 1)); RowLabel(r.transform, $"{slot.Value}：<color=#777>空</color>"); }
-                    else { RowIcon(r.transform, RarCol(it), slot.Value.Substring(0, 1)); RowLabel(r.transform, ItemLine(it)); var sk = slot.Key; RowBtn(r.transform, "卸下", new Color(0.4f, 0.3f, 0.12f), () => Send(new { t = "unequip", slot = sk })); }
+                    if (it == null) { RowIcon(r.transform, new Color(0.32f, 0.33f, 0.4f), slot.Key); RowLabel(r.transform, $"{slot.Value}：<color=#777>空</color>"); }
+                    else { RowIcon(r.transform, RarCol(it), slot.Key); RowLabel(r.transform, ItemLine(it)); var sk = slot.Key; RowBtn(r.transform, "卸下", new Color(0.4f, 0.3f, 0.12f), () => Send(new { t = "unequip", slot = sk })); }
                 }
             var br = AddRow(30); RowLabel(br.transform, $"<b>背包</b>（{(invData != null ? invData.Count : 0)}/24）");
             if (invData != null)
                 for (int i = 0; i < invData.Count; i++)
                 {
                     var it = (JObject)invData[i]; int idx = i; int val = (int?)it["val"] ?? 0;
-                    string slotName; Data.SlotNames.TryGetValue((string)it["slot"] ?? "", out slotName);
                     var r = AddRow(46);
-                    RowIcon(r.transform, RarCol(it), string.IsNullOrEmpty(slotName) ? "装" : slotName.Substring(0, 1));
+                    RowIcon(r.transform, RarCol(it), (string)it["slot"] ?? "");
                     RowLabel(r.transform, ItemLine(it));
                     RowBtn(r.transform, "装备", new Color(0.16f, 0.3f, 0.45f), () => Send(new { t = "equip", i = idx }));
                     RowBtn(r.transform, $"卖{val * 2 / 5}", new Color(0.3f, 0.2f, 0.12f), () => Send(new { t = "sell", i = idx }));
@@ -793,9 +857,8 @@ namespace DW
             if (shopData == null) return;
             foreach (JObject it in shopData)
             {
-                string slotName; Data.SlotNames.TryGetValue((string)it["slot"] ?? "", out slotName);
                 var r = AddRow(46);
-                RowIcon(r.transform, RarCol(it), string.IsNullOrEmpty(slotName) ? "装" : slotName.Substring(0, 1));
+                RowIcon(r.transform, RarCol(it), (string)it["slot"] ?? "");
                 RowLabel(r.transform, ItemLine(it));
                 var id = (string)it["id"];
                 RowBtn(r.transform, $"💰{it["price"]}", new Color(0.32f, 0.28f, 0.12f), () => Send(new { t = "buy", id = id }));

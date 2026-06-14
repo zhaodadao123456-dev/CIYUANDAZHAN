@@ -53,7 +53,7 @@
 - 脚本（都在 `Assets/Scripts/`，`partial class Game`）：
   - `DWGame.cs` — 主逻辑/网络消息/移动/相机/实体/模型加载(`MakeHero`按次元×职业、`MakeCreature`怪物/BOSS、`BuildWorld`场景+渐变天空盒+哑光地面)/碰撞。
   - `DWHud.cs` — **旧 IMGUI**，现仅剩：虚拟摇杆、聊天输入、登录界面(`GuiMenu`)。其余已迁 UGUI（`GuiSkillBar/GuiPanel/GuiDeath` 等为死代码，未删）。
-  - `DWUguiHud.cs` — **新 UGUI**（Canvas+CanvasScaler 1920×1080）：状态栏/血条经验条、技能栏(6格图标按钮+环形CD+加点，**图标为程序化 SDF 字形**：箭头=远程/圆环=范围/十字=治疗/折线=突进/斜斩=近战/八角星=次元技，按 `kind` 生成 Texture2D 缓存)、大攻击键、横幅(战场/BOSS/混战)、信息流、升级/提示/死亡、🎒/🚪、背包/商店/属性滚动面板(品质色图标行)、**队伍小血条(左侧池化5格)**、**小地图(左下角 RawImage+每帧重绘 Texture2D：障碍/安全区/巢穴方向/怪物BOSS/敌我玩家/自己)**。
+  - `DWUguiHud.cs` — **新 UGUI**（Canvas+CanvasScaler 1920×1080）：状态栏/血条经验条、技能栏(6格图标按钮+环形CD+加点，**图标为程序化 SDF 字形**：箭头=远程/圆环=范围/十字=治疗/折线=突进/斜斩=近战/八角星=次元技，按 `kind` 生成 Texture2D 缓存)、大攻击键、横幅(战场/BOSS/混战)、信息流、升级/提示/死亡、🎒/🚪、背包/商店/属性滚动面板(**装备按部位画 SDF 字形**：剑/盔/盾/靴/项链，底色=品质色)、**队伍小血条(左侧池化5格)**、**小地图(左下角 RawImage+每帧重绘 Texture2D：障碍/安全区/巢穴方向/怪物BOSS/敌我玩家/自己)**。
   - `DWData.cs` `DWNet.cs` `DWAudio.cs`(CC0 音频，M 键静音) `DWGame`内动画驱动 `DWAnimDriver`。
   - `Editor/DWSetupWizard.cs` — 菜单「次元大战 → ① 生成资源清单 / ② 一键接入已购模型」：扫描全工程角色，**小丑(LittleWitch1)→世界BOSS**、**骷髅→怪物池(DWMobs)**、其余人物→英雄池(DWHeroes)按次元分配、静态道具→场景池(DWScene 给地图)。排除 URP/HDRP 变体(内置管线会变粉)和残缺部件，优先 .prefab、折叠颜色变体。用悟空动作搭人形控制器、小丑用自己包动作搭 Generic 控制器。
   - `Editor/DWiOSPostBuild.cs` — iOS 打包自动放行明文 ws://（否则真机连不上服务器）。
@@ -70,3 +70,4 @@
 ## 用户偏好（沟通）
 - 用户用中文；非程序员，按"具体步骤 + 截图反馈"推进。喜欢"继续/继续改"让我自主升级。
 - 大改动尽量一次做完再让用户测试；改完给出"用户该做什么"的清晰步骤 + 一行更新命令。
+- **网页版已冻结**：用户明确表示网页版以后不用再管，新功能/打磨只做 Unity 端。
