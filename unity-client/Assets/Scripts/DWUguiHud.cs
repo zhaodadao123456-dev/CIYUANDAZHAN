@@ -158,8 +158,9 @@ namespace DW
                     new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(x, 0), new Vector2(sw, sh));
                 var us = new USkill { key = keys[i] };
                 // 图标块（颜色随后在 Refresh 设）
-                us.icon = MkImg("Icon", slot.transform, Color.gray,
+                us.icon = MkImg("Icon", slot.transform, Color.white,
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -10), new Vector2(sw - 20, 74));
+                us.icon.preserveAspect = true;   // 方形字形图标居中、不被拉伸
                 // 环形冷却覆盖
                 us.cd = MkImg("Cd", slot.transform, new Color(0, 0, 0, 0.62f),
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -10), new Vector2(sw - 20, 74));
@@ -342,14 +343,14 @@ namespace DW
             {
                 if (us.key == "dodge")
                 {
-                    us.icon.color = new Color(0.45f, 0.6f, 0.85f);
+                    us.icon.sprite = KindIcon("dodge"); us.icon.color = Color.white;
                     us.nameText.text = "翻滚闪避"; us.lvText.text = "";
                     SetCd(us, Mathf.Max(0, dodgeReadyAt - Time.time), 1.2f);
                     us.plus.SetActive(false);
                 }
                 else if (us.key == "dim")
                 {
-                    us.icon.color = new Color(1f, 0.84f, 0.25f);
+                    us.icon.sprite = KindIcon("dim"); us.icon.color = Color.white;
                     us.nameText.text = dimSkillName; us.lvText.text = "";
                     SetCd(us, Mathf.Max(0, captureReadyAt - Time.time), dimSkillCd > 0 ? dimSkillCd : 3f);
                     us.plus.SetActive(false);
@@ -358,7 +359,8 @@ namespace DW
                 {
                     var sk = def.Skill(us.key);
                     bool locked = sk.minLvl > 0 && MyLevel < sk.minLvl;
-                    us.icon.color = locked ? Color.gray : KindColor(sk.kind);
+                    us.icon.sprite = KindIcon(sk.kind);
+                    us.icon.color = locked ? new Color(0.5f, 0.5f, 0.5f, 1f) : Color.white;   // 未解锁→压暗
                     us.nameText.text = locked ? sk.name + "🔒" : sk.name;
                     us.lvText.text = "Lv" + MySkLvl(us.key);
                     float ready; readyAt.TryGetValue(us.key, out ready);
@@ -373,6 +375,126 @@ namespace DW
             float f = total > 0 ? Mathf.Clamp01(remain / total) : 0;
             us.cd.fillAmount = f;
             us.cdText.text = remain > 0.05f ? remain.ToString("0.0") : "";
+        }
+
+        // ====================== 程序化技能图标（按效果类型画出可辨识图形，替代纯色块） ======================
+        readonly Dictionary<string, Sprite> _kindIcons = new Dictionary<string, Sprite>();
+
+        static Color IconBg(string kind)
+        {
+            switch (kind)
+            {
+                case "dodge": return new Color(0.30f, 0.52f, 0.88f);   // 翻滚=蓝
+                case "dim": return new Color(1f, 0.78f, 0.22f);        // 次元技=金
+                default: return KindColor(kind);
+            }
+        }
+
+        Sprite KindIcon(string kind)
+        {
+            if (_kindIcons.TryGetValue(kind, out var cached)) return cached;
+            const int N = 72;
+            var buf = new Color32[N * N];
+            Color bg = IconBg(kind);
+            Color bgDark = new Color(bg.r * 0.42f, bg.g * 0.42f, bg.b * 0.48f, 1f);
+            float feather = 2.4f / N;
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f;
+                    float v = (y + 0.5f) / N * 2f - 1f;
+                    var p = new Vector2(u, v);
+                    // 背景：四角略暗的渐变，像有体积的图标块
+                    float edge = Mathf.Clamp01(1f - 0.5f * Mathf.Max(Mathf.Abs(u), Mathf.Abs(v)));
+                    Color baseCol = Color.Lerp(bgDark, bg, edge);
+                    float d = GlyphSdf(kind, p);
+                    float cov = Mathf.Clamp01(0.5f - d / feather);
+                    buf[y * N + x] = Color.Lerp(baseCol, Color.white, cov);
+                }
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            tex.SetPixels32(buf); tex.Apply(false);
+            var sp = Sprite.Create(tex, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
+            _kindIcons[kind] = sp;
+            return sp;
+        }
+
+        // 各效果类型的白色字形（SDF，归一化坐标 [-1,1]，负值=图形内部）
+        static float GlyphSdf(string kind, Vector2 p)
+        {
+            switch (kind)
+            {
+                case "proj":   // 远程→箭头
+                    return Mathf.Min(
+                        SdSeg(p, new Vector2(-0.6f, 0), new Vector2(0.15f, 0), 0.12f),
+                        SdTri(p, new Vector2(0.62f, 0), new Vector2(0.08f, 0.36f), new Vector2(0.08f, -0.36f)));
+                case "aoe":    // 范围→爆裂圆环+核心
+                    return Mathf.Min(Mathf.Abs(SdCircle(p, 0.52f)) - 0.14f, SdCircle(p, 0.13f));
+                case "dashmelee":  // 突进→右向双折线
+                    return Mathf.Min(Chevron(p + new Vector2(0.26f, 0)), Chevron(p - new Vector2(0.14f, 0)));
+                case "heal":   // 治疗→十字
+                    return Mathf.Min(SdBox(p, new Vector2(0.16f, 0.5f)), SdBox(p, new Vector2(0.5f, 0.16f)));
+                case "aoeheal":  // 群疗→十字+圆环
+                    return Mathf.Min(
+                        Mathf.Min(SdBox(p, new Vector2(0.12f, 0.34f)), SdBox(p, new Vector2(0.34f, 0.12f))),
+                        Mathf.Abs(SdCircle(p, 0.72f)) - 0.09f);
+                case "dodge":  // 翻滚→上向双折线（位移感）
+                    return Mathf.Min(ChevronUp(p + new Vector2(0, 0.22f)), ChevronUp(p - new Vector2(0, 0.18f)));
+                case "dim":    // 次元技→八角星 sparkle
+                {
+                    float plus = Mathf.Min(SdBox(p, new Vector2(0.1f, 0.56f)), SdBox(p, new Vector2(0.56f, 0.1f)));
+                    Vector2 r = Rot45(p);
+                    float x = Mathf.Min(SdBox(r, new Vector2(0.08f, 0.4f)), SdBox(r, new Vector2(0.4f, 0.08f)));
+                    return Mathf.Min(plus, x);
+                }
+                default:       // 近战→双斜斩
+                    return Mathf.Min(
+                        SdSeg(p, new Vector2(-0.5f, -0.32f), new Vector2(0.34f, 0.52f), 0.1f),
+                        SdSeg(p, new Vector2(-0.28f, -0.52f), new Vector2(0.52f, 0.3f), 0.1f));
+            }
+        }
+
+        static float Chevron(Vector2 p)   // ">" 尖朝右
+        {
+            return Mathf.Min(
+                SdSeg(p, new Vector2(-0.22f, 0.4f), new Vector2(0.22f, 0), 0.11f),
+                SdSeg(p, new Vector2(0.22f, 0), new Vector2(-0.22f, -0.4f), 0.11f));
+        }
+        static float ChevronUp(Vector2 p) // "^" 尖朝上
+        {
+            return Mathf.Min(
+                SdSeg(p, new Vector2(-0.36f, -0.12f), new Vector2(0, 0.26f), 0.11f),
+                SdSeg(p, new Vector2(0, 0.26f), new Vector2(0.36f, -0.12f), 0.11f));
+        }
+        static Vector2 Rot45(Vector2 p)
+        {
+            const float c = 0.70710678f;
+            return new Vector2(p.x * c - p.y * c, p.x * c + p.y * c);
+        }
+        static float SdCircle(Vector2 p, float r) => p.magnitude - r;
+        static float SdBox(Vector2 p, Vector2 b)
+        {
+            float dx = Mathf.Abs(p.x) - b.x, dy = Mathf.Abs(p.y) - b.y;
+            return new Vector2(Mathf.Max(dx, 0), Mathf.Max(dy, 0)).magnitude + Mathf.Min(Mathf.Max(dx, dy), 0);
+        }
+        static float SdSeg(Vector2 p, Vector2 a, Vector2 b, float th)
+        {
+            Vector2 pa = p - a, ba = b - a;
+            float h = Mathf.Clamp01(Vector2.Dot(pa, ba) / Vector2.Dot(ba, ba));
+            return (pa - ba * h).magnitude - th;
+        }
+        static float SdTri(Vector2 p, Vector2 p0, Vector2 p1, Vector2 p2)
+        {
+            Vector2 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2;
+            Vector2 v0 = p - p0, v1 = p - p1, v2 = p - p2;
+            Vector2 pq0 = v0 - e0 * Mathf.Clamp01(Vector2.Dot(v0, e0) / Vector2.Dot(e0, e0));
+            Vector2 pq1 = v1 - e1 * Mathf.Clamp01(Vector2.Dot(v1, e1) / Vector2.Dot(e1, e1));
+            Vector2 pq2 = v2 - e2 * Mathf.Clamp01(Vector2.Dot(v2, e2) / Vector2.Dot(e2, e2));
+            float s = Mathf.Sign(e0.x * e2.y - e0.y * e2.x);
+            Vector2 d = Vector2.Min(Vector2.Min(
+                new Vector2(Vector2.Dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
+                new Vector2(Vector2.Dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
+                new Vector2(Vector2.Dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+            return -Mathf.Sqrt(d.x) * Mathf.Sign(d.y);
         }
 
         // ====================== 队伍小血条（左侧） ======================
