@@ -5,6 +5,7 @@
  * 其余（背包/商店/小地图/横幅等）暂留 IMGUI，后续阶段迁移。
  * ============================================================ */
 using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
