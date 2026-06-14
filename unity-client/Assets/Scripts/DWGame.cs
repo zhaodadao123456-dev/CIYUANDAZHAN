@@ -1280,6 +1280,7 @@ namespace DW
             var go = new GameObject("sparks");
             go.transform.position = at;
             var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);   // 先停，否则配置 duration 会报"playing 中不可改"
             var main = ps.main;
             main.duration = 0.6f; main.loop = false; main.playOnAwake = false;
             main.startLifetime = 0.5f; main.startSpeed = speed; main.startSize = 0.22f;
