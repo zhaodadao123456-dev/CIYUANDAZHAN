@@ -58,6 +58,7 @@ namespace DW.EditorTools
          *   修仙 ← 悟空(WukongB，全套人形动作)
          *   西方魔法 ← Half_Blood / 教会侍从（人形，重定向悟空动作）
          *   科技 ← Sci-Fi 士兵 v.1     赛博朋克 ← Sci-Fi 士兵 v.2
+         *   猎人 ← 牛仔女警长（持枪=猎人感）
          * 士兵包原为 Generic 骨骼无动作，SaveCharPrefab(forceHuman) 会自动转 Humanoid 并重导入。 */
         static readonly (string dim, System.Func<string, bool> match)[] DimHeroRules =
         {
@@ -65,6 +66,7 @@ namespace DW.EditorTools
             ("magic",   (p) => Has(p, "half_blood", "servant_church", "church", "半血") && !Has(p, "gun", "sword", "stand")),
             ("tech",    (p) => Has(p, "trooper") && Has(p, "v.1", "v1")),
             ("cyber",   (p) => Has(p, "trooper") && Has(p, "v.2", "v2")),
+            ("hunter",  (p) => Has(p, "cowboy", "sheriff", "牛仔", "hunter", "archer", "ranger", "猎")),
         };
         static bool Has(string p, params string[] keys) { var l = Lower(p); foreach (var k in keys) if (l.Contains(k)) return true; return false; }
         /* 五次元顺序（与 DWData.Dims 一致），用于把多余角色补满每个次元 */
@@ -78,6 +80,16 @@ namespace DW.EditorTools
         static readonly string[] ScenePropKeys = { "pillar", "column", "statue", "barrel", "crate", "box", "rock", "stone", "tree", "plant", "chest", "pot", "vase", "lamp", "lantern", "torch", "brazier", "grave", "tomb", "ruin", "rubble", "fountain", "cart", "shelf", "throne", "sarcophag", "coffin", "skull", "bone", "banner", "fence", "well", "altar", "mushroom", "crystal", "pile", "debris", "pumpkin", "candle", "cage" };
         /* 结构件不散布（平铺会很丑） */
         static readonly string[] SceneBadKeys = { "floor", "wall", "ceiling", "door", "stair", "tile", "ground", "roof", "corner", "arch", "bridge", "platform", "ramp", "window", "frame", "plane", "terrain", "ceil", "_lod", "collision", "modular_" };
+
+        /* 特效/粒子预制体：即便带 SkinnedMesh 也不是角色（如自然包的 FX_Waterfall），不能进英雄/怪物池 */
+        static readonly string[] EffectKeys = { "/fx/", "/vfx/", "/effects/", "/effect/", "particle", "waterfall" };
+        static bool IsEffectPrefab(string path)
+        {
+            var n = Lower(path);
+            foreach (var k in EffectKeys) if (n.Contains(k)) return true;
+            var f = Lower(Path.GetFileName(path));
+            return f.StartsWith("fx_") || f.StartsWith("vfx_");
+        }
 
         /* 全项目"静态场景道具"：有 MeshRenderer 无 SkinnedMesh、名字像道具、非角色、非管线变体 */
         static List<string> SceneryProps()
@@ -107,6 +119,8 @@ namespace DW.EditorTools
         public static void AutoWire()
         {
             Directory.CreateDirectory(ResDir);
+            // 清掉上次的次元英雄，确保 5 个次元每次都重新分配（避免 hunter 等沿用过期 prefab）
+            foreach (var d in DimOrder) AssetDatabase.DeleteAsset($"{ResDir}/hero_{d}.prefab");
             var log = new StringBuilder("===== 自动接入结果 =====\n");
 
             var allChars = AllCharacterPrefabs();
@@ -349,7 +363,10 @@ namespace DW.EditorTools
                 .Where((p) => !BadPrefabVariant(p))   // 排除 URP/HDRP（内置管线会变粉）与残缺部件
                 .Where((p) => {
                     var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
-                    return go != null && go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
+                    if (go == null || go.GetComponentInChildren<SkinnedMeshRenderer>(true) == null) return false;
+                    if (IsEffectPrefab(p)) return false;                                       // 排除特效/水体（如 FX_Waterfall）
+                    if (go.GetComponentInChildren<ParticleSystem>(true) != null) return false; // 带粒子=特效，不是角色
+                    return true;
                 })
                 .OrderByDescending((p) => {
                     var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
