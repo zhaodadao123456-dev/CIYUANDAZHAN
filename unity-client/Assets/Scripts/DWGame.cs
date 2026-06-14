@@ -256,9 +256,10 @@ namespace DW
                 case "pleave": RemoveEnt(players, (string)m["id"]); break;
                 case "proj":
                 {
-                    var color = (string)m["dim"] == "mon" ? new Color(1f, 0.27f, 0.27f) : Data.Dim((string)m["dim"]).accent;
+                    var pdim = (string)m["dim"];
+                    var color = pdim == "mon" ? new Color(1f, 0.27f, 0.27f) : Data.Dim(pdim).accent;
                     SpawnProj((string)m["id"], (float)m["x"], (float)m["z"],
-                        (float)m["dx"], (float)m["dz"], (float)m["speed"], color);
+                        (float)m["dx"], (float)m["dz"], (float)m["speed"], color, pdim);
                     break;
                 }
                 case "projhit":
@@ -909,7 +910,7 @@ namespace DW
                     if ((string)m["by"] == myId)
                     {
                         DWAudio.SfxAt("hit", e.target, pos, crit ? 0.85f : 0.6f);
-                        if (SpawnFx("hit", e.target + Vector3.up * 1.0f, Quaternion.identity, crit ? 1.3f : 0.9f, 2f) == null)
+                        if (SpawnFx("hit", e.target + Vector3.up * 1.0f, Quaternion.identity, crit ? 1.3f : 0.9f, 2f, dim: myDim) == null)
                             SpawnSparks(e.target + Vector3.up * 1.0f, crit ? new Color(1f, 0.85f, 0.2f) : new Color(1f, 0.95f, 0.8f), crit ? 16 : 8, crit ? 4.5f : 3.2f);
                     }
                 }
@@ -934,7 +935,7 @@ namespace DW
             }
         }
 
-        void SpawnProj(string id, float x, float z, float dx, float dz, float speed, Color c)
+        void SpawnProj(string id, float x, float z, float dx, float dz, float speed, Color c, string dim = null)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             Destroy(go.GetComponent<Collider>());
@@ -944,7 +945,7 @@ namespace DW
             var l = go.AddComponent<Light>();
             l.color = c; l.range = 6; l.intensity = 2.2f;
             var dir = new Vector3(dx, 0, dz);
-            var fx = SpawnFx("proj", go.transform.position, dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity, 1f, 0f, killScripts: true);
+            var fx = SpawnFx("proj", go.transform.position, dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity, 1f, 0f, killScripts: true, dim: dim == "mon" ? null : dim);
             if (fx != null)
             {
                 fx.transform.SetParent(go.transform, true);   // 跟随服务器驱动的弹体移动
@@ -1164,22 +1165,20 @@ namespace DW
         /* 每个技能独立的施放特效（颜色/大小/形态不同） */
         void SkillCastFx(string key, string kind, Vector3 at, Vector3 dir)
         {
-            Color c = key == "basic" ? Data.Dim(myDim).accent
-                : key == "q" ? new Color(0.3f, 0.85f, 1f)
-                : key == "e" ? new Color(1f, 0.6f, 0.1f)
-                : new Color(1f, 0.25f, 0.55f);
+            Color c = Data.Dim(myDim).accent;                  // 主色随次元（科技蓝/修仙绿/赛博粉/魔法紫/猎人橙）
+            Color c2 = Color.Lerp(c, Color.white, 0.35f);      // 高光
             Quaternion face = dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity;
             if (kind == "aoe")
-                SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "aoe");
+                SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "aoe", myDim);
             else if (kind == "aoeheal" || kind == "heal")
-                SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, new Color(0.3f, 1f, 0.5f), "heal");
+                SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, Color.Lerp(c, new Color(0.3f, 1f, 0.5f), 0.6f), "heal", myDim);
             else if (kind == "dashmelee")
-                SpawnShockwave(at + dir * 1.5f + Vector3.up * 0.3f, 2.4f, c, "slash");
+                SpawnShockwave(at + dir * 1.5f + Vector3.up * 0.3f, 2.4f, c, "slash", myDim);
             else   // melee / proj：身前施法闪光（近战再加一刀斩击）
             {
                 Vector3 p = at + dir * 1.2f + Vector3.up * 1.0f;
-                if (SpawnFx("cast", p, face, 1f, 1.5f) == null) { SpawnSparks(p, c, 14, 5.5f); SpawnFlash(p, c, 1.4f); }
-                else if (kind == "melee") SpawnFx("slash", p, face, 1f, 1.2f);
+                if (SpawnFx("cast", p, face, 1f, 1.5f, dim: myDim) == null) { SpawnSparks(p, c2, 16, 5.5f); SpawnFlash(p, c, 1.5f); }
+                else if (kind == "melee") SpawnFx("slash", p, face, 1f, 1.2f, dim: myDim);
             }
         }
 
@@ -1229,10 +1228,10 @@ namespace DW
         }
 
         // 地面扩散光环 + 火花迸射 + 一闪而过的点光（被技能/BOSS/次元技共用）
-        void SpawnShockwave(Vector3 at, float radius, Color c, string fx = "aoe")
+        void SpawnShockwave(Vector3 at, float radius, Color c, string fx = "aoe", string dim = null)
         {
             // 有对应 Hovl 特效就用它（+一束补光），否则程序化光环兜底
-            if (SpawnFx(fx, new Vector3(at.x, 0.12f, at.z), Quaternion.identity, Mathf.Clamp(radius / 4f, 0.7f, 3.5f), 3f) != null)
+            if (SpawnFx(fx, new Vector3(at.x, 0.12f, at.z), Quaternion.identity, Mathf.Clamp(radius / 4f, 0.7f, 3.5f), 3f, dim: dim) != null)
             {
                 SpawnFlash(new Vector3(at.x, 0.6f, at.z), c, radius * 0.7f);
                 return;
@@ -1340,9 +1339,10 @@ namespace DW
             _fxCache[name] = p;
             return p;
         }
-        GameObject SpawnFx(string name, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f, bool killScripts = false)
+        GameObject SpawnFx(string name, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f, bool killScripts = false, string dim = null)
         {
-            var pf = FxPrefab(name);
+            var pf = dim != null ? FxPrefab(name + "_" + dim) : null;   // 优先次元专属变体
+            if (pf == null) pf = FxPrefab(name);
             if (pf == null) return null;
             var go = Instantiate(pf, at, rot);
             if (!Mathf.Approximately(scale, 1f)) go.transform.localScale *= scale;

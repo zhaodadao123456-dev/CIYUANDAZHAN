@@ -236,11 +236,13 @@ namespace DW.EditorTools
         /* 把选定的 Hovl 特效复制进 Resources/DWFx，供运行时按名加载（缺失则运行时程序化兜底） */
         static void WireFx(StringBuilder log)
         {
-            var map = new (string name, string[] cands)[]
+            const string aaa = "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/";
+            var map = new List<(string name, string[] cands)>
             {
-                ("proj",      new[]{ "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Projectiles(transform)/Projectile 16 fire.prefab", "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Projectiles(transform)/Projectile 5 red.prefab" }),
-                ("hit",       new[]{ "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Hit 16 fire.prefab", "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Hit 5 red.prefab" }),
-                ("cast",      new[]{ "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Flash 17 nova violet.prefab", "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/Flash and hits/Flash 5 red.prefab" }),
+                // 通用兜底（次元变体缺失时用）
+                ("proj",      new[]{ aaa + "Projectiles(transform)/Projectile 16 fire.prefab", aaa + "Projectiles(transform)/Projectile 5 red.prefab" }),
+                ("hit",       new[]{ aaa + "Flash and hits/Hit 16 fire.prefab", aaa + "Flash and hits/Hit 5 red.prefab" }),
+                ("cast",      new[]{ aaa + "Flash and hits/Flash 17 nova violet.prefab", aaa + "Flash and hits/Flash 5 red.prefab" }),
                 ("aoe",       new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Energy explosion.prefab", "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Magic attack.prefab" }),
                 ("heal",      new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Leaves buff.prefab" }),
                 ("shield",    new[]{ "Assets/Hovl Studio/Magic circles/Prefabs/Magic shield holy.prefab", "Assets/Hovl Studio/Magic circles/Prefabs/Magic shield runes.prefab" }),
@@ -249,6 +251,14 @@ namespace DW.EditorTools
                 ("storm",     new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Meteor shower.prefab", "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Meteor shower 2.prefab" }),
                 ("lightning", new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Lightning strike.prefab" }),
             };
+            // 五次元各用不同元素主题的弹道/施法/击中（科技=电/赛博=红激光/修仙=自然/魔法=紫华/猎人=橙箭）
+            var dimElem = new[] { ("tech", "2 electro"), ("cyber", "13 red laser"), ("xiuxian", "1 nature arrow"), ("magic", "17 nova violet"), ("hunter", "11 orange arrow") };
+            foreach (var (dim, n) in dimElem)
+            {
+                map.Add(($"proj_{dim}", new[]{ aaa + $"Projectiles(transform)/Projectile {n}.prefab" }));
+                map.Add(($"cast_{dim}", new[]{ aaa + $"Flash and hits/Flash {n}.prefab" }));
+                map.Add(($"hit_{dim}",  new[]{ aaa + $"Flash and hits/Hit {n}.prefab" }));
+            }
             const string fxDir = "Assets/Resources/DWFx";
             RebuildFolder(fxDir);
             int n = 0;
