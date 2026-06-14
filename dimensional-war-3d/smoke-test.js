@@ -148,7 +148,7 @@ function client(name, dim, cls) {
       const boss = snap && snap.ms.find((m) => m[7] === 5);
       const bx = boss ? boss[1] : bossMsg.x, bz = boss ? boss[2] : bossMsg.z;
       const d = Math.hypot(bx - cx, bz - cz) || 1;
-      if (d > 2.6) {
+      if (d > 5) {   // BOSS 体积 r=3：撞不进去，从身体边缘(≈3.6)外开打（近战 range+r 仍命中）
         D.send({ t: 'mv', x: cx + (bx - cx) / d * 0.7, z: cz + (bz - cz) / d * 0.7, ry: 0, anim: 'run' });
         await sleep(40);
       } else {

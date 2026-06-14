@@ -114,6 +114,21 @@ function resolveObstacles(room, x, z, rad) {
   return { x, z };
 }
 
+/* 把坐标推出有体积的怪物（世界BOSS r=3：玩家撞不进它的庞大身躯） */
+function resolveBoss(room, x, z, rad) {
+  for (const mo of room.monsters.values()) {
+    if (!mo.r || mo.state === 'dead') continue;
+    const dx = x - mo.x, dz = z - mo.z, min = mo.r + rad;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < min * min) {
+      const d = Math.sqrt(d2) || 0.001;
+      x = mo.x + (dx / d) * min;
+      z = mo.z + (dz / d) * min;
+    }
+  }
+  return { x, z };
+}
+
 /* ---------- 怪物 ---------- */
 let nextMid = 1;
 function spawnMonsters(room, dimId) {
@@ -181,7 +196,7 @@ function spawnWorldBoss() {
   const bx = Math.cos(ang) * (LAIR_R - 8), bz = Math.sin(ang) * (LAIR_R - 8);
   const name = BOSS_NAMES[dim.id] || '次元主宰';
   room.monsters.set(id, {
-    id, name, tier: 5, boss: true, level: 100, skill: 'none', skillT: 0,
+    id, name, tier: 5, boss: true, level: 100, skill: 'none', skillT: 0, r: 3,
     x: bx, z: bz, spawnX: bx, spawnZ: bz, ry: 0,
     hp: +process.env.DW_BOSS_HP || 6000, maxHp: +process.env.DW_BOSS_HP || 6000, atk: 58, speed: 4.6,
     exp: 900, gold: 600,
@@ -725,7 +740,8 @@ function handle(ws, m) {
         x = p.x + (x - p.x) / d * maxD;
         z = p.z + (z - p.z) / d * maxD;
       }
-      const rp = resolveObstacles(rooms[p.room], x, z, 0.6);   // 障碍物碰撞
+      const r0 = resolveObstacles(rooms[p.room], x, z, 0.6);   // 障碍物碰撞
+      const rp = resolveBoss(rooms[p.room], r0.x, r0.z, 0.6);  // 世界BOSS 庞大身躯碰撞
       p.x = rp.x; p.z = rp.z;
       p.ry = +m.ry || 0;
       p.anim = m.anim === 'run' ? 'run' : 'idle';
@@ -1366,9 +1382,10 @@ function cast(p, m) {
     const dx2 = tgt.x - p.x, dz2 = tgt.z - p.z;
     const d = Math.sqrt(dx2 * dx2 + dz2 * dz2);
     let hit = false;
-    if (sk.kind === 'aoe') hit = d <= sk.radius;
+    const br = tgt.r || 0;   // 大体积怪（BOSS）按其身体边缘判定，不必戳到中心
+    if (sk.kind === 'aoe') hit = d <= sk.radius + br;
     else {
-      if (d <= sk.range) {
+      if (d <= sk.range + br) {
         const ang = Math.acos(clamp((dx2 * dx + dz2 * dz) / (d || 1), -1, 1));
         hit = ang <= sk.arc / 2;
       }
@@ -1678,7 +1695,8 @@ function tickRoom(room) {
       const px = pr.x + pr.dx * step * (s / subs);
       const pz = pr.z + pr.dz * step * (s / subs);
       for (const tgt of targets) {
-        if (dist2(px, pz, tgt.x, tgt.z) < hr * hr) {
+        const er = hr + (tgt.r || 0);   // BOSS 体积加到命中半径
+        if (dist2(px, pz, tgt.x, tgt.z) < er * er) {
           if (pr.fromMonster) hurtPlayer(room, mob || { id: pr.owner, name: '怪物', targetId: null }, tgt, pr.dmg, pr.dmgType);
           else { applyDamage(owner, tgt, pr.dmg, pr.dmgType); if (pr.cc && owner) applyCC(owner, tgt, pr.cc); }
           hitId = tgt.id; pr.x = px; pr.z = pz;
@@ -1768,15 +1786,16 @@ function tickRoom(room) {
           }
         }
       }
+      const reach = 2.0 + (mo.r || 0);   // BOSS 身体半径计入近战距离，才够得到被挤到边缘的玩家
       if (tgt.dead) {           // 轰击若击杀了目标，本帧停手
         mo.targetId = null; mo.state = 'idle';
-      } else if (d > 2.0 && !rooted) {
+      } else if (d > reach && !rooted) {
         mo.state = 'chase';
         mo.x += (tgt.x - mo.x) / d * moSpd * dt;
         mo.z += (tgt.z - mo.z) / d * moSpd * dt;
         const rm = resolveObstacles(room, mo.x, mo.z, 0.8);
         mo.x = rm.x; mo.z = rm.z;
-      } else if (d <= 2.0 && t - mo.atkT > 1100) {
+      } else if (d <= reach && t - mo.atkT > 1100) {
         mo.atkT = t;
         mo.state = 'attack';
         let dmg = mo.atk * rnd(0.9, 1.15);
