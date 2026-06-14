@@ -265,11 +265,11 @@ namespace DW.EditorTools
             };
             // 五次元各用不同元素主题的弹道/施法/击中（科技=电/赛博=红激光/修仙=自然/魔法=紫华/猎人=橙箭）
             var dimElem = new[] { ("tech", "2 electro"), ("cyber", "13 red laser"), ("xiuxian", "1 nature arrow"), ("magic", "17 nova violet"), ("hunter", "11 orange arrow") };
-            foreach (var (dim, n) in dimElem)
+            foreach (var (dim, en) in dimElem)
             {
-                map.Add(($"proj_{dim}", new[]{ aaa + $"Projectiles(transform)/Projectile {n}.prefab" }));
-                map.Add(($"cast_{dim}", new[]{ aaa + $"Flash and hits/Flash {n}.prefab" }));
-                map.Add(($"hit_{dim}",  new[]{ aaa + $"Flash and hits/Hit {n}.prefab" }));
+                map.Add(($"proj_{dim}", new[]{ aaa + $"Projectiles(transform)/Projectile {en}.prefab" }));
+                map.Add(($"cast_{dim}", new[]{ aaa + $"Flash and hits/Flash {en}.prefab" }));
+                map.Add(($"hit_{dim}",  new[]{ aaa + $"Flash and hits/Hit {en}.prefab" }));
             }
             const string fxDir = "Assets/Resources/DWFx";
             RebuildFolder(fxDir);
