@@ -1,0 +1,3 @@
+技能/界面图标来自 game-icons.net，授权 CC BY 3.0（https://creativecommons.org/licenses/by/3.0/）。
+作者包括 Lorc、Delapouite、sbed 等（https://game-icons.net）。已按要求保留署名。
+运行时白色图标按技能/次元着色。

@@ -550,14 +550,14 @@ namespace DW
             {
                 if (us.key == "dodge")
                 {
-                    SetSkillIcon(us, "dodge", false);
+                    SetSkillIcon(us, "ui_dodge", "dodge", new Color(0.55f, 0.78f, 1f), false);
                     us.nameText.text = "翻滚闪避"; us.lvText.text = "";
                     SetCd(us, Mathf.Max(0, dodgeReadyAt - Time.time), 1.2f);
                     us.plus.SetActive(false);
                 }
                 else if (us.key == "dim")
                 {
-                    SetSkillIcon(us, "dim", false);
+                    SetSkillIcon(us, "dim_" + myDim, "dim", Data.Dim(myDim).accent, false);
                     us.nameText.text = dimSkillName; us.lvText.text = "";
                     SetCd(us, Mathf.Max(0, captureReadyAt - Time.time), dimSkillCd > 0 ? dimSkillCd : 3f);
                     us.plus.SetActive(false);
@@ -566,7 +566,7 @@ namespace DW
                 {
                     var sk = def.Skill(us.key);
                     bool locked = sk.minLvl > 0 && MyLevel < sk.minLvl;
-                    SetSkillIcon(us, sk.kind, locked);
+                    SetSkillIcon(us, "sk_" + myCls + "_" + us.key, sk.kind, KindColor(sk.kind), locked);
                     us.nameText.text = locked ? sk.name + "(锁)" : sk.name;
                     us.lvText.text = "Lv" + MySkLvl(us.key);
                     float ready; readyAt.TryGetValue(us.key, out ready);
@@ -778,27 +778,29 @@ namespace DW
             _pngIcons[name] = sp;
             return sp;
         }
-        // 技能格图标：战斗技能与次元技用「本次元专属质感」（科技霓虹/修仙玉光/赛博故障/魔法法阵/猎人爪痕）；
-        // 翻滚是通用位移机制，保持冰蓝霓虹以示区分。
-        void SetSkillIcon(USkill us, string kind, bool locked)
+        // 技能格图标：优先用 game-icons.net 真图标（按技能着色），缺失才回退程序化字形。
+        void SetSkillIcon(USkill us, string iconName, string glyphKind, Color tint, bool locked)
         {
-            if (kind == "dodge") us.icon.sprite = NeonIcon("dodge", new Color(0.32f, 0.62f, 1f), locked);
-            else us.icon.sprite = DimIcon(kind, myDim, locked);
-            us.icon.color = Color.white;
+            var png = PngIcon(iconName);
+            if (png != null)
+            {
+                us.icon.sprite = png;
+                us.icon.color = locked ? new Color(tint.r * 0.42f, tint.g * 0.42f, tint.b * 0.48f, 1f) : tint;
+            }
+            else
+            {
+                us.icon.sprite = DimIcon(glyphKind, myDim, locked);
+                us.icon.color = Color.white;
+            }
         }
-        // 按钮图标：统一霓虹矢量（攻击/背包/退出/关闭），不再依赖 PNG、不再回退文字
+        // 按钮图标：优先 game-icons.net 真图标，缺失回退程序化字形
         void BtnIcon(Transform parent, string iconName, string fallbackText, float iconSize, int fontSize)
         {
-            string key; Color glow;
-            switch (iconName)
-            {
-                case "ui_attack": key = "attack"; glow = new Color(1f, 0.86f, 0.66f); break;   // 暖白核，在橙键上更清晰
-                case "ui_bag": key = "bag"; glow = Pal.Accent; break;
-                case "ui_exit": key = "exit"; glow = Pal.Danger; break;
-                default: key = "close"; glow = Color.white; break;
-            }
             var img = MkImg("ic", parent, Color.white, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(iconSize, iconSize));
-            img.sprite = NeonIcon(key, glow, false); img.preserveAspect = true; img.raycastTarget = false;
+            var png = PngIcon(iconName);
+            if (png != null) img.sprite = png;
+            else img.sprite = NeonIcon(iconName == "ui_attack" ? "attack" : iconName == "ui_bag" ? "bag" : "exit", Color.white, false);
+            img.preserveAspect = true; img.raycastTarget = false;
         }
 
         // 各效果类型的白色字形（SDF，归一化坐标 [-1,1]，负值=图形内部）
