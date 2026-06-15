@@ -94,12 +94,18 @@ namespace DW.EditorTools
         const string SceneDir = "Assets/Resources/DWScene";
 
         /* 适合散布到野外的"道具型"静态模型关键词（柱子/石棺/木桶/骸骨…） */
-        static readonly string[] ScenePropKeys = { "pillar", "column", "statue", "barrel", "crate", "box", "rock", "stone", "tree", "plant", "chest", "pot", "vase", "lamp", "lantern", "torch", "brazier", "grave", "tomb", "ruin", "rubble", "fountain", "cart", "shelf", "throne", "sarcophag", "coffin", "skull", "bone", "banner", "fence", "well", "altar", "mushroom", "crystal", "pile", "debris", "pumpkin", "candle", "cage",
-            // 工业(RPG_FPS) + 自然(SimpleNature/PurePoly) 通用道具，尽量用上各包
-            "container", "tank", "oil", "dumpster", "pallet", "pipe", "machine", "generator", "vent", "console", "antenna", "sack", "bag", "tire", "scaffold",
-            "bush", "grass", "flower", "fern", "shrub", "log", "stump", "branch", "cactus", "reed", "lily", "boulder", "pebble", "cliff", "leaf", "weed", "root", "moss", "vine", "hedge", "pp_", "sm_", "sn_" };
-        /* 结构件不散布（平铺会很丑） */
-        static readonly string[] SceneBadKeys = { "floor", "wall", "ceiling", "door", "stair", "tile", "ground", "roof", "corner", "arch", "bridge", "platform", "ramp", "window", "frame", "plane", "terrain", "ceil", "_lod", "collision", "modular_" };
+        static readonly string[] ScenePropKeys = {
+            // 自然（PurePoly / SimpleNature）
+            "tree", "palm", "rock", "stone", "boulder", "pebble", "plant", "bush", "shrub", "grass", "flower", "fern", "mushroom", "log", "stump", "branch", "reed", "cactus", "lily", "weed", "hedge", "moss", "root",
+            // 通用道具
+            "pillar", "column", "statue", "barrel", "crate", "box", "chest", "pot", "vase", "lamp", "lantern", "torch", "brazier", "fountain", "cart", "shelf", "fence", "well", "altar", "crystal", "pile", "debris", "banner", "grave", "tomb", "ruin", "rubble", "bone", "skull", "sarcophag", "coffin", "candle", "cage", "pumpkin",
+            // 工业（RPG_FPS）
+            "container", "oil", "tank", "dumpster", "pallet", "pipe", "sack", "tire", "scaffold", "generator", "vent", "antenna" };
+        /* 结构件 / 武器 / 地形大块 / 主题杂物 不散布（平铺会很丑或不合适） */
+        static readonly string[] SceneBadKeys = { "floor", "wall", "ceiling", "door", "stair", "tile", "ground", "roof", "corner", "arch", "bridge", "platform", "ramp", "window", "frame", "plane", "terrain", "ceil", "_lod", "collision", "modular_",
+            "gun", "sword", "bullet", "knife", "axe", "rifle", "pistol", "weapon", "ammo", "blade", "magazine",
+            "water", "hill", "mountain", "plateau", "riverbed", "iceberg", "floe", "iglo", "cliff", "river", "lake", "island", "road",
+            "candy", "present", "santa", "sleigh", "snowman", "surfboard", "sandcastle", "umbrella", "lifebelt", "volleyball", "soccer", "coconut", "bucket", "shovel", "rake", "boat", "dock", "bottle", "paper", "lighthouse", "windmill", "anchor", "chain", "rope", "fishing", "starfish", "seashell", "ball", "toy", "chair", "sign", "building", "house", "tent" };
 
         /* 特效/粒子预制体：即便带 SkinnedMesh 也不是角色（如自然包的 FX_Waterfall），不能进英雄/怪物池 */
         static readonly string[] EffectKeys = { "/fx/", "/vfx/", "/effects/", "/effect/", "particle", "waterfall" };
