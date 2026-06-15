@@ -70,6 +70,27 @@ namespace DW
             return _whiteSprite;
         }
 
+        // 圆角矩形（9-slice），让面板/按钮不再是硬直角，整体更现代
+        static Sprite _roundSprite;
+        static Sprite RoundSprite()
+        {
+            if (_roundSprite != null) return _roundSprite;
+            const int N = 48; const float r = 16f;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float cx = Mathf.Clamp(x, r, N - 1 - r), cy = Mathf.Clamp(y, r, N - 1 - r);
+                    float d = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(r - d + 0.5f) * 255));
+                }
+            t.SetPixels32(px); t.Apply(false);
+            _roundSprite = Sprite.Create(t, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(r, r, r, r));
+            return _roundSprite;
+        }
+        Image Round(Image img) { if (img != null) { img.sprite = RoundSprite(); img.type = Image.Type.Sliced; } return img; }
+
         void EnsureEventSystem()
         {
             if (FindObjectOfType<EventSystem>() != null) return;
@@ -114,6 +135,7 @@ namespace DW
         {
             var img = MkImg(name, parent, c, aMin, aMax, pivot, pos, size);
             img.raycastTarget = true;
+            Round(img);   // 圆角按钮
             var b = img.gameObject.AddComponent<Button>();
             b.targetGraphic = img;
             var cb = b.colors; cb.highlightedColor = new Color(1, 1, 1, 1f); cb.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f); b.colors = cb;
@@ -140,6 +162,7 @@ namespace DW
             // ---- 左上状态面板 ----
             var panel = MkImg("Status", root, new Color(0.06f, 0.07f, 0.14f, 0.72f),
                 new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -24), new Vector2(560, 188));
+            Round(panel);
             uStatusTop = MkTxt("Top", panel.transform, "", 26, Color.white, TextAnchor.MiddleLeft,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -12), new Vector2(-30, 36));
             // HP 条
@@ -170,6 +193,7 @@ namespace DW
                 float x = -totalW / 2 + i * (sw + gap);
                 var slot = MkImg("Slot_" + keys[i], barRoot, new Color(0.1f, 0.11f, 0.2f, 0.8f),
                     new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(x, 0), new Vector2(sw, sh));
+                Round(slot);
                 var us = new USkill { key = keys[i] };
                 // 图标块（颜色随后在 Refresh 设）
                 us.icon = MkImg("Icon", slot.transform, Color.white,
@@ -221,7 +245,7 @@ namespace DW
         // ---- 顶部横幅 / 信息流 / 升级 / 提示 / 死亡 ----
         GameObject MkBanner(Transform root, string name, Color bg, float topY, float w, out Text txt)
         {
-            var p = MkImg(name, root, bg, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, topY), new Vector2(w, 44));
+            var p = Round(MkImg(name, root, bg, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, topY), new Vector2(w, 44)));
             txt = MkTxt("t", p.transform, "", 22, Color.white, TextAnchor.MiddleLeft,
                 new Vector2(0, 0), new Vector2(1, 1), new Vector2(0, 0.5f), new Vector2(20, 0), new Vector2(-180, 0));
             p.gameObject.SetActive(false);
@@ -247,12 +271,12 @@ namespace DW
                     new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-20, -150 - i * 30), new Vector2(620, 28));
 
             // 升级横幅（中上）
-            uLevelUp = MkImg("LevelUp", root, new Color(1f, 0.6f, 0.15f, 0.92f), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -200), new Vector2(420, 70)).gameObject;
+            uLevelUp = Round(MkImg("LevelUp", root, new Color(1f, 0.6f, 0.15f, 0.92f), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -200), new Vector2(420, 70))).gameObject;
             uLevelUpTxt = MkTxt("t", uLevelUp.transform, "", 34, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             uLevelUp.SetActive(false);
 
             // 顶部提示 toast（屏幕中下）
-            uToast = MkImg("Toast", root, new Color(0, 0, 0, 0.7f), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 230), new Vector2(760, 44)).gameObject;
+            uToast = Round(MkImg("Toast", root, new Color(0, 0, 0, 0.7f), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 230), new Vector2(760, 44))).gameObject;
             uToastTxt = MkTxt("t", uToast.transform, "", 22, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             uToast.SetActive(false);
 
@@ -623,8 +647,8 @@ namespace DW
             const int maxRows = 5;
             for (int i = 0; i < maxRows; i++)
             {
-                var box = MkImg("Party" + i, root, new Color(0.06f, 0.07f, 0.14f, 0.7f),
-                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -228 - i * 56), new Vector2(300, 50));
+                var box = Round(MkImg("Party" + i, root, new Color(0.06f, 0.07f, 0.14f, 0.7f),
+                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -228 - i * 56), new Vector2(300, 50)));
                 var name = MkTxt("n", box.transform, "", 18, Color.white, TextAnchor.UpperLeft,
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(10, -4), new Vector2(-16, 24));
                 MkImg("bg", box.transform, new Color(0, 0, 0, 0.6f),
@@ -656,8 +680,8 @@ namespace DW
         void BuildMinimap(Transform root)
         {
             // 边框 + 画布（左下角，避开底部技能栏与右下攻击键）
-            var frame = MkImg("MiniFrame", root, new Color(0.5f, 0.55f, 0.7f, 0.5f),
-                new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(20, 20), new Vector2(228, 228));
+            var frame = Round(MkImg("MiniFrame", root, new Color(0.5f, 0.55f, 0.7f, 0.5f),
+                new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(20, 20), new Vector2(228, 228)));
             var go = new GameObject("Minimap", typeof(RectTransform));
             go.transform.SetParent(frame.transform, false);
             var rt = (RectTransform)go.transform;
@@ -834,8 +858,8 @@ namespace DW
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 60), new Vector2(960, 40));
 
             // ---- 表单 ----
-            var panel = MkImg("Form", root, new Color(0.07f, 0.08f, 0.16f, 0.99f),
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(760, 880));
+            var panel = Round(MkImg("Form", root, new Color(0.07f, 0.08f, 0.16f, 0.99f),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(760, 880)));
             menuForm = panel.gameObject;
             var pt = panel.transform;
             float pw = 760;
@@ -900,8 +924,8 @@ namespace DW
 
         InputField MkInput(Transform parent, string val, int limit, float yy, UnityEngine.Events.UnityAction<string> onChange)
         {
-            var bg = MkImg("inp", parent, new Color(0.12f, 0.13f, 0.22f, 1f),
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, yy), new Vector2(-56, 54));
+            var bg = Round(MkImg("inp", parent, new Color(0.12f, 0.13f, 0.22f, 1f),
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, yy), new Vector2(-56, 54)));
             bg.raycastTarget = true;
             var inp = bg.gameObject.AddComponent<InputField>();
             var txt = MkTxt("t", bg.transform, "", 24, Color.white, TextAnchor.MiddleLeft,
@@ -957,8 +981,8 @@ namespace DW
             BtnIcon(exit.transform, "ui_exit", "退出", 46, 26);
 
             // 面板
-            uPanel = MkImg("Panel", root, new Color(0.07f, 0.08f, 0.16f, 0.97f),
-                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -112), new Vector2(680, 760)).gameObject;
+            uPanel = Round(MkImg("Panel", root, new Color(0.07f, 0.08f, 0.16f, 0.97f),
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -112), new Vector2(680, 760))).gameObject;
             // 顶部标签
             string[] tabs = { "属性", "背包", "商店" };
             uTabTxt = new Text[tabs.Length];
