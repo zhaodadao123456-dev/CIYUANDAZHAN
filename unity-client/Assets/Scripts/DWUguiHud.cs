@@ -62,6 +62,10 @@ namespace DW
         }
         readonly List<USkill> uSkills = new List<USkill>();
 
+        // 按次元换肤：登记需要随玩家次元变色的描边，myDim 变化时统一刷成该次元主色
+        readonly List<Image> dimThemed = new List<Image>();
+        string themeDim = "";
+
         static Sprite WhiteSprite()
         {
             if (_whiteSprite == null)
@@ -151,13 +155,14 @@ namespace DW
         }
 
         // 给面板加玻璃质感：圆角 + 一圈描边 + 顶部高光（描边/高光都置于最底层，不挡内容）
-        void GlassPanel(Image panel, Color? border = null, bool sheen = true)
+        void GlassPanel(Image panel, Color? border = null, bool sheen = true, bool themed = false)
         {
             if (panel == null) return;
             Round(panel);
             var stroke = MkImg("stroke", panel.transform, border ?? Pal.Stroke, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             stroke.sprite = RoundStrokeSprite(); stroke.type = Image.Type.Sliced; stroke.raycastTarget = false;
             stroke.transform.SetAsFirstSibling();
+            if (themed) dimThemed.Add(stroke);
             if (sheen)
             {
                 var sh = MkImg("sheen", panel.transform, new Color(1f, 1f, 1f, 0.13f), new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -5), new Vector2(-28, 4));
@@ -295,7 +300,7 @@ namespace DW
             // ---- 左上状态面板 ----
             var panel = MkImg("Status", root, Pal.Glass,
                 new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -24), new Vector2(560, 188));
-            GlassPanel(panel);
+            GlassPanel(panel, themed: true);
             uStatusTop = MkTxt("Top", panel.transform, "", 26, Color.white, TextAnchor.MiddleLeft,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -12), new Vector2(-30, 36));
             // HP 条
@@ -328,7 +333,7 @@ namespace DW
                 float x = -totalW / 2 + i * (sw + gap);
                 var slot = MkImg("Slot_" + keys[i], barRoot, Pal.Slot,
                     new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(x, 0), new Vector2(sw, sh));
-                GlassPanel(slot, Pal.StrokeSft);
+                GlassPanel(slot, Pal.StrokeSft, themed: true);
                 var us = new USkill { key = keys[i] };
                 // 图标块（颜色随后在 Refresh 设）
                 us.icon = MkImg("Icon", slot.transform, Color.white,
@@ -514,6 +519,14 @@ namespace DW
             if (plateCanvas != null && plateCanvas.enabled != playing) plateCanvas.enabled = playing;
             if (!playing) return;
 
+            // 不同次元不同风格：HUD 描边随玩家所在次元换色（含换角色后重染）
+            if (themeDim != myDim && !string.IsNullOrEmpty(myDim))
+            {
+                themeDim = myDim;
+                var ac = Data.Dim(myDim).accent;
+                foreach (var s in dimThemed) if (s != null) s.color = new Color(ac.r, ac.g, ac.b, 0.62f);
+            }
+
             int hp = you != null ? (int?)you["hp"] ?? 0 : 0;
             int maxHp = you != null ? (int?)you["maxHp"] ?? 1 : 1;
             int shield = you != null ? (int?)you["shield"] ?? 0 : 0;
@@ -572,9 +585,8 @@ namespace DW
             bool ready = remain <= 0.02f;
             if (us.flash != null)
             {
-                if (ready && !us.wasReady) us.flash.color = new Color(1f, 1f, 1f, 0.5f);
-                float a = Mathf.MoveTowards(us.flash.color.a, 0f, Time.deltaTime * 1.9f);
-                us.flash.color = new Color(1f, 1f, 1f, a);
+                if (ready && !us.wasReady) { var a = Data.Dim(myDim).accent; us.flash.color = new Color(a.r, a.g, a.b, 0.6f); }
+                var fc = us.flash.color; fc.a = Mathf.MoveTowards(fc.a, 0f, Time.deltaTime * 1.9f); us.flash.color = fc;
             }
             us.wasReady = ready;
         }
@@ -628,6 +640,36 @@ namespace DW
             return sp;
         }
 
+        // ====================== 霓虹图标（白核 + 同色辉光，透明底）—— 全套统一矢量，按字形+辉光色缓存 ======================
+        static readonly Dictionary<string, Sprite> _neonIcons = new Dictionary<string, Sprite>();
+        static Sprite NeonIcon(string kind, Color glow, bool locked)
+        {
+            string key = kind + "|" + ColorUtility.ToHtmlStringRGB(glow) + (locked ? "L" : "");
+            if (_neonIcons.TryGetValue(key, out var cached)) return cached;
+            const int N = 96;
+            var buf = new Color[N * N];
+            float feather = 1.7f / N;
+            Color core = locked ? new Color(0.66f, 0.70f, 0.80f) : Color.white;
+            Color gl = locked ? new Color(glow.r * 0.45f + 0.18f, glow.g * 0.45f + 0.18f, glow.b * 0.45f + 0.20f) : glow;
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f;
+                    float v = (y + 0.5f) / N * 2f - 1f;
+                    float d = GlyphSdf(kind, new Vector2(u, v));            // <0 字形内部
+                    float fill = Mathf.Clamp01(0.5f - d / feather);        // 1=字形实心(白核)
+                    float halo = Mathf.Exp(-Mathf.Max(d, 0f) * 7.5f);      // 边缘→外渐隐的辉光
+                    float a = Mathf.Clamp01(Mathf.Max(fill, halo * 0.8f));
+                    Color col = Color.Lerp(gl, core, fill);
+                    buf[y * N + x] = new Color(col.r, col.g, col.b, a);
+                }
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            tex.SetPixels(buf); tex.Apply(false);
+            var sp = Sprite.Create(tex, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
+            _neonIcons[key] = sp;
+            return sp;
+        }
+
         // ====================== 美术图标（game-icons.net CC BY，存 Resources/DWIcons，白图运行时着色；缺失→SDF 兜底） ======================
         static readonly Dictionary<string, Sprite> _pngIcons = new Dictionary<string, Sprite>();
         static Sprite PngIcon(string name)
@@ -638,32 +680,28 @@ namespace DW
             _pngIcons[name] = sp;
             return sp;
         }
-        // 技能格图标：优先 PNG（按效果色着色），否则程序化 SDF
+        // 技能格图标：统一霓虹矢量。战斗技能辉光=本次元主色（不同次元不同霓虹），翻滚=冰蓝、次元技=金
         void SetSkillIcon(USkill us, string kind, bool locked)
         {
-            var png = PngIcon("skill_" + kind);
-            if (png != null)
-            {
-                us.icon.sprite = png;
-                Color c = IconBg(kind);
-                us.icon.color = locked ? new Color(c.r * 0.45f, c.g * 0.45f, c.b * 0.45f, 1f) : c;
-            }
-            else
-            {
-                us.icon.sprite = KindIcon(kind);
-                us.icon.color = locked ? new Color(0.5f, 0.5f, 0.5f, 1f) : Color.white;
-            }
+            Color glow = kind == "dodge" ? new Color(0.32f, 0.62f, 1f)
+                       : kind == "dim" ? Pal.Gold
+                       : Data.Dim(myDim).accent;
+            us.icon.sprite = NeonIcon(kind, glow, locked);
+            us.icon.color = Color.white;
         }
-        // 按钮图标：有 PNG 放图标，否则放回退文字
+        // 按钮图标：统一霓虹矢量（攻击/背包/退出/关闭），不再依赖 PNG、不再回退文字
         void BtnIcon(Transform parent, string iconName, string fallbackText, float iconSize, int fontSize)
         {
-            var png = PngIcon(iconName);
-            if (png != null)
+            string key; Color glow;
+            switch (iconName)
             {
-                var img = MkImg("ic", parent, Color.white, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(iconSize, iconSize));
-                img.sprite = png; img.preserveAspect = true;
+                case "ui_attack": key = "attack"; glow = new Color(1f, 0.86f, 0.66f); break;   // 暖白核，在橙键上更清晰
+                case "ui_bag": key = "bag"; glow = Pal.Accent; break;
+                case "ui_exit": key = "exit"; glow = Pal.Danger; break;
+                default: key = "close"; glow = Color.white; break;
             }
-            else MkTxt("t", parent, fallbackText, fontSize, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            var img = MkImg("ic", parent, Color.white, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(iconSize, iconSize));
+            img.sprite = NeonIcon(key, glow, false); img.preserveAspect = true; img.raycastTarget = false;
         }
 
         // 各效果类型的白色字形（SDF，归一化坐标 [-1,1]，负值=图形内部）
@@ -693,6 +731,30 @@ namespace DW
                     Vector2 r = Rot45(p);
                     float x = Mathf.Min(SdBox(r, new Vector2(0.08f, 0.4f)), SdBox(r, new Vector2(0.4f, 0.08f)));
                     return Mathf.Min(plus, x);
+                }
+                case "attack":   // 攻击→交叉双剑
+                    return Mathf.Min(
+                        SdSeg(p, new Vector2(-0.46f, -0.46f), new Vector2(0.46f, 0.46f), 0.11f),
+                        SdSeg(p, new Vector2(-0.46f, 0.46f), new Vector2(0.46f, -0.46f), 0.11f));
+                case "close":    // 关闭→叉
+                    return Mathf.Min(
+                        SdSeg(p, new Vector2(-0.4f, -0.4f), new Vector2(0.4f, 0.4f), 0.09f),
+                        SdSeg(p, new Vector2(-0.4f, 0.4f), new Vector2(0.4f, -0.4f), 0.09f));
+                case "bag":      // 背包→包体+提手+扣带
+                {
+                    float body = Mathf.Abs(SdBox(p - new Vector2(0f, -0.08f), new Vector2(0.34f, 0.34f))) - 0.065f;
+                    float handle = Mathf.Max(Mathf.Abs(SdCircle(p - new Vector2(0f, 0.30f), 0.18f)) - 0.06f, 0.30f - p.y);
+                    float buckle = SdSeg(p, new Vector2(-0.34f, -0.02f), new Vector2(0.34f, -0.02f), 0.05f);
+                    float tab = SdBox(p - new Vector2(0f, -0.18f), new Vector2(0.08f, 0.06f));
+                    return Mathf.Min(Mathf.Min(body, handle), Mathf.Min(buckle, tab));
+                }
+                case "exit":     // 退出→门框+外向箭头
+                {
+                    float frame = Mathf.Abs(SdBox(p - new Vector2(-0.22f, 0f), new Vector2(0.2f, 0.46f))) - 0.06f;
+                    float shaft = SdSeg(p, new Vector2(-0.06f, 0f), new Vector2(0.46f, 0f), 0.075f);
+                    float a1 = SdSeg(p, new Vector2(0.46f, 0f), new Vector2(0.24f, 0.2f), 0.075f);
+                    float a2 = SdSeg(p, new Vector2(0.46f, 0f), new Vector2(0.24f, -0.2f), 0.075f);
+                    return Mathf.Min(frame, Mathf.Min(shaft, Mathf.Min(a1, a2)));
                 }
                 default:       // 近战→双斜斩
                     return Mathf.Min(
@@ -854,7 +916,7 @@ namespace DW
             // 边框 + 画布（左下角，避开底部技能栏与右下攻击键）
             var frame = MkImg("MiniFrame", root, Pal.Glass,
                 new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(20, 20), new Vector2(228, 228));
-            GlassPanel(frame, Pal.Stroke, false);
+            GlassPanel(frame, Pal.Stroke, false, true);
             var go = new GameObject("Minimap", typeof(RectTransform));
             go.transform.SetParent(frame.transform, false);
             var rt = (RectTransform)go.transform;
@@ -1152,6 +1214,9 @@ namespace DW
                 uClsTxt[i].text = $"{Data.ClassTitle(Data.Dims[dimIdx].id, Data.Classes[i].id)}\n<size=14>({Data.Classes[i].role})</size>";
             }
             uHunterHint.text = Data.Dims[dimIdx].id == "hunter" ? "次元天赋：可捕捉野怪当宝宝（F键）" : "";
+            // 主行动按钮跟随所选次元主色 —— 不同次元不同风格
+            var da = Data.Dims[dimIdx].accent;
+            ((Image)uJoinBtn.targetGraphic).color = new Color(da.r, da.g, da.b, 1f);
             uJoinBtn.interactable = (playerName ?? "").Trim().Length > 0;
         }
 
