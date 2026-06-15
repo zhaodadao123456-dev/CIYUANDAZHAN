@@ -171,7 +171,8 @@ function spawnMonsters(room, dimId) {
   }
 }
 
-function addMonster(room, { name, tier, x, z, level }) {
+let monSpawnCount = 0;   // 全局生成计数：每 10 个出 1 个精英
+function addMonster(room, { name, tier, x, z, level, elite }) {
   const id = 'm' + nextMid++;
   // 等级跨度 1-100：越外圈层级越高（T1:1-10 / T2:11-35 / T3:36-70 / T4:71-100）
   if (level == null) {
@@ -179,19 +180,23 @@ function addMonster(room, { name, tier, x, z, level }) {
     level = band[0] + Math.floor(rnd(0, band[1] - band[0] + 1));
   }
   level = clamp(Math.round(level), 1, MON_MAX_LEVEL);
-  // 技能：T1纯近战；T2远程弹幕；T3范围震击；T4随机远程/范围
-  let skill = 'none';
-  if (tier === 2) skill = 'ranged';
-  else if (tier === 3) skill = 'aoe';
-  else if (tier >= 4) skill = Math.random() < 0.5 ? 'ranged' : 'aoe';
-  // 数值随等级成长（更强：Lv100 怪强力但仍可被高级玩家击杀，而非天文数字）
-  const hp = Math.round((60 + tier * 50) * (1 + level * 0.07));
+  if (elite == null) elite = (++monSpawnCount % 10 === 0);   // 每 10 个 1 个精英
+  // 怪物分近战/远程：约 40% 远程弹幕，其余近战；精英必带技能（远程或范围震击）
+  let skill;
+  if (elite) skill = Math.random() < 0.5 ? 'ranged' : 'aoe';
+  else if (tier >= 3) skill = Math.random() < 0.5 ? (Math.random() < 0.5 ? 'ranged' : 'aoe') : 'none';
+  else skill = Math.random() < 0.4 ? 'ranged' : 'none';
+  // 数值大幅增强（基础血/攻提高，随等级更陡）
+  let hp = Math.round((120 + tier * 100) * (1 + level * 0.11));
+  let atk = Math.round((14 + tier * 9) * (1 + level * 0.07));
+  let exp = Math.round((22 + tier * 18) * (1 + level * 0.09));
+  let gold = Math.round((8 + tier * 11) * (1 + level * 0.07));
+  let speed = 3.0 + tier * 0.35, nm = name;
+  if (elite) { hp = Math.round(hp * 2.6); atk = Math.round(atk * 1.7); exp = Math.round(exp * 3); gold = Math.round(gold * 3); speed += 0.4; nm = '精英·' + name; }
   room.monsters.set(id, {
-    id, name, tier, level, skill,
+    id, name: nm, tier, level, skill, elite: !!elite,
     x, z, spawnX: x, spawnZ: z, ry: rnd(0, 6.28),
-    hp, maxHp: hp,
-    atk: Math.round((8 + tier * 6) * (1 + level * 0.05)), speed: 3.0 + tier * 0.35,
-    exp: Math.round((22 + tier * 18) * (1 + level * 0.09)), gold: Math.round((8 + tier * 11) * (1 + level * 0.07)),
+    hp, maxHp: hp, atk, speed, exp, gold,
     state: 'idle', targetId: null, atkT: 0, skillT: 0, dieT: 0, wanderT: 0, wx: x, wz: z,
   });
 }
@@ -249,6 +254,7 @@ function newPlayer(ws, uid, name, dimId, clsId, rec) {
     hp: 0, dead: false, dieT: 0,
     cds: { basic: 0, q: 0, e: 0, r: 0 },
     pet: null, capCd: 0,
+    statBuff: null, vehicle: null, treasure: null,   // 次元技能临时增益（不入档）
     sk: { basic: 1, q: 1, e: 1, r: 1, ...(rec.sk || {}) },
     skPts: rec.skPts != null ? rec.skPts : Math.max(0, (rec.level || 1) - 1),
     inv: Array.isArray(rec.inv) ? rec.inv.slice(0, INV_MAX) : [],
@@ -294,6 +300,13 @@ function statsOf(p) {
     spd += ae.spd || 0;
     crit += ae.crit || 0; critDmg += ae.critDmg || 0; lifesteal += ae.lifesteal || 0;
     cdr += ae.cdr || 0; tenacity += ae.tenacity || 0;
+  }
+  // 次元技能临时增益（炼宝诀法宝 / 载具加速 / 天使加持等）
+  if (p.statBuff && now() < p.statBuff.until) {
+    const b = p.statBuff.bonus || {};
+    hp += b.hp || 0; patk += b.patk || 0; matk += b.matk || 0;
+    armor += b.armor || 0; mres += b.mres || 0; spd += b.spd || 0;
+    crit += b.crit || 0; critDmg += b.critDmg || 0;
   }
   return {
     maxHp: Math.round(hp), patk, matk, armor, mres, spd,
@@ -627,11 +640,17 @@ function sendYou(p) {
     pen: Math.round(st.pen), cdr: Math.round(st.cdr), tenacity: Math.round(st.tenacity),
     achEquip: p.achEquip || null, bagMode: p.bagMode || 'sell', potions: p.potions || {},
     shield: (p.shield > 0 && now() < p.shieldUntil) ? p.shield : 0,
+    treasure: (p.treasure && now() < p.treasure.until) ? p.treasure.cls : null,        // 头顶法宝(炼宝诀)
+    vehicle: (p.vehicle && now() < p.vehicle.until) ? { hp: Math.round(p.vehicle.hp), maxHp: Math.round(p.vehicle.maxHp) } : null,
   });
 }
 
 function publicP(p) {
-  return { id: p.id, name: p.name, dim: p.dim, cls: p.cls, level: p.level, x: +p.x.toFixed(2), z: +p.z.toFixed(2), ry: +p.ry.toFixed(2), anim: p.anim, hp: Math.round(p.hp), maxHp: maxHp(p), dead: p.dead };
+  return {
+    id: p.id, name: p.name, dim: p.dim, cls: p.cls, level: p.level, x: +p.x.toFixed(2), z: +p.z.toFixed(2), ry: +p.ry.toFixed(2), anim: p.anim, hp: Math.round(p.hp), maxHp: maxHp(p), dead: p.dead,
+    tr: (p.treasure && now() < p.treasure.until) ? 1 : 0,                                // 别人看你头顶法宝
+    veh: (p.vehicle && now() < p.vehicle.until) ? 1 : 0,                                 // 别人看你载具
+  };
 }
 
 wss.on('connection', (ws) => {
@@ -1007,16 +1026,30 @@ function handle(ws, m) {
 
 /* ---------- 猎人专属：捕捉宝宝 ---------- */
 /* ---------- 次元专属技能（F 键，各次元独有） ---------- */
+/* 次元技能统一：持续 60 秒、冷却 5 分钟（猎人捕捉为高频特例，保持原样） */
+const DIM_DUR = 60000, DIM_CD = 300000;
 const DIM_SKILL = {
-  tech:    { name: '磁暴力场', cd: 16000, desc: '展开纳米护盾吸收伤害(6秒)，同时电磁脉冲眩晕周围敌人1.2秒' },
-  xiuxian: { name: '吐纳净化', cd: 18000, desc: '运转真气回复大量生命，并净化自身全部控制效果' },
-  cyber:   { name: '相位突袭', cd: 10000, desc: '瞬间相位闪现，落点处敌人被电磁残影减速45%(2秒)' },
-  magic:   { name: '禁锢领域', cd: 13000, desc: '【控制位】冻结周围8米敌人2.8秒并造成法术伤害——西方魔法是次元第一控制流派' },
+  tech:    { name: '载具冲锋', cd: DIM_CD, dur: DIM_DUR, desc: '召唤战斗载具：移速大幅提升，载具有独立护甲优先承伤。持续60秒，冷却5分钟' },
+  xiuxian: { name: '炼宝诀',   cd: DIM_CD, dur: DIM_DUR, desc: '熔炼背包前5件装备为法宝悬浮头顶，按(5件属性总和×等级/10)全面强化自身。持续60秒，冷却5分钟' },
+  cyber:   { name: '相位超载', cd: DIM_CD, dur: DIM_DUR, desc: '相位闪现并超载：移速大幅提升，落点敌人减速。持续60秒，冷却5分钟' },
+  magic:   { name: '召唤天使恶魔', cd: DIM_CD, dur: DIM_DUR, desc: '天使为你和队友加增益，恶魔削弱周围敌人。持续60秒，冷却5分钟' },
   hunter:  { name: '猎手陷阱', cd: 3000,  desc: '将虚弱野怪收为宝宝；对附近敌人布下缠丝，命中减速' },
 };
+/* 合并临时增益（叠加在现有 statBuff 上，刷新到新的截止时间） */
+function mergeBuff(p, until, add) {
+  const b = (p.statBuff && now() < p.statBuff.until) ? { ...p.statBuff.bonus } : {};
+  for (const k of Object.keys(add)) b[k] = (b[k] || 0) + add[k];
+  return { until, bonus: b };
+}
 
 /* 玩家受伤时先扣护盾，返回穿透到生命的伤害（被多处伤害入口调用） */
 function absorbShield(p, dmg) {
+  // 科技载具：独立血量优先承伤
+  if (p && p.vehicle && now() < p.vehicle.until && p.vehicle.hp > 0) {
+    const a = Math.min(p.vehicle.hp, dmg);
+    p.vehicle.hp -= a; dmg -= a;
+    if (p.vehicle.hp <= 0) { p.vehicle = null; if (p.ws) send(p.ws, { t: 'feed', msg: '🚗 战斗载具被击毁！' }); }
+  }
   if (p && p.shield > 0 && now() < p.shieldUntil) {
     const a = Math.min(p.shield, dmg);
     p.shield -= a; dmg -= a;
@@ -1175,75 +1208,73 @@ function dimSkill(p) {
   if (!def) return;
   if (t < (p.dimCd || 0)) return;
   const room = rooms[p.room];
+  const dur = def.dur || DIM_DUR;
+  const until = t + dur;
 
-  if (p.dim === 'tech') {
+  if (p.dim === 'xiuxian') {
+    // 炼宝诀：熔炼背包前5件装备 → 法宝，加成 = 5件属性总和 × 等级/10，悬浮头顶，持续60秒
+    if (!Array.isArray(p.inv) || p.inv.length < 5)
+      return send(p.ws, { t: 'err', msg: '炼宝诀需要背包中至少 5 件装备来熔炼' });
     p.dimCd = t + def.cd;
-    p.shield = Math.round(maxHp(p) * 0.45);
-    p.shieldUntil = t + 6000;
-    roomCast(p.room, { t: 'dimfx', kind: 'shield', id: p.id });
-    // 电磁脉冲：眩晕周围 6 米敌人 1.2 秒
-    const R = 6;
-    for (const mo of room.monsters.values()) {
-      if (mo.state === 'dead' || dist2(p.x, p.z, mo.x, mo.z) > R * R) continue;
-      applyCC(p, mo, { type: 'stun', ms: 1200 });
-    }
-    if (p.room === 'war' || p.room === 'melee')
-      for (const o of room.players.values()) {
-        if (o.dead || o.dim === p.dim || dist2(p.x, p.z, o.x, o.z) > R * R) continue;
-        applyCC(p, o, { type: 'stun', ms: 1200 });
-      }
-    roomCast(p.room, { t: 'dimfx', kind: 'emp', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: R });
-    send(p.ws, { t: 'feed', msg: `🛡⚡ 磁暴力场：护盾吸收 ${p.shield} 点伤害，并电磁眩晕周围敌人` });
+    const keys = ['hp', 'patk', 'matk', 'armor', 'mres', 'spd', 'crit', 'critDmg'];
+    const sum = {}; for (const k of keys) sum[k] = 0;
+    for (const it of p.inv.slice(0, 5)) for (const k of keys) sum[k] += (it[k] || 0);
+    p.inv = p.inv.slice(5);                       // 消耗前5件
+    const f = p.level / 10;
+    const bonus = {}; for (const k of keys) bonus[k] = Math.round(sum[k] * f);
+    p.statBuff = mergeBuff(p, until, bonus);
+    p.treasure = { until, cls: p.cls };           // 客户端据此在头顶渲染法宝模型
+    roomCast(p.room, { t: 'dimfx', kind: 'treasure', id: p.id, cls: p.cls });
+    persist(p);
+    send(p.ws, { t: 'feed', msg: '⚗️ 炼宝诀！5件装备炼成法宝悬浮头顶，全属性大增，持续60秒' });
     sendYou(p);
-  } else if (p.dim === 'xiuxian') {
-    p.dimCd = t + def.cd;
-    const heal = Math.round(maxHp(p) * 0.45);
-    p.hp = Math.min(maxHp(p), p.hp + heal);
-    cleanseCC(p);   // 净化自身控制
-    roomCast(p.room, { t: 'heal', id: p.id, amt: heal, hp: Math.round(p.hp), by: p.id });
-    roomCast(p.room, { t: 'dimfx', kind: 'heal', id: p.id });
-    send(p.ws, { t: 'feed', msg: `☯ 吐纳净化，恢复 ${heal} 点生命并解除所有控制` });
+    return;
+  }
+
+  p.dimCd = t + def.cd;
+  if (p.dim === 'tech') {
+    // 载具冲锋：召唤载具，移速大增 + 独立护甲优先承伤
+    const vhp = Math.round(maxHp(p) * 1.2);
+    p.vehicle = { until, hp: vhp, maxHp: vhp };
+    p.statBuff = mergeBuff(p, until, { spd: 4 });
+    roomCast(p.room, { t: 'dimfx', kind: 'vehicle', id: p.id, cls: p.cls });
+    send(p.ws, { t: 'feed', msg: `🚗 战斗载具召唤！独立护甲 ${vhp}、移速大增，持续60秒` });
     sendYou(p);
   } else if (p.dim === 'cyber') {
-    p.dimCd = t + def.cd;
-    const dist = 9;
+    // 相位超载：闪现 + 60秒加速 + 落点减速
+    const dist = 9, R = 5;
     p.x = clamp(p.x + Math.sin(p.ry) * dist, -MAP_HALF, MAP_HALF);
     p.z = clamp(p.z + Math.cos(p.ry) * dist, -MAP_HALF, MAP_HALF);
-    p.lastMoveT = t;   // 防被测速踢回
-    // 残影：落点 5 米内敌人减速 45%（2秒）
-    const R = 5;
-    for (const mo of room.monsters.values()) {
-      if (mo.state === 'dead' || dist2(p.x, p.z, mo.x, mo.z) > R * R) continue;
-      applyCC(p, mo, { type: 'slow', ms: 2000, pct: 0.45 });
-    }
+    p.lastMoveT = t;
+    p.statBuff = mergeBuff(p, until, { spd: 3 });
+    for (const mo of room.monsters.values())
+      if (mo.state !== 'dead' && dist2(p.x, p.z, mo.x, mo.z) <= R * R) applyCC(p, mo, { type: 'slow', ms: 2000, pct: 0.45 });
     if (p.room === 'war' || p.room === 'melee')
-      for (const o of room.players.values()) {
-        if (o.dead || o.dim === p.dim || dist2(p.x, p.z, o.x, o.z) > R * R) continue;
-        applyCC(p, o, { type: 'slow', ms: 2000, pct: 0.45 });
-      }
+      for (const o of room.players.values())
+        if (!o.dead && o.dim !== p.dim && dist2(p.x, p.z, o.x, o.z) <= R * R) applyCC(p, o, { type: 'slow', ms: 2000, pct: 0.45 });
     roomCast(p.room, { t: 'dimfx', kind: 'blink', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2) });
-    send(p.ws, { t: 'feed', msg: '⚡ 相位突袭，落点敌人被残影减速' });
+    send(p.ws, { t: 'feed', msg: '⚡ 相位超载：闪现并加速，持续60秒' });
     sendYou(p);
   } else if (p.dim === 'magic') {
-    p.dimCd = t + def.cd;
-    const R = 8, dmg = Math.round(atkOf(p) * 1.2);
-    roomCast(p.room, { t: 'dimfx', kind: 'field', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: R });
-    // 冻结范围内野怪 + 造成法术伤害（控制位招牌）
-    for (const mo of room.monsters.values()) {
-      if (mo.state === 'dead') continue;
-      if (dist2(p.x, p.z, mo.x, mo.z) > R * R) continue;
-      applyCC(p, mo, { type: 'root', ms: 2800 });
-      applyDamage(p, mo, dmg, 'magic');
+    // 召唤天使恶魔：天使加持己方(自身+队友)，恶魔削弱周围敌人
+    const atk = atkOf(p);
+    p.statBuff = mergeBuff(p, until, { patk: Math.round(atk * 0.25), matk: Math.round(atk * 0.25), armor: 30, mres: 30 });
+    const pa = partyOf(p);
+    if (pa) for (const mm of pa.members) {
+      if (mm === p || mm.dead || mm.room !== p.room) continue;
+      const ma = atkOf(mm);
+      mm.statBuff = mergeBuff(mm, until, { patk: Math.round(ma * 0.2), matk: Math.round(ma * 0.2) });
+      send(mm.ws, { t: 'feed', msg: '😇 天使加持：攻击提升，持续60秒' }); sendYou(mm);
     }
-    // 战场/混战内定身敌方玩家（受其韧性减免）
+    const R = 8, dmg = Math.round(atk * 1.0);
+    for (const mo of room.monsters.values())
+      if (mo.state !== 'dead' && dist2(p.x, p.z, mo.x, mo.z) <= R * R) { applyCC(p, mo, { type: 'slow', ms: 4000, pct: 0.4 }); applyDamage(p, mo, dmg, 'magic'); }
     if (p.room === 'war' || p.room === 'melee')
-      for (const o of room.players.values()) {
-        if (o.dead || o.dim === p.dim) continue;
-        if (dist2(p.x, p.z, o.x, o.z) > R * R) continue;
-        applyCC(p, o, { type: 'root', ms: 2800 });
-        applyDamage(p, o, dmg, 'magic');
-      }
-    send(p.ws, { t: 'feed', msg: '🔮 禁锢领域展开，敌人被冻结！' });
+      for (const o of room.players.values())
+        if (!o.dead && o.dim !== p.dim && dist2(p.x, p.z, o.x, o.z) <= R * R) { applyCC(p, o, { type: 'slow', ms: 4000, pct: 0.4 }); applyDamage(p, o, dmg, 'magic'); }
+    roomCast(p.room, { t: 'dimfx', kind: 'angeldemon', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: R });
+    send(p.ws, { t: 'feed', msg: '😇👿 天使恶魔降临：己方增益、敌方减益，持续60秒' });
+    sendYou(p);
   }
 }
 
@@ -1798,7 +1829,7 @@ function tickRoom(room) {
         bossCast(room, mo, tgt);
       }
       // 精英怪技能：远程弹幕 / 范围震击（按怪物 skill 字段）
-      if (!mo.boss && mo.skill && mo.skill !== 'none' && t - mo.skillT > 4200) {
+      if (!mo.boss && mo.skill && mo.skill !== 'none' && t - mo.skillT > (mo.elite ? 2600 : 4200)) {
         if (mo.skill === 'ranged' && d > 3 && d < 18) {
           mo.skillT = t; mo.atkT = t; mo.state = 'attack';
           const pid = 'j' + nextMid++;
@@ -1911,7 +1942,7 @@ function tickRoom(room) {
 
 const VIEW_R2 = 95 * 95;   // 兴趣范围：只把该范围内的怪物下发给玩家（地图大、怪多时大幅省带宽与客户端渲染）
 function snapRow(mo) {
-  return [mo.id, +mo.x.toFixed(2), +mo.z.toFixed(2), +mo.ry.toFixed(2), mo.state, Math.max(0, Math.round(mo.hp)), mo.maxHp, mo.tier, mo.name, mo.level || 1];
+  return [mo.id, +mo.x.toFixed(2), +mo.z.toFixed(2), +mo.ry.toFixed(2), mo.state, Math.max(0, Math.round(mo.hp)), mo.maxHp, mo.tier, mo.name, mo.level || 1, mo.elite ? 1 : 0];
 }
 function snapshot(room) {
   if (room.players.size === 0) return;

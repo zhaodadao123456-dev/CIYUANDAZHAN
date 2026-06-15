@@ -82,12 +82,13 @@ function client(name, dim, cls) {
   // 9.5 次元专属技能（F键 dimskill）
   C.send({ t: 'dimskill' });   // C 是 tech
   await sleep(200);
-  const techShield = C.got('you', (m) => m.shield > 0);
-  check('科技次元技能·能量护盾', !!techShield, techShield && `护盾=${techShield.shield}`);
+  const techVeh = C.got('dimfx', (m) => m.kind === 'vehicle');
+  check('科技次元技能·载具冲锋', !!techVeh);
   const X = client(); await X.open;
   X.send({ t: 'join', name: '测试剑修', dim: 'xiuxian', cls: 'assassin' });
   await sleep(300); X.send({ t: 'dimskill' }); await sleep(200);
-  check('修仙次元技能·吐纳回春', !!X.got('dimfx', (m) => m.kind === 'heal'));
+  // 炼宝诀需5件装备：新号背包为空→应返回提示（证明已接线）
+  check('修仙次元技能·炼宝诀', !!(X.got('dimfx', (m) => m.kind === 'treasure') || X.got('err', (m) => /炼宝/.test(m.msg || ''))));
   const Y = client(); await Y.open;
   Y.send({ t: 'join', name: '测试黑客', dim: 'cyber', cls: 'ranger' });
   await sleep(300);
@@ -98,7 +99,7 @@ function client(name, dim, cls) {
   const Z = client(); await Z.open;
   Z.send({ t: 'join', name: '测试法师', dim: 'magic', cls: 'healer' });
   await sleep(300); Z.send({ t: 'dimskill' }); await sleep(200);
-  check('魔法次元技能·禁锢领域', !!Z.got('dimfx', (m) => m.kind === 'field'));
+  check('魔法次元技能·召唤天使恶魔', !!Z.got('dimfx', (m) => m.kind === 'angeldemon'));
   X.ws.close(); Y.ws.close(); Z.ws.close();
 
   // 10. 快照包含 pets 字段 + 怪物数量（5次元 × 4层 × 6只 = 120）
