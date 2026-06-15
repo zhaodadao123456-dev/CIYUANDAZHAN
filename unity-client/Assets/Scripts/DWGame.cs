@@ -31,7 +31,8 @@ namespace DW
         Font cjkFont;
 
         // 登录选择
-        string serverIp = "1.2.3.4";
+        public const string DEFAULT_SERVER = "1.2.3.4";   // ★★ 改成你的腾讯云公网IP，玩家无需填写 ★★
+        string serverIp = DEFAULT_SERVER;
         string playerName = "";
         int dimIdx = 1, clsIdx = 0;
 
@@ -110,7 +111,7 @@ namespace DW
             Screen.autorotateToPortraitUpsideDown = false;
             Screen.orientation = ScreenOrientation.LandscapeLeft;
             DWAudio.Music("bgm_menu");   // 登录界面背景音乐
-            serverIp = PlayerPrefs.GetString("dw_ip", serverIp);
+            serverIp = DEFAULT_SERVER;   // 写死服务器，玩家不用填
             playerName = PlayerPrefs.GetString("dw_name", "");
             dimIdx = PlayerPrefs.GetInt("dw_dim", 1);
             clsIdx = PlayerPrefs.GetInt("dw_cls", 0);
@@ -133,6 +134,9 @@ namespace DW
             _kindIcons.Clear(); _slotIcons.Clear(); _pngIcons.Clear(); _fxCache.Clear(); _fxPools.Clear(); _fxBroken.Clear();
             _groundTex = _ringTex = _dotTex = _slashTex = null;
             _sparkMat = _trailMat = null;
+
+            // 已有存档名字 → 用上次的名字/次元/职业自动登录，跳过填写界面（连不上才回登录界面）
+            if (!string.IsNullOrEmpty(playerName)) Join();
         }
 
         /* ================= 连接与消息 ================= */

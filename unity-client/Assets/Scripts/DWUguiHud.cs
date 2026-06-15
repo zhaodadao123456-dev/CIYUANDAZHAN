@@ -45,7 +45,7 @@ namespace DW
         // 登录/连接界面（UGUI，替代 IMGUI GuiMenu）
         Canvas menuCanvas;
         GameObject menuForm, menuConnecting;
-        InputField uIp, uName;
+        InputField uName;
         Button[] uDimBtns, uClsBtns;
         Text[] uClsTxt;
         Button uJoinBtn;
@@ -844,11 +844,9 @@ namespace DW
 
             MkTxt("title", pt, "次元大战", 50, new Color(1f, 0.9f, 0.6f), TextAnchor.UpperCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -26), new Vector2(0, 64));
-            float y = -104;
-            Label("服务器地址（IP 或 IP:端口）", y); y -= 34;
-            uIp = MkInput(pt, serverIp, 64, y, v => serverIp = v); y -= 66;
+            float y = -120;
             Label("降临者之名", y); y -= 34;
-            uName = MkInput(pt, playerName, 12, y, v => playerName = v); y -= 66;
+            uName = MkInput(pt, playerName, 12, y, v => playerName = v); y -= 70;
 
             Label("选择次元", y); y -= 34;
             uDimBtns = new Button[Data.Dims.Length];

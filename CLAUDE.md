@@ -50,7 +50,8 @@
 
 ## Unity 客户端（`unity-client/`）
 - Unity **2022.3 LTS**（标准 Unity，非"团结引擎"）。`Packages/manifest.json` 含完整内置模块 + `com.unity.cloud.gltfast`(读 .glb) + `com.unity.ugui`(UGUI)。
-- 自启动：`DWGame` 用 `[RuntimeInitializeOnLoadMethod]` 引导，**无需配置场景**（但出包时 Build Settings 仍需加一个空场景）。
+- 自启动：`DWGame` 用 `[RuntimeInitializeOnLoadMethod]` 引导，**无需配置场景**（出包用菜单④/⑤ 自动建空场景+导出 Xcode 工程）。
+- **服务器地址写死**在 `DWGame.DEFAULT_SERVER` 常量（玩家不填 IP，登录界面已去掉 IP 框）；**首次填名+选次元职业后存档，再次启动自动登录跳过填写**（连不上才回登录界面；游戏内「退出」可回登录界面改）。
 - 脚本（都在 `Assets/Scripts/`，`partial class Game`）：
   - `DWGame.cs` — 主逻辑/网络消息/移动/相机/实体/模型加载(`MakeHero`按次元×职业、`MakeCreature`怪物/BOSS、`BuildWorld`场景+渐变天空盒+哑光地面)/碰撞。
   - `DWHud.cs` — **旧 IMGUI**，现仅剩：虚拟摇杆、聊天输入(`GuiChat`)。登录/状态/技能/面板/名牌/飘字等全部已迁 UGUI（`GuiSkillBar/GuiPanel/GuiDeath/GuiMenu` 等为死代码，未删）。
