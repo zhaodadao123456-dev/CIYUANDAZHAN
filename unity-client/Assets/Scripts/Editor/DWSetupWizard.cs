@@ -145,8 +145,13 @@ namespace DW.EditorTools
         public static void AutoWire()
         {
             Directory.CreateDirectory(ResDir);
-            // 清掉上次的次元英雄，确保 5 个次元每次都重新分配（避免 hunter 等沿用过期 prefab）
-            foreach (var d in DimOrder) AssetDatabase.DeleteAsset($"{ResDir}/hero_{d}.prefab");
+            // 清掉上次的次元英雄（含次元×职业），确保每次都重新分配
+            foreach (var d in DimOrder)
+            {
+                AssetDatabase.DeleteAsset($"{ResDir}/hero_{d}.prefab");
+                foreach (var cls in new[] { "warrior", "assassin", "ranger", "tank", "healer" })
+                    AssetDatabase.DeleteAsset($"{ResDir}/hero_{d}_{cls}.prefab");
+            }
             var log = new StringBuilder("===== 自动接入结果 =====\n");
 
             var allChars = AllCharacterPrefabs();
@@ -202,6 +207,43 @@ namespace DW.EditorTools
                 if (AssetDatabase.LoadAssetAtPath<GameObject>($"{ResDir}/hero_{dim}.prefab") != null) continue;
                 if (PickDim(dim, (p) => true, " (自动分配)") == null)
                     log.AppendLine($"[{dim}] 可用角色已分完 → 运行时回退共享角色池");
+            }
+
+            // ③ 按「次元×职业」分配：每次元 5 职业各一个不同模型，用上所有角色（含兔女郎）；运行时 hero_{dim}_{cls} 优先级最高
+            log.AppendLine("--- 次元×职业 英雄分配 ---");
+            string[] classOrder = { "warrior", "assassin", "ranger", "tank", "healer" };
+            var pin = new Dictionary<string, string[]>
+            {
+                { "xiuxian/warrior",  new[]{ "wukong", "悟空" } },
+                { "xiuxian/healer",   new[]{ "bunny", "兔" } },          // 兔女郎 = 修仙奶妈（用户指定）
+                { "xiuxian/assassin", new[]{ "witch", "女巫" } },
+                { "magic/healer",     new[]{ "nun", "修女" } },
+                { "magic/warrior",    new[]{ "half_blood" } },
+                { "magic/assassin",   new[]{ "servant", "church" } },
+                { "tech/warrior",     new[]{ "girlv1", "girl_v.1" } },
+                { "cyber/warrior",    new[]{ "girlv2", "girl_v.2" } },
+                { "hunter/ranger",    new[]{ "cowboy", "sheriff", "牛仔" } },
+            };
+            int rot2 = 0;
+            foreach (var dim in DimOrder)
+            {
+                var usedHere = new HashSet<string>();
+                foreach (var cls in classOrder)
+                {
+                    string src = null;
+                    if (pin.TryGetValue($"{dim}/{cls}", out var keys))
+                        src = heroSrcs.FirstOrDefault((p) => !usedHere.Contains(p) && Has(p, keys));
+                    if (src == null && heroSrcs.Count > 0)
+                        for (int k = 0; k < heroSrcs.Count; k++)
+                        {
+                            var cand = heroSrcs[(rot2 + k) % heroSrcs.Count];
+                            if (!usedHere.Contains(cand)) { src = cand; rot2++; break; }
+                        }
+                    if (src == null) continue;
+                    usedHere.Add(src);
+                    SaveCharPrefab(src, $"{ResDir}/hero_{dim}_{cls}.prefab", ctrl,
+                        $"次元×职业[{dim}/{cls}] {Path.GetFileNameWithoutExtension(src)}", log, forceHuman: true);
+                }
             }
 
             // 英雄池 DWHeroes/h_XX（运行时按「次元×职业」组合取用的兜底，用上全部人物 + 未来未知购买包）
