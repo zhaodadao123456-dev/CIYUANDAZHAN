@@ -461,15 +461,16 @@ namespace DW
             RenderSettings.fogStartDistance = 50;
             RenderSettings.fogEndDistance = 240;
             RenderSettings.fogColor = theme.fog;
-            // 每个次元一张渐变天空盒（按次元主色），比纯色背景好看；环境光仍用受控平面光防过曝
+            // 每个次元一张渐变天空盒（更干净的天蓝 + 一点次元色），地平线提亮
             var sky = new Material(Shader.Find("Skybox/Procedural"));
-            sky.SetColor("_SkyTint", Color.Lerp(theme.accent, new Color(0.5f, 0.55f, 0.7f), 0.4f));
-            sky.SetColor("_GroundColor", theme.fog);
-            sky.SetFloat("_AtmosphereThickness", 1.1f);
-            sky.SetFloat("_Exposure", 0.95f);
+            sky.SetColor("_SkyTint", Color.Lerp(new Color(0.45f, 0.62f, 0.92f), theme.accent, 0.20f));
+            sky.SetColor("_GroundColor", Color.Lerp(theme.ground, new Color(0.62f, 0.64f, 0.7f), 0.45f));
+            sky.SetFloat("_AtmosphereThickness", 0.85f);
+            sky.SetFloat("_Exposure", 1.2f);
+            sky.SetFloat("_SunSize", 0.045f);
             RenderSettings.skybox = sky;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = Color.Lerp(theme.ground, new Color(0.5f, 0.52f, 0.58f), 0.55f);
+            RenderSettings.ambientLight = Color.Lerp(theme.ground, new Color(0.6f, 0.62f, 0.68f), 0.6f);
             cam.clearFlags = CameraClearFlags.Skybox;
             cam.backgroundColor = theme.fog;
             cam.farClipPlane = 400;
@@ -477,8 +478,8 @@ namespace DW
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             float gscale = (Data.MapHalf * 2f + 40f) / 10f;   // Plane 原始 10×10，铺满整张地图
             ground.transform.localScale = new Vector3(gscale, 1, gscale);
-            Matte(ground, theme.ground);   // 哑光地面，去掉中央高光白斑
-            var gmat = ground.GetComponent<Renderer>().material;   // 叠一层程序化网格纹理（按次元色着色），不再是纯色大平面
+            Matte(ground, Color.Lerp(theme.ground, new Color(0.5f, 0.5f, 0.52f), 0.33f));   // 提亮地面，别太暗沉
+            var gmat = ground.GetComponent<Renderer>().material;   // 叠程序化纹理（柔和斑块+细格），不再是纯色大平面
             gmat.mainTexture = GroundTex();
             float tiles = (10f * gscale) / 5f;                     // 每 ~5 米一格
             gmat.mainTextureScale = new Vector2(tiles, tiles);
@@ -1214,17 +1215,27 @@ namespace DW
             Color c = Data.Dim(myDim).accent;                  // 主色随次元（科技蓝/修仙绿/赛博粉/魔法紫/猎人橙）
             Color c2 = Color.Lerp(c, Color.white, 0.35f);      // 高光
             Quaternion face = dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity;
+            Vector3 p = at + dir * 1.3f + Vector3.up * 1.0f;
             if (kind == "aoe")
-                SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "aoe", myDim);
+            {
+                if (SpawnFx("aoe", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
+                { SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "aoe", myDim); SpawnSparks(p, c2, 26, 7f); }
+            }
             else if (kind == "aoeheal" || kind == "heal")
                 SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, Color.Lerp(c, new Color(0.3f, 1f, 0.5f), 0.6f), "heal", myDim);
             else if (kind == "dashmelee")
-                SpawnShockwave(at + dir * 1.5f + Vector3.up * 0.3f, 2.4f, c, "slash", myDim);
-            else   // melee / proj：身前施法闪光（近战再加一刀斩击）
             {
-                Vector3 p = at + dir * 1.2f + Vector3.up * 1.0f;
-                if (SpawnFx("cast", p, face, 1f, 1.5f, dim: myDim) == null) { SpawnSparks(p, c2, 16, 5.5f); SpawnFlash(p, c, 1.5f); }
-                else if (kind == "melee") SpawnFx("slash", p, face, 1f, 1.2f, dim: myDim);
+                if (SpawnFx("slash", p, face, 1.4f, 1.2f, dim: myDim) == null)
+                { SpawnSlash(at + Vector3.up * 0.05f, dir, c, 3.4f); SpawnShockwave(at + dir * 1.4f + Vector3.up * 0.1f, 2.4f, c, "x", null); SpawnSparks(p, c2, 26, 7.5f); SpawnFlash(p, c, 2.2f); }
+            }
+            else if (kind == "melee")   // 近战：剑斩弧光 + 火花 + 闪光（程序化，绝不变粉）
+            {
+                if (SpawnFx("slash", p, face, 1.2f, 1.2f, dim: myDim) == null)
+                { SpawnSlash(at + Vector3.up * 0.05f, dir, c, 2.8f); SpawnSparks(p, c2, 22, 6.5f); SpawnFlash(p, c, 2f); }
+            }
+            else   // proj：身前施法闪光 + 火花（弹道本身另有拖尾）
+            {
+                if (SpawnFx("cast", p, face, 1f, 1.5f, dim: myDim) == null) { SpawnSparks(p, c2, 18, 6f); SpawnFlash(p, c, 1.8f); }
             }
         }
 
@@ -1306,7 +1317,7 @@ namespace DW
             ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);   // 先停，否则配置 duration 会报"playing 中不可改"
             var main = ps.main;
             main.duration = 0.6f; main.loop = false; main.playOnAwake = false;
-            main.startLifetime = 0.5f; main.startSpeed = speed; main.startSize = 0.22f;
+            main.startLifetime = 0.55f; main.startSpeed = speed; main.startSize = 0.34f;
             main.startColor = c; main.gravityModifier = 0.6f; main.maxParticles = count + 8;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
             var em = ps.emission; em.rateOverTime = 0f;
@@ -1334,6 +1345,40 @@ namespace DW
             go.AddComponent<LightFade>();
         }
 
+        // 程序化剑斩：身前一道发光弧光（贴地朝向攻击方向，快速放大淡出）
+        void SpawnSlash(Vector3 at, Vector3 dir, Color c, float size)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Destroy(go.GetComponent<Collider>());
+            go.name = "slashfx";
+            float yaw = (dir.sqrMagnitude > 0.001f ? Mathf.Atan2(dir.x, dir.z) : 0f) * Mathf.Rad2Deg;
+            go.transform.position = at + dir.normalized * (size * 0.5f) + Vector3.up * 0.12f;
+            go.transform.rotation = Quaternion.Euler(90, yaw, 0);   // 贴地、朝攻击方向
+            var r = go.GetComponent<MeshRenderer>();
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; r.receiveShadows = false;
+            r.material = new Material(Shader.Find("Sprites/Default")) { mainTexture = SlashTex() };
+            var fx = go.AddComponent<RingFx>(); fx.radius = size; fx.col = Color.Lerp(c, Color.white, 0.35f);
+        }
+        static Texture2D _slashTex;
+        static Texture2D SlashTex()
+        {
+            if (_slashTex != null) return _slashTex;
+            const int N = 128;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f, v = (y + 0.5f) / N * 2f - 1f;
+                    float d = Mathf.Sqrt(u * u + v * v);
+                    float band = d > 1f ? 0f : Mathf.Clamp01(1f - Mathf.Abs(d - 0.72f) / 0.2f); band *= band;
+                    float ang = Mathf.Atan2(v, u);                       // 只保留上半弧 → 月牙形剑光
+                    float arc = (ang > 0.25f && ang < Mathf.PI - 0.25f) ? 1f : 0f;
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(band * arc * 255));
+                }
+            t.SetPixels32(px); t.Apply(false); _slashTex = t; return t;
+        }
+
         // ---- 程序化贴图/材质（生成一次缓存）----
         static Texture2D _ringTex, _dotTex;
         static Material _sparkMat, _trailMat;
@@ -1345,12 +1390,18 @@ namespace DW
             const int N = 128;
             var t = new Texture2D(N, N, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear, anisoLevel = 2 };
             var rng = new System.Random(7);
+            const int B = 8;                          // 低频斑块网格，双线性插值成柔和明暗
+            var blob = new float[B + 1, B + 1];
+            for (int j = 0; j <= B; j++) for (int i = 0; i <= B; i++) blob[i, j] = (float)(rng.NextDouble() * 0.18 - 0.09);
             var px = new Color32[N * N];
             for (int y = 0; y < N; y++)
                 for (int x = 0; x < N; x++)
                 {
-                    float v = 1f + (float)(rng.NextDouble() * 0.10 - 0.05);   // 细微明暗噪点
-                    if (x < 1 || y < 1) v *= 0.70f;                            // 格线（每块边缘压暗）
+                    float fx = (float)x / N * B, fy = (float)y / N * B;
+                    int xi = (int)fx, yi = (int)fy; float tx = fx - xi, ty = fy - yi;
+                    float bl = Mathf.Lerp(Mathf.Lerp(blob[xi, yi], blob[xi + 1, yi], tx), Mathf.Lerp(blob[xi, yi + 1], blob[xi + 1, yi + 1], tx), ty);
+                    float v = 1f + bl + (float)(rng.NextDouble() * 0.05 - 0.025);   // 柔和斑块 + 细噪点
+                    if (x < 1 || y < 1) v *= 0.82f;                                  // 很淡的格线
                     byte b = (byte)Mathf.Clamp(v * 255f, 0, 255);
                     px[y * N + x] = new Color32(b, b, b, 255);
                 }
