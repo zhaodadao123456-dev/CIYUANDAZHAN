@@ -45,8 +45,25 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const now = () => Date.now();
 
 /* ---------- 持久化（按昵称保存成长） ---------- */
-let saved = {};
+let saved = {};                 // 主键 = 唯一找回码(uid)；记录里含 name(可改的显示名)
+const nameIndex = {};           // 昵称(小写)→uid：兼容老客户端按昵称登录 + 将来改名
 try { saved = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8')); } catch (e) {}
+function uniqCode(store) { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c; do { c = 'DW'; for (let i = 0; i < 7; i++) c += A[Math.floor(Math.random() * A.length)]; } while (store[c]); return c; }
+function genCode() { return uniqCode(saved); }
+function isCode(k) { return /^DW[A-Z0-9]{6,}$/.test(k); }
+// 把旧版「按昵称存档」迁移成「按唯一编码存档」；建立 昵称→编码 索引
+(function migrateSaved() {
+  const out = {};
+  for (const [k, rec] of Object.entries(saved)) {
+    if (!rec || typeof rec !== 'object') continue;
+    let uid;
+    if (rec.uid && isCode(k)) { uid = k; }
+    else { uid = uniqCode(out); rec.name = rec.name || k; rec.uid = uid; }
+    out[uid] = rec;
+    if (rec.name) nameIndex[String(rec.name).trim().toLowerCase()] = uid;
+  }
+  saved = out;
+})();
 let saveDirty = false;
 setInterval(() => {
   if (!saveDirty) return;
@@ -212,14 +229,15 @@ setInterval(spawnWorldBoss, BOSS_MS);
 let nextPid = 1;
 const conns = new Map(); // ws -> player
 
-function newPlayer(ws, name, dimId, clsId) {
+function newPlayer(ws, uid, name, dimId, clsId, rec) {
   const id = 'p' + nextPid++;
-  const rec = saved[name] || {};
-  // 老角色：次元/职业以服务器存档为准（换设备/重装也能找回同一个角色）；新昵称才用本次选择
+  rec = rec || {};
+  // 老角色：次元/职业以服务器存档为准（用找回码/昵称找回同一角色）；新角色才用本次选择
   if (rec.dim && DIMENSIONS.some((d) => d.id === rec.dim)) dimId = rec.dim;
   if (rec.cls && CLASS_MAP[rec.cls]) clsId = rec.cls;
+  if (!DIMENSIONS.some((d) => d.id === dimId)) dimId = 'tech';
   const p = {
-    id, ws, name, dim: dimId, cls: clsId, room: dimId,
+    id, ws, uid, name, dim: dimId, cls: clsId, room: dimId,
     x: rnd(-4, 4), z: rnd(-4, 4), ry: 0, anim: 'idle',
     level: rec.level || 1, exp: rec.exp || 0, gold: rec.gold || 0,
     kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, rankPts: rec.rankPts || 0,
@@ -291,13 +309,15 @@ const skDmgMul = (p, k) => 1 + 0.18 * ((p.sk[k] || 1) - 1);
 const skHealMul = (p, k) => 1 + 0.15 * ((p.sk[k] || 1) - 1);
 
 function persist(p) {
-  saved[p.name] = {
+  saved[p.uid] = {
+    uid: p.uid, name: p.name,
     level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, rankPts: p.rankPts || 0,
     cls: p.cls, dim: p.dim, sk: p.sk, skPts: p.skPts, inv: p.inv, equip: p.equip,
     daily: p.daily, dailyStreak: p.dailyStreak, ach: p.ach || {}, achEquip: p.achEquip || null,
     bagMode: p.bagMode || 'sell', potions: p.potions || {},
     pet: p.pet ? { name: p.pet.name, tier: p.pet.tier, maxHp: p.pet.maxHp, atk: p.pet.atk } : null,
   };
+  nameIndex[String(p.name).trim().toLowerCase()] = p.uid;
   saveDirty = true;
 }
 
@@ -713,15 +733,26 @@ function handle(ws, m) {
 
   if (m.t === 'join') {
     if (p) return;
-    const name = String(m.name || '').trim().slice(0, 12);
-    const dim = DIMENSIONS.find((d) => d.id === m.dim);
-    if (!name || !dim) return send(ws, { t: 'err', msg: '请输入昵称并选择次元' });
-    const cls = CLASS_MAP[m.cls] ? m.cls : 'warrior';
-    // 同名顶号
-    for (const [ows, op] of conns) if (op.name === name) { send(ows, { t: 'err', msg: '该昵称在别处登录' }); ows.close(); }
-    p = newPlayer(ws, name, dim.id, cls);
+    const code = String(m.code || '').trim().toUpperCase();
+    let uid, rec, name, dimId, clsId;
+    if (code && saved[code]) {                       // 找回码 / 自动登录：按编码读回角色
+      uid = code; rec = saved[code]; name = rec.name || '降临者'; dimId = rec.dim; clsId = rec.cls;
+    } else if (code) {                               // 提供了编码但服务器没有
+      return send(ws, { t: 'err', msg: '找回码无效，请检查或新建角色' });
+    } else {                                         // 新建 / 老客户端按昵称登录
+      name = String(m.name || '').trim().slice(0, 12);
+      const dim = DIMENSIONS.find((d) => d.id === m.dim);
+      if (!name || !dim) return send(ws, { t: 'err', msg: '请输入昵称并选择次元' });
+      clsId = CLASS_MAP[m.cls] ? m.cls : 'warrior'; dimId = dim.id;
+      const li = nameIndex[name.toLowerCase()];
+      if (li && saved[li]) { uid = li; rec = saved[li]; dimId = rec.dim; clsId = rec.cls; name = rec.name || name; }
+      else { uid = genCode(); rec = null; }
+    }
+    // 顶号：同一账号(编码)已在线则踢掉旧连接
+    for (const [ows, op] of conns) if (op.uid === uid) { send(ows, { t: 'err', msg: '该账号已在别处登录' }); ows.close(); }
+    p = newPlayer(ws, uid, name, dimId, clsId, rec);
     conns.set(ws, p);
-    joinRoom(p, dim.id, true);
+    joinRoom(p, p.dim, true);
     return;
   }
   if (!p) return;
@@ -765,8 +796,8 @@ function handle(ws, m) {
     case 'melee': {
       if (!melee.active) return send(p.ws, { t: 'err', msg: '五次元大混战未开启（每晚开战）' });
       if (m.enter) {
-        if (meleeEliminated.has(p.name)) return send(p.ws, { t: 'err', msg: '你已被淘汰，下次大混战再来！' });
-        if (p.room !== 'melee') { joinRoom(p, 'melee'); melee.participants.add(p.name); }
+        if (meleeEliminated.has(p.uid)) return send(p.ws, { t: 'err', msg: '你已被淘汰，下次大混战再来！' });
+        if (p.room !== 'melee') { joinRoom(p, 'melee'); melee.participants.add(p.uid); }
       } else if (p.room === 'melee') {
         joinRoom(p, p.dim);
       }
@@ -800,11 +831,11 @@ function handle(ws, m) {
     case 'rank': {
       // 全服排行榜：含离线玩家（存档）+ 在线实时数据。mode='ladder' 按段位分排，否则按等级
       const all = new Map();
-      for (const [name, rec] of Object.entries(saved)) {
-        all.set(name, { name, level: rec.level || 1, kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, rankPts: rec.rankPts || 0, gold: rec.gold || 0, dim: rec.dim || '', cls: rec.cls || '', ach: Object.keys(rec.ach || {}).length, online: false });
+      for (const [uid, rec] of Object.entries(saved)) {
+        all.set(uid, { name: rec.name || '玩家', level: rec.level || 1, kills: rec.kills || 0, pvpKills: rec.pvpKills || 0, rankPts: rec.rankPts || 0, gold: rec.gold || 0, dim: rec.dim || '', cls: rec.cls || '', ach: Object.keys(rec.ach || {}).length, online: false });
       }
       for (const op of conns.values()) {
-        all.set(op.name, { name: op.name, level: op.level, kills: op.kills, pvpKills: op.pvpKills, rankPts: op.rankPts || 0, gold: op.gold, dim: op.dim, cls: op.cls, ach: Object.keys(op.ach || {}).length, online: true });
+        all.set(op.uid, { name: op.name, level: op.level, kills: op.kills, pvpKills: op.pvpKills, rankPts: op.rankPts || 0, gold: op.gold, dim: op.dim, cls: op.cls, ach: Object.keys(op.ach || {}).length, online: true });
       }
       const ladder = m.mode === 'ladder';
       const list = [...all.values()]
@@ -1283,7 +1314,7 @@ function joinRoom(p, roomId, isFirst = false) {
   if (p.hp <= 0) p.hp = maxHp(p);
   rooms[roomId].players.set(p.id, p);
   send(p.ws, {
-    t: 'welcome', id: p.id, room: roomId, first: isFirst,
+    t: 'welcome', id: p.id, room: roomId, first: isFirst, code: p.uid,
     you: { name: p.name, dim: p.dim, cls: p.cls, level: p.level, exp: p.exp, expNeed: expNeed(p.level), gold: p.gold, hp: Math.round(p.hp), maxHp: maxHp(p), kills: p.kills, pvpKills: p.pvpKills },
     players: [...rooms[roomId].players.values()].filter((o) => o.id !== p.id).map(publicP),
     war: warState(),
@@ -1306,7 +1337,7 @@ function joinRoom(p, roomId, isFirst = false) {
 /* ---------- 每日签到：上线即领，连签递增（7天封顶） ---------- */
 function grantDaily(p) {
   const today = new Date().toISOString().slice(0, 10);
-  const rec = saved[p.name] || {};
+  const rec = saved[p.uid] || {};
   if (rec.daily === today) {
     p.daily = rec.daily;
     p.dailyStreak = rec.dailyStreak || 1;
@@ -1538,7 +1569,7 @@ function killPlayer(killer, victim) {
     else if (killer.dim === war.b) war.killsB++;
     allCast({ t: 'war', state: warState() });
   }
-  if (victim.room === 'melee') { meleeEliminated.add(victim.name); killer.meleeKills = (killer.meleeKills || 0) + 1; }   // 混战：阵亡即淘汰，记 MVP 击杀
+  if (victim.room === 'melee') { meleeEliminated.add(victim.uid); killer.meleeKills = (killer.meleeKills || 0) + 1; }   // 混战：阵亡即淘汰，记 MVP 击杀
   roomCast(victim.room, { t: 'pdie', id: victim.id, by: killer.id });
   const arena = victim.room === 'melee' ? '五次元大混战' : '重叠战场';
   allCast({ t: 'feed', msg: `⚔️ 【${dimName(killer.dim)}】${killer.name} 在${arena}击杀了 【${dimName(victim.dim)}】${victim.name}，掠夺 ${loot} 金币！` });
@@ -1663,7 +1694,7 @@ setInterval(() => {
   // 阵亡者超过 3 秒 → 淘汰并送回本次元
   for (const p of [...rooms.melee.players.values()]) {
     if (p.dead && now() - p.dieT > 3000) {
-      meleeEliminated.add(p.name);
+      meleeEliminated.add(p.uid);
       p.dead = false; p.hp = maxHp(p);
       joinRoom(p, p.dim);
       send(p.ws, { t: 'feed', msg: '💀 你已在大混战中被淘汰，下次再战！' });
