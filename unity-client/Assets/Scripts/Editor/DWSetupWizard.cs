@@ -245,10 +245,27 @@ namespace DW.EditorTools
                 log.ToString() + "\n\n进游戏看技能特效：若变粉，删掉 Assets/Resources/DWFx 文件夹即回到程序化特效（按次元配色，不会粉）。", "好");
         }
 
+        /* 取某文件夹里第一个 .prefab（用于扫描"剑斩特效"这类包，不必知道具体文件名） */
+        static string FirstPrefabIn(string folder)
+        {
+            if (!AssetDatabase.IsValidFolder(folder)) return null;
+            foreach (var g in AssetDatabase.FindAssets("t:GameObject", new[] { folder }))
+            {
+                var p = AssetDatabase.GUIDToAssetPath(g);
+                if (p.EndsWith(".prefab") && AssetDatabase.LoadAssetAtPath<GameObject>(p) != null) return p;
+            }
+            return null;
+        }
+
         /* 把选定的 Hovl 特效复制进 Resources/DWFx，供运行时按名加载（缺失则运行时程序化兜底） */
         static void WireFx(StringBuilder log)
         {
             const string aaa = "Assets/Hovl Studio/AAA Projectiles Vol 1/Prefabs/";
+            // 专门的剑斩包：扫描其 Prefabs 取首个，优先用它做近战/突进的剑斩特效
+            var sword = FirstPrefabIn("Assets/Hovl Studio/Sword slash VFX/Prefabs");
+            var slashCands = sword != null
+                ? new[] { sword, "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Flower slash.prefab" }
+                : new[] { "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Flower slash.prefab" };
             var map = new List<(string name, string[] cands)>
             {
                 // 通用兜底（次元变体缺失时用）
@@ -259,7 +276,7 @@ namespace DW.EditorTools
                 ("heal",      new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Leaves buff.prefab" }),
                 ("shield",    new[]{ "Assets/Hovl Studio/Magic circles/Prefabs/Magic shield holy.prefab", "Assets/Hovl Studio/Magic circles/Prefabs/Magic shield runes.prefab" }),
                 ("circle",    new[]{ "Assets/Hovl Studio/Magic circles/Prefabs/Magic circle octagon.prefab", "Assets/Hovl Studio/Magic circles/Prefabs/Magic circle sun.prefab" }),
-                ("slash",     new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Flower slash.prefab" }),
+                ("slash",     slashCands),
                 ("storm",     new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Meteor shower.prefab", "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Meteor shower 2.prefab" }),
                 ("lightning", new[]{ "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs/Lightning strike.prefab" }),
             };
