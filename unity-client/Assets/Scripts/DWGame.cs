@@ -1641,10 +1641,10 @@ namespace DW
         }
     }
 
-    // 屏幕空间伤害/治疗飘字：向上飘动并淡出
+    // 屏幕空间伤害/治疗飘字：弹出 → 先快后慢上飘 → 淡出（更有打击感）
     public class UiFloat : MonoBehaviour
     {
-        float born;
+        float born, vx;
         RectTransform rt;
         Text txt;
         Color c0;
@@ -1654,13 +1654,20 @@ namespace DW
             rt = (RectTransform)transform;
             txt = GetComponent<Text>();
             if (txt != null) c0 = txt.color;
+            vx = UnityEngine.Random.Range(-26f, 26f);   // 略微散开，连击时不重叠
         }
         void Update()
         {
             float a = Time.time - born;
-            if (rt != null) rt.localPosition += Vector3.up * 70f * Time.deltaTime;
-            if (txt != null) { var c = c0; c.a = Mathf.Clamp01(1.2f - a); txt.color = c; }
-            if (a > 1.1f) Destroy(gameObject);
+            if (rt != null)
+            {
+                float rise = Mathf.Lerp(150f, 28f, Mathf.Clamp01(a / 0.85f));   // 上飘缓出
+                rt.localPosition += new Vector3(vx * Time.deltaTime, rise * Time.deltaTime, 0f);
+                float s = a < 0.13f ? Mathf.Lerp(1.55f, 1f, a / 0.13f) : 1f;     // 出现时“砰”地弹一下
+                rt.localScale = new Vector3(s, s, 1f);
+            }
+            if (txt != null) { var c = c0; c.a = Mathf.Clamp01(1.3f - a * 1.1f); txt.color = c; }
+            if (a > 1.15f) Destroy(gameObject);
         }
     }
 }

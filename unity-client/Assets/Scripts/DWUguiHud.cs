@@ -50,13 +50,15 @@ namespace DW
         Text[] uClsTxt;
         Button uJoinBtn;
         Text uHunterHint, uConnTxt, uMenuToast;
+        Image menuGlow;   // 登录背景光晕（随所选次元变色）
 
         class USkill
         {
             public string key;          // basic/q/e/r/dodge/dim
-            public Image icon, cd;
+            public Image icon, cd, flash;
             public Text cdText, lvText, nameText;
             public GameObject plus;
+            public bool wasReady = true;   // 冷却好了那一刻闪一下
         }
         readonly List<USkill> uSkills = new List<USkill>();
 
@@ -90,6 +92,79 @@ namespace DW
             return _roundSprite;
         }
         Image Round(Image img) { if (img != null) { img.sprite = RoundSprite(); img.type = Image.Type.Sliced; } return img; }
+
+        // ====================== 清新玻璃质感调色板（统一配色，让整体不再灰暗发闷） ======================
+        static class Pal
+        {
+            public static readonly Color Glass    = new Color(0.07f, 0.10f, 0.21f, 0.82f); // 深蓝玻璃面板
+            public static readonly Color GlassSft  = new Color(0.09f, 0.13f, 0.25f, 0.66f); // 更透的玻璃（队伍/小条）
+            public static readonly Color Slot      = new Color(0.11f, 0.15f, 0.29f, 0.90f); // 技能格
+            public static readonly Color PanelBg   = new Color(0.06f, 0.08f, 0.18f, 0.97f); // 不透明面板/表单
+            public static readonly Color BarBg     = new Color(0f, 0f, 0f, 0.42f);
+            public static readonly Color Hp        = new Color(0.24f, 0.91f, 0.53f, 1f);     // 清新草绿
+            public static readonly Color Exp       = new Color(0.56f, 0.57f, 1f, 1f);        // 长春花紫
+            public static readonly Color Stroke    = new Color(0.44f, 0.66f, 1f, 0.55f);     // 冷色描边高光
+            public static readonly Color StrokeSft = new Color(0.44f, 0.66f, 1f, 0.30f);
+            public static readonly Color Accent    = new Color(0.17f, 0.83f, 1f, 1f);        // 清新青·主行动按钮
+            public static readonly Color AccentDp  = new Color(0.10f, 0.52f, 0.76f, 1f);
+            public static readonly Color Warm       = new Color(1f, 0.53f, 0.27f, 1f);        // 攻击·暖橙
+            public static readonly Color Danger    = new Color(0.97f, 0.33f, 0.43f, 1f);
+            public static readonly Color Gold      = new Color(1f, 0.83f, 0.36f, 1f);
+            public static readonly Color TextDim   = new Color(0.75f, 0.81f, 0.97f, 1f);
+            public static readonly Color Slate     = new Color(0.16f, 0.19f, 0.33f, 1f);      // 未选中按钮
+        }
+
+        // 圆角空心描边（9-slice），叠在面板上画出一圈干净的高光边框
+        static Sprite _roundStroke;
+        static Sprite RoundStrokeSprite()
+        {
+            if (_roundStroke != null) return _roundStroke;
+            const int N = 48; const float margin = 1.5f, corner = 13f, thick = 2.2f, feather = 1.1f;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[N * N];
+            float c = (N - 1) / 2f, b = (N / 2f) - margin;
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float qx = Mathf.Abs(x - c) - b + corner, qy = Mathf.Abs(y - c) - b + corner;
+                    float d = new Vector2(Mathf.Max(qx, 0), Mathf.Max(qy, 0)).magnitude + Mathf.Min(Mathf.Max(qx, qy), 0) - corner;
+                    float a = 1f - Mathf.Clamp01((Mathf.Abs(d) - thick * 0.5f) / feather);
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                }
+            t.SetPixels32(px); t.Apply(false);
+            _roundStroke = Sprite.Create(t, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(18, 18, 18, 18));
+            return _roundStroke;
+        }
+
+        // 竖向渐变（顶端不透明→底端透明，白色，可着色），用于登录背景光晕等
+        static Sprite _gradSprite;
+        static Sprite GradientSprite()
+        {
+            if (_gradSprite != null) return _gradSprite;
+            const int H = 64;
+            var t = new Texture2D(1, H, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color32[H];
+            for (int y = 0; y < H; y++) { float k = (float)y / (H - 1); px[y] = new Color32(255, 255, 255, (byte)(k * k * 255)); }
+            t.SetPixels32(px); t.Apply(false);
+            _gradSprite = Sprite.Create(t, new Rect(0, 0, 1, H), new Vector2(0.5f, 0.5f), 100f);
+            return _gradSprite;
+        }
+
+        // 给面板加玻璃质感：圆角 + 一圈描边 + 顶部高光（描边/高光都置于最底层，不挡内容）
+        void GlassPanel(Image panel, Color? border = null, bool sheen = true)
+        {
+            if (panel == null) return;
+            Round(panel);
+            var stroke = MkImg("stroke", panel.transform, border ?? Pal.Stroke, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            stroke.sprite = RoundStrokeSprite(); stroke.type = Image.Type.Sliced; stroke.raycastTarget = false;
+            stroke.transform.SetAsFirstSibling();
+            if (sheen)
+            {
+                var sh = MkImg("sheen", panel.transform, new Color(1f, 1f, 1f, 0.13f), new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -5), new Vector2(-28, 4));
+                Round(sh); sh.raycastTarget = false;
+                sh.transform.SetAsFirstSibling();
+            }
+        }
 
         void EnsureEventSystem()
         {
@@ -138,7 +213,13 @@ namespace DW
             Round(img);   // 圆角按钮
             var b = img.gameObject.AddComponent<Button>();
             b.targetGraphic = img;
-            var cb = b.colors; cb.highlightedColor = new Color(1, 1, 1, 1f); cb.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f); b.colors = cb;
+            var cb = b.colors;
+            cb.highlightedColor = new Color(1.07f, 1.07f, 1.07f, 1f);   // 悬停微亮
+            cb.pressedColor = new Color(1.22f, 1.22f, 1.22f, 1f);        // 按下提亮一下
+            cb.selectedColor = cb.highlightedColor;
+            cb.fadeDuration = 0.08f;
+            b.colors = cb;
+            b.gameObject.AddComponent<UiButtonFx>();                     // 按下回弹（强反馈感）
             if (onClick != null) b.onClick.AddListener(() => onClick());
             return b;
         }
@@ -160,26 +241,28 @@ namespace DW
             var root = go.transform;
 
             // ---- 左上状态面板 ----
-            var panel = MkImg("Status", root, new Color(0.06f, 0.07f, 0.14f, 0.72f),
+            var panel = MkImg("Status", root, Pal.Glass,
                 new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -24), new Vector2(560, 188));
-            Round(panel);
+            GlassPanel(panel);
             uStatusTop = MkTxt("Top", panel.transform, "", 26, Color.white, TextAnchor.MiddleLeft,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -12), new Vector2(-30, 36));
             // HP 条
-            MkImg("HpBg", panel.transform, new Color(0, 0, 0, 0.6f),
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -56), new Vector2(-36, 34));
-            uHpFill = MkImg("HpFill", panel.transform, new Color(0.2f, 0.85f, 0.3f, 1f),
+            Round(MkImg("HpBg", panel.transform, Pal.BarBg,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -56), new Vector2(-36, 34)));
+            uHpFill = MkImg("HpFill", panel.transform, Pal.Hp,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(20, -58), new Vector2(-40, 30));
+            Round(uHpFill);
             uHpFill.type = Image.Type.Filled; uHpFill.fillMethod = Image.FillMethod.Horizontal; uHpFill.fillOrigin = 0;
             uHpText = MkTxt("HpTxt", panel.transform, "", 20, Color.white, TextAnchor.MiddleCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -56), new Vector2(-36, 34));
             // EXP 条
-            MkImg("ExpBg", panel.transform, new Color(0, 0, 0, 0.6f),
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -96), new Vector2(-36, 14));
-            uExpFill = MkImg("ExpFill", panel.transform, new Color(0.62f, 0.42f, 0.86f, 1f),
+            Round(MkImg("ExpBg", panel.transform, Pal.BarBg,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -96), new Vector2(-36, 14)));
+            uExpFill = MkImg("ExpFill", panel.transform, Pal.Exp,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(20, -98), new Vector2(-40, 10));
+            Round(uExpFill);
             uExpFill.type = Image.Type.Filled; uExpFill.fillMethod = Image.FillMethod.Horizontal; uExpFill.fillOrigin = 0;
-            uStatusBot = MkTxt("Bot", panel.transform, "", 22, new Color(1f, 0.9f, 0.6f), TextAnchor.MiddleLeft,
+            uStatusBot = MkTxt("Bot", panel.transform, "", 22, Pal.Gold, TextAnchor.MiddleLeft,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -118), new Vector2(-30, 34));
 
             // ---- 技能栏（底部居中） ----
@@ -191,18 +274,22 @@ namespace DW
             for (int i = 0; i < keys.Length; i++)
             {
                 float x = -totalW / 2 + i * (sw + gap);
-                var slot = MkImg("Slot_" + keys[i], barRoot, new Color(0.1f, 0.11f, 0.2f, 0.8f),
+                var slot = MkImg("Slot_" + keys[i], barRoot, Pal.Slot,
                     new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(x, 0), new Vector2(sw, sh));
-                Round(slot);
+                GlassPanel(slot, Pal.StrokeSft);
                 var us = new USkill { key = keys[i] };
                 // 图标块（颜色随后在 Refresh 设）
                 us.icon = MkImg("Icon", slot.transform, Color.white,
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -10), new Vector2(sw - 20, 74));
                 us.icon.preserveAspect = true;   // 方形字形图标居中、不被拉伸
                 // 环形冷却覆盖
-                us.cd = MkImg("Cd", slot.transform, new Color(0, 0, 0, 0.62f),
+                us.cd = MkImg("Cd", slot.transform, new Color(0.02f, 0.03f, 0.08f, 0.66f),
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -10), new Vector2(sw - 20, 74));
                 us.cd.type = Image.Type.Filled; us.cd.fillMethod = Image.FillMethod.Radial360; us.cd.fillOrigin = 2; us.cd.fillAmount = 0;
+                // 冷却结束闪光（默认透明，SetCd 里点亮后淡出）
+                us.flash = MkImg("Flash", slot.transform, new Color(1f, 1f, 1f, 0f),
+                    new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -10), new Vector2(sw - 20, 74));
+                Round(us.flash); us.flash.raycastTarget = false;
                 MkTxt("Key", slot.transform, $"<b>{klabel[i]}</b>", 20, Color.white, TextAnchor.UpperLeft,
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(8, -6), new Vector2(sw, 26));
                 us.lvText = MkTxt("Lv", slot.transform, "", 16, new Color(1f, 0.85f, 0.3f), TextAnchor.UpperRight,
@@ -216,7 +303,9 @@ namespace DW
                 slot.raycastTarget = true;
                 var btn = slot.gameObject.AddComponent<Button>();
                 btn.targetGraphic = slot;
+                var scb = btn.colors; scb.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f); scb.pressedColor = new Color(1.25f, 1.25f, 1.25f, 1f); scb.fadeDuration = 0.07f; btn.colors = scb;
                 btn.onClick.AddListener(() => OnSkillTap(key));
+                slot.gameObject.AddComponent<UiButtonFx>();   // 技能格按下回弹
                 // 加点按钮
                 us.plus = MkBtn("Plus", slot.transform, new Color(1f, 0.82f, 0.25f),
                     new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(2, 8), new Vector2(34, 34),
@@ -228,9 +317,10 @@ namespace DW
             }
 
             // ---- 大攻击键（右下） ----
-            var atk = MkBtn("AttackBtn", root, new Color(0.95f, 0.45f, 0.25f, 0.95f),
+            var atk = MkBtn("AttackBtn", root, Pal.Warm,
                 new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-40, 60), new Vector2(170, 170),
                 () => Cast("basic"));
+            GlassPanel((Image)atk.targetGraphic, new Color(1f, 0.74f, 0.45f, 0.7f));
             BtnIcon(atk.transform, "ui_attack", "攻击", 96, 34);
 
             BuildOverlays(root);
@@ -245,9 +335,11 @@ namespace DW
         // ---- 顶部横幅 / 信息流 / 升级 / 提示 / 死亡 ----
         GameObject MkBanner(Transform root, string name, Color bg, float topY, float w, out Text txt)
         {
-            var p = Round(MkImg(name, root, bg, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, topY), new Vector2(w, 44)));
+            var p = MkImg(name, root, bg, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, topY), new Vector2(w, 44));
+            GlassPanel(p, new Color(1f, 1f, 1f, 0.22f), false);
             txt = MkTxt("t", p.transform, "", 22, Color.white, TextAnchor.MiddleLeft,
                 new Vector2(0, 0), new Vector2(1, 1), new Vector2(0, 0.5f), new Vector2(20, 0), new Vector2(-180, 0));
+            p.gameObject.AddComponent<UiAppear>();   // 横幅弹出
             p.gameObject.SetActive(false);
             return p.gameObject;
         }
@@ -271,18 +363,26 @@ namespace DW
                     new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-20, -150 - i * 30), new Vector2(620, 28));
 
             // 升级横幅（中上）
-            uLevelUp = Round(MkImg("LevelUp", root, new Color(1f, 0.6f, 0.15f, 0.92f), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -200), new Vector2(420, 70))).gameObject;
+            var luImg = MkImg("LevelUp", root, new Color(1f, 0.62f, 0.16f, 0.94f), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -200), new Vector2(420, 70));
+            GlassPanel(luImg, new Color(1f, 0.92f, 0.6f, 0.8f));
+            uLevelUp = luImg.gameObject;
             uLevelUpTxt = MkTxt("t", uLevelUp.transform, "", 34, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uLevelUp.AddComponent<UiAppear>();
             uLevelUp.SetActive(false);
 
             // 顶部提示 toast（屏幕中下）
-            uToast = Round(MkImg("Toast", root, new Color(0, 0, 0, 0.7f), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 230), new Vector2(760, 44))).gameObject;
+            var toastImg = MkImg("Toast", root, Pal.Glass, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 230), new Vector2(760, 44));
+            GlassPanel(toastImg, Pal.StrokeSft, false);
+            uToast = toastImg.gameObject;
             uToastTxt = MkTxt("t", uToast.transform, "", 22, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uToast.AddComponent<UiAppear>();
             uToast.SetActive(false);
 
             // 死亡全屏
-            uDeath = MkImg("Death", root, new Color(0.4f, 0, 0, 0.45f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero).gameObject;
-            var dbox = MkImg("box", uDeath.transform, new Color(0.08f, 0.05f, 0.08f, 0.95f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 240));
+            uDeath = MkImg("Death", root, new Color(0.32f, 0.02f, 0.06f, 0.5f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero).gameObject;
+            var dbox = MkImg("box", uDeath.transform, new Color(0.08f, 0.06f, 0.12f, 0.97f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 240));
+            GlassPanel(dbox, Pal.Danger);
+            dbox.gameObject.AddComponent<UiAppear>();
             MkTxt("t", dbox.transform, "你已阵亡", 40, new Color(1f, 0.5f, 0.5f), TextAnchor.UpperCenter, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -28), new Vector2(-20, 50));
             uDeathTxt = MkTxt("cd", dbox.transform, "", 24, Color.white, TextAnchor.MiddleCenter, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -100), new Vector2(-20, 40));
             uRespawnBtn = MkBtn("rb", dbox.transform, new Color(0.3f, 0.4f, 0.85f), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 36), new Vector2(280, 64), () => Send(new { t = "respawn" }));
@@ -369,9 +469,9 @@ namespace DW
             int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
             var roomName = curRoom == "war" ? "重叠战场" : curRoom == "melee" ? "大混战" : Data.Dim(myDim).name;
             uStatusTop.text = $"{roomName} ｜ {Data.ClassTitle(myDim, myCls)}";
-            uHpFill.fillAmount = Mathf.Clamp01((float)hp / maxHp);
+            Fill(uHpFill, Mathf.Clamp01((float)hp / maxHp));
             uHpText.text = shield > 0 ? $"{hp}/{maxHp}  盾{shield}" : $"{hp}/{maxHp}";
-            uExpFill.fillAmount = Mathf.Clamp01((float)exp / expNeed);
+            Fill(uExpFill, Mathf.Clamp01((float)exp / expNeed));
             uStatusBot.text = $"Lv.{MyLevel} ｜ 金{gold}" + (MySkPts > 0 ? $"  技能点×{MySkPts}" : "");
 
             RefreshOverlays();
@@ -415,6 +515,23 @@ namespace DW
             float f = total > 0 ? Mathf.Clamp01(remain / total) : 0;
             us.cd.fillAmount = f;
             us.cdText.text = remain > 0.05f ? remain.ToString("0.0") : "";
+            // 冷却归零瞬间，技能格闪一下白光，然后淡出 —— “可以放了”的动感提示
+            bool ready = remain <= 0.02f;
+            if (us.flash != null)
+            {
+                if (ready && !us.wasReady) us.flash.color = new Color(1f, 1f, 1f, 0.5f);
+                float a = Mathf.MoveTowards(us.flash.color.a, 0f, Time.deltaTime * 1.9f);
+                us.flash.color = new Color(1f, 1f, 1f, a);
+            }
+            us.wasReady = ready;
+        }
+
+        // 平滑过渡填充条：每帧朝目标缓动（指数衰减，与帧率无关），让掉血/涨经验有“流动”感
+        static void Fill(Image img, float target)
+        {
+            if (img == null) return;
+            float c = img.fillAmount;
+            img.fillAmount = Mathf.Abs(target - c) < 0.002f ? target : Mathf.Lerp(c, target, 1f - Mathf.Exp(-13f * Time.deltaTime));
         }
 
         // ====================== 程序化技能图标（按效果类型画出可辨识图形，替代纯色块） ======================
@@ -647,14 +764,16 @@ namespace DW
             const int maxRows = 5;
             for (int i = 0; i < maxRows; i++)
             {
-                var box = Round(MkImg("Party" + i, root, new Color(0.06f, 0.07f, 0.14f, 0.7f),
-                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -228 - i * 56), new Vector2(300, 50)));
+                var box = MkImg("Party" + i, root, Pal.GlassSft,
+                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -228 - i * 56), new Vector2(300, 50));
+                GlassPanel(box, Pal.StrokeSft, false);
                 var name = MkTxt("n", box.transform, "", 18, Color.white, TextAnchor.UpperLeft,
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(10, -4), new Vector2(-16, 24));
-                MkImg("bg", box.transform, new Color(0, 0, 0, 0.6f),
-                    new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(10, 8), new Vector2(-20, 12));
-                var fill = MkImg("fill", box.transform, new Color(0.2f, 0.85f, 0.3f, 1f),
+                Round(MkImg("bg", box.transform, Pal.BarBg,
+                    new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(10, 8), new Vector2(-20, 12)));
+                var fill = MkImg("fill", box.transform, Pal.Hp,
                     new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(11, 9), new Vector2(-22, 10));
+                Round(fill);
                 fill.type = Image.Type.Filled; fill.fillMethod = Image.FillMethod.Horizontal; fill.fillOrigin = 0;
                 box.gameObject.SetActive(false);
                 uParty.Add(new UPartyRow { go = box.gameObject, name = name, hpFill = fill });
@@ -672,7 +791,7 @@ namespace DW
                 var m = (JObject)partyMembers[i];
                 int hp = (int?)m["hp"] ?? 0, max = (int?)m["maxHp"] ?? 1;
                 uParty[i].name.text = $"{m["name"]} Lv.{m["level"]}";
-                uParty[i].hpFill.fillAmount = Mathf.Clamp01((float)hp / Mathf.Max(1, max));
+                Fill(uParty[i].hpFill, Mathf.Clamp01((float)hp / Mathf.Max(1, max)));
             }
         }
 
@@ -680,8 +799,9 @@ namespace DW
         void BuildMinimap(Transform root)
         {
             // 边框 + 画布（左下角，避开底部技能栏与右下攻击键）
-            var frame = Round(MkImg("MiniFrame", root, new Color(0.5f, 0.55f, 0.7f, 0.5f),
-                new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(20, 20), new Vector2(228, 228)));
+            var frame = MkImg("MiniFrame", root, Pal.Glass,
+                new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(20, 20), new Vector2(228, 228));
+            GlassPanel(frame, Pal.Stroke, false);
             var go = new GameObject("Minimap", typeof(RectTransform));
             go.transform.SetParent(frame.transform, false);
             var rt = (RectTransform)go.transform;
@@ -799,7 +919,7 @@ namespace DW
                 Vector2 lp;
                 RectTransformUtility.ScreenPointToLocalPointInRectangle(plateRoot, sp, null, out lp);
                 e.plateRt.localPosition = lp;
-                e.plateFill.fillAmount = Mathf.Clamp01((float)e.hp / Mathf.Max(1, e.maxHp));
+                Fill(e.plateFill, Mathf.Clamp01((float)e.hp / Mathf.Max(1, e.maxHp)));
                 if (e.level != e.plateLvl)   // 名字固定、只在等级变化时重建文本（省每帧字符串分配）
                 {
                     e.plateLvl = e.level;
@@ -853,21 +973,27 @@ namespace DW
             scaler.matchWidthOrHeight = 0.5f;
             go.AddComponent<GraphicRaycaster>();
             var root = go.transform;
-            MkImg("dim", root, new Color(0.02f, 0.03f, 0.07f, 0.97f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            MkImg("dim", root, new Color(0.035f, 0.045f, 0.10f, 0.985f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            // 顶部彩色光晕（渐变），随所选次元换色，让登录界面有空气感与动感
+            menuGlow = MkImg("glow", root, new Color(0.2f, 0.45f, 0.9f, 0.22f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            menuGlow.sprite = GradientSprite(); menuGlow.type = Image.Type.Simple; menuGlow.raycastTarget = false;
             uMenuToast = MkTxt("toast", root, "", 22, new Color(1f, 0.85f, 0.5f), TextAnchor.LowerCenter,
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 60), new Vector2(960, 40));
 
             // ---- 表单 ----
-            var panel = Round(MkImg("Form", root, new Color(0.07f, 0.08f, 0.16f, 0.99f),
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(760, 880)));
+            var panel = MkImg("Form", root, Pal.PanelBg,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(760, 880));
+            GlassPanel(panel, Pal.Stroke);
             menuForm = panel.gameObject;
+            menuForm.AddComponent<UiAppear>();
             var pt = panel.transform;
             float pw = 760;
-            Text Label(string s, float yy) => MkTxt("l", pt, s, 22, new Color(0.78f, 0.8f, 0.92f), TextAnchor.UpperLeft,
+            Text Label(string s, float yy) => MkTxt("l", pt, s, 22, Pal.TextDim, TextAnchor.UpperLeft,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, yy), new Vector2(-56, 30));
 
-            MkTxt("title", pt, "次元大战", 50, new Color(1f, 0.9f, 0.6f), TextAnchor.UpperCenter,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -26), new Vector2(0, 64));
+            var title = MkTxt("title", pt, "次元大战", 54, Pal.Gold, TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -26), new Vector2(0, 68));
+            title.gameObject.AddComponent<UiPulse>();   // 标题轻轻呼吸
             float y = -120;
             Label("降临者之名", y); y -= 34;
             uName = MkInput(pt, playerName, 12, y, v => playerName = v); y -= 70;
@@ -879,7 +1005,7 @@ namespace DW
             {
                 int idx = i;
                 float xc = -pw / 2 + 24 + dw / 2 + i * (dw + 8);
-                uDimBtns[i] = MkBtn("dim" + i, pt, new Color(0.16f, 0.17f, 0.28f, 1f),
+                uDimBtns[i] = MkBtn("dim" + i, pt, Pal.Slate,
                     new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(dw, 54),
                     () => dimIdx = idx);
                 MkTxt("t", uDimBtns[i].transform, Data.Dims[i].name.Replace("世界", ""), 19, Color.white, TextAnchor.MiddleCenter,
@@ -897,16 +1023,17 @@ namespace DW
             {
                 int idx = i;
                 float xc = -pw / 2 + 24 + cw / 2 + i * (cw + 8);
-                uClsBtns[i] = MkBtn("cls" + i, pt, new Color(0.16f, 0.17f, 0.28f, 1f),
+                uClsBtns[i] = MkBtn("cls" + i, pt, Pal.Slate,
                     new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(cw, 74),
                     () => clsIdx = idx);
                 uClsTxt[i] = MkTxt("t", uClsBtns[i].transform, "", 17, Color.white, TextAnchor.MiddleCenter,
                     Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             }
             y -= 92;
-            uJoinBtn = MkBtn("join", pt, new Color(0.85f, 0.35f, 0.2f, 1f),
+            uJoinBtn = MkBtn("join", pt, Pal.Accent,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-56, 64), () => Join());
-            MkTxt("t", uJoinBtn.transform, "降临次元", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            GlassPanel((Image)uJoinBtn.targetGraphic, new Color(0.7f, 0.95f, 1f, 0.7f));
+            MkTxt("t", uJoinBtn.transform, "降临次元", 28, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             y -= 76;
             MkTxt("hint", pt, "WASD移动 · 右键转视角 · 左键普攻 · QER技能 · 空格翻滚 · F捕捉 · B面板", 15, new Color(0.6f, 0.62f, 0.74f), TextAnchor.UpperCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-40, 24));
@@ -950,11 +1077,17 @@ namespace DW
             if (menuForm.activeSelf == connecting) menuForm.SetActive(!connecting);
             if (menuConnecting.activeSelf != connecting) menuConnecting.SetActive(connecting);
             if (connecting) { uConnTxt.text = $"正在连接次元…\n<size=20>{serverIp}</size>"; return; }
+            // 背景光晕跟随所选次元的主色（平滑过渡）
+            if (menuGlow != null)
+            {
+                var a = Data.Dims[dimIdx].accent;
+                menuGlow.color = Color.Lerp(menuGlow.color, new Color(a.r, a.g, a.b, 0.24f), 1f - Mathf.Exp(-6f * Time.unscaledDeltaTime));
+            }
             for (int i = 0; i < uDimBtns.Length; i++)
-                ((Image)uDimBtns[i].targetGraphic).color = i == dimIdx ? Data.Dims[i].accent : new Color(0.16f, 0.17f, 0.28f, 1f);
+                ((Image)uDimBtns[i].targetGraphic).color = i == dimIdx ? Data.Dims[i].accent : Pal.Slate;
             for (int i = 0; i < uClsBtns.Length; i++)
             {
-                ((Image)uClsBtns[i].targetGraphic).color = i == clsIdx ? new Color(0.85f, 0.7f, 0.2f, 1f) : new Color(0.16f, 0.17f, 0.28f, 1f);
+                ((Image)uClsBtns[i].targetGraphic).color = i == clsIdx ? Pal.Gold : Pal.Slate;
                 uClsTxt[i].text = $"{Data.ClassTitle(Data.Dims[dimIdx].id, Data.Classes[i].id)}\n<size=14>({Data.Classes[i].role})</size>";
             }
             uHunterHint.text = Data.Dims[dimIdx].id == "hunter" ? "次元天赋：可捕捉野怪当宝宝（F键）" : "";
@@ -970,19 +1103,24 @@ namespace DW
         void BuildPanelUI(Transform root)
         {
             // 右上 背包 开关
-            var bag = MkBtn("BagBtn", root, new Color(0.18f, 0.2f, 0.36f, 0.95f),
+            var bag = MkBtn("BagBtn", root, Pal.AccentDp,
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -24), new Vector2(76, 76),
                 () => panelOpen = !panelOpen);
+            GlassPanel((Image)bag.targetGraphic, Pal.Accent);
             BtnIcon(bag.transform, "ui_bag", "背包", 46, 26);
             // 退出
-            var exit = MkBtn("ExitBtn", root, new Color(0.36f, 0.18f, 0.2f, 0.95f),
+            var exit = MkBtn("ExitBtn", root, new Color(0.52f, 0.20f, 0.27f, 0.96f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-110, -24), new Vector2(76, 76),
                 () => ExitToMenu());
+            GlassPanel((Image)exit.targetGraphic, Pal.Danger);
             BtnIcon(exit.transform, "ui_exit", "退出", 46, 26);
 
             // 面板
-            uPanel = Round(MkImg("Panel", root, new Color(0.07f, 0.08f, 0.16f, 0.97f),
-                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -112), new Vector2(680, 760))).gameObject;
+            var panelImg = MkImg("Panel", root, Pal.PanelBg,
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -112), new Vector2(680, 760));
+            GlassPanel(panelImg, Pal.Stroke);
+            uPanel = panelImg.gameObject;
+            uPanel.AddComponent<UiAppear>();
             // 顶部标签
             string[] tabs = { "属性", "背包", "商店" };
             uTabTxt = new Text[tabs.Length];
@@ -990,12 +1128,12 @@ namespace DW
             for (int i = 0; i < tabs.Length; i++)
             {
                 int idx = i;
-                var tb = MkBtn("Tab" + i, uPanel.transform, new Color(0.12f, 0.13f, 0.24f, 1f),
+                var tb = MkBtn("Tab" + i, uPanel.transform, Pal.Slate,
                     new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(i * tw, 0), new Vector2(tw, 56),
                     () => { panelTab = idx; uPanelSig = ""; });
                 uTabTxt[i] = MkTxt("t", tb.transform, tabs[i], 22, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             }
-            var close = MkBtn("Close", uPanel.transform, new Color(0.3f, 0.12f, 0.14f, 1f),
+            var close = MkBtn("Close", uPanel.transform, new Color(0.42f, 0.16f, 0.20f, 1f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(0, 0), new Vector2(tw, 56), () => panelOpen = false);
             MkTxt("t", close.transform, "关", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
 
@@ -1056,9 +1194,12 @@ namespace DW
         void RowBtn(Transform row, string s, Color c, System.Action onClick)
         {
             var img = MkImg("b", row, c, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            img.raycastTarget = true;
+            img.raycastTarget = true; Round(img);
             var le = img.gameObject.AddComponent<LayoutElement>(); le.minWidth = 80; le.preferredWidth = 80;
-            var b = img.gameObject.AddComponent<Button>(); b.targetGraphic = img; b.onClick.AddListener(() => onClick());
+            var b = img.gameObject.AddComponent<Button>(); b.targetGraphic = img;
+            var cb = b.colors; cb.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f); cb.pressedColor = new Color(1.22f, 1.22f, 1.22f, 1f); cb.fadeDuration = 0.08f; b.colors = cb;
+            b.gameObject.AddComponent<UiButtonFx>();
+            b.onClick.AddListener(() => onClick());
             MkTxt("t", img.transform, s, 18, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
         }
 
@@ -1155,5 +1296,66 @@ namespace DW
                 RowBtn(r.transform, $"{it["price"]}金", new Color(0.32f, 0.28f, 0.12f), () => Send(new { t = "buy", id = id }));
             }
         }
+    }
+
+    // ====================== UI 动效组件（纯程序化、零资源依赖，绝不变粉/缺字） ======================
+
+    // 按钮按下回弹：按下缩小、松开带过冲弹性弹回 —— 让每次点击都有“按下去”的反馈感
+    public class UiButtonFx : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
+    {
+        public float pressScale = 0.90f;
+        Vector3 baseScale = Vector3.one;
+        float scale = 1f, vel = 0f, target = 1f;
+        bool grabbed;
+        void Awake() { baseScale = transform.localScale; if (baseScale == Vector3.zero) baseScale = Vector3.one; }
+        public void OnPointerDown(PointerEventData e) { target = pressScale; grabbed = true; }
+        public void OnPointerUp(PointerEventData e) { target = 1f; grabbed = false; }
+        public void OnPointerExit(PointerEventData e) { if (grabbed) { target = 1f; grabbed = false; } }
+        void OnDisable() { scale = 1f; vel = 0f; target = 1f; transform.localScale = baseScale; }
+        void Update()
+        {
+            float dt = Mathf.Min(0.05f, Time.unscaledDeltaTime);
+            float a = (target - scale) * 320f - vel * 24f;   // 欠阻尼弹簧 → 轻微回弹
+            vel += a * dt; scale += vel * dt;
+            transform.localScale = baseScale * scale;
+        }
+    }
+
+    // 出现动画：缩放 + 淡入（ease-out-back 轻微过冲），用于面板/横幅/弹窗弹出
+    public class UiAppear : MonoBehaviour
+    {
+        public float dur = 0.22f, fromScale = 0.84f;
+        CanvasGroup cg; RectTransform rt; float t;
+        void OnEnable()
+        {
+            rt = (RectTransform)transform;
+            cg = GetComponent<CanvasGroup>(); if (cg == null) cg = gameObject.AddComponent<CanvasGroup>();
+            t = 0f; rt.localScale = new Vector3(fromScale, fromScale, 1f); cg.alpha = 0f;
+        }
+        void Update()
+        {
+            if (t >= 1f) return;
+            t += Time.unscaledDeltaTime / Mathf.Max(0.02f, dur);
+            float k = Mathf.Clamp01(t);
+            float s = Mathf.Lerp(fromScale, 1f, EaseOutBack(k));
+            rt.localScale = new Vector3(s, s, 1f);
+            if (cg != null) cg.alpha = Mathf.Clamp01(k * 1.7f);
+            if (t >= 1f) { rt.localScale = Vector3.one; if (cg != null) cg.alpha = 1f; }
+        }
+        static float EaseOutBack(float x)
+        {
+            const float c1 = 1.70158f, c3 = c1 + 1f;
+            float m = x - 1f;
+            return 1f + c3 * m * m * m + c1 * m * m;
+        }
+    }
+
+    // 持续呼吸缩放（用于登录标题等强调元素，给静态界面一点生气）
+    public class UiPulse : MonoBehaviour
+    {
+        public float amp = 0.035f, speed = 2.2f;
+        Vector3 baseScale; float phase;
+        void OnEnable() { baseScale = transform.localScale; if (baseScale == Vector3.zero) baseScale = Vector3.one; }
+        void Update() { phase += Time.unscaledDeltaTime * speed; float s = 1f + Mathf.Sin(phase) * amp; transform.localScale = baseScale * s; }
     }
 }
