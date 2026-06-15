@@ -670,6 +670,104 @@ namespace DW
             return sp;
         }
 
+        // ====================== 各次元专属图标质感（同一字形，五种风格）======================
+        static readonly Dictionary<string, Sprite> _dimIcons = new Dictionary<string, Sprite>();
+        static Sprite DimIcon(string glyphKey, string dimId, bool locked)
+        {
+            string key = glyphKey + "@" + dimId + (locked ? "L" : "");
+            if (_dimIcons.TryGetValue(key, out var cached)) return cached;
+            const int N = 112;
+            var buf = new Color[N * N];
+            Color accent = Data.Dim(dimId).accent;
+            for (int yy = 0; yy < N; yy++)
+                for (int xx = 0; xx < N; xx++)
+                {
+                    float u = (xx + 0.5f) / N * 2f - 1f;
+                    float v = (yy + 0.5f) / N * 2f - 1f;
+                    Color c = DimIconPixel(glyphKey, dim: dimId, ac: accent, p: new Vector2(u, v));
+                    if (locked)
+                    {
+                        float g = (c.r + c.g + c.b) / 3f;
+                        c = new Color(Mathf.Lerp(g, c.r, 0.35f) * 0.72f, Mathf.Lerp(g, c.g, 0.35f) * 0.72f, Mathf.Lerp(g, c.b, 0.35f) * 0.72f, c.a * 0.9f);
+                    }
+                    buf[yy * N + xx] = c;
+                }
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            tex.SetPixels(buf); tex.Apply(false);
+            var sp = Sprite.Create(tex, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
+            _dimIcons[key] = sp;
+            return sp;
+        }
+
+        static float IFill(float d) { return Mathf.Clamp01(0.5f - d / 0.022f); }
+        static float IGlow(float d, float k) { return Mathf.Exp(-Mathf.Max(d, 0f) * k); }
+        static float IHash(Vector2 p) { float s = Mathf.Sin(p.x * 12.9898f + p.y * 78.233f) * 43758.5453f; return s - Mathf.Floor(s); }
+
+        static Color DimIconPixel(string k, string dim, Color ac, Vector2 p)
+        {
+            switch (dim)
+            {
+                case "xiuxian":   // 修仙：金核翠光符箓 + 柔和灵气环
+                {
+                    float d = GlyphSdf(k, p);
+                    float fill = IFill(d), glow = IGlow(d, 5.5f);
+                    float halo = Mathf.Exp(-Mathf.Abs(p.magnitude - 0.82f) * 6f) * 0.22f;
+                    Color col = Color.Lerp(ac, new Color(0.99f, 0.96f, 0.72f), fill);
+                    float a = Mathf.Max(fill, Mathf.Max(glow * 0.7f, halo));
+                    return new Color(col.r, col.g, col.b, a);
+                }
+                case "cyber":     // 赛博：故障霓虹（RGB 错位 + 扫描线）
+                {
+                    float off = 0.05f;
+                    float dC = GlyphSdf(k, p);
+                    float fC = IFill(dC), fR = IFill(GlyphSdf(k, p - new Vector2(off, 0f))), fB = IFill(GlyphSdf(k, p + new Vector2(off, 0f)));
+                    float glow = IGlow(dC, 8f);
+                    float r = Mathf.Clamp01(Mathf.Max(fR, ac.r * fC + glow * ac.r * 0.7f));
+                    float g = Mathf.Clamp01(Mathf.Max(fC * 0.35f, glow * ac.g * 0.7f));
+                    float b = Mathf.Clamp01(Mathf.Max(fB, ac.b * fC + glow * ac.b * 0.7f));
+                    float a = Mathf.Clamp01(Mathf.Max(Mathf.Max(fR, fB), Mathf.Max(fC, glow * 0.8f)));
+                    float scan = (Mathf.FloorToInt((p.y * 0.5f + 0.5f) * 112f) % 3 == 0) ? 0.7f : 1f;
+                    return new Color(r * scan, g * scan, b * scan, a);
+                }
+                case "magic":     // 西方魔法：奥术法阵（双环 + 符文刻度）
+                {
+                    float d = GlyphSdf(k, p);
+                    float fill = IFill(d), glow = IGlow(d, 7f);
+                    float rr = p.magnitude;
+                    float ring1 = Mathf.Clamp01(0.5f - (Mathf.Abs(rr - 0.95f) - 0.012f) / 0.02f) * 0.45f;
+                    float ring2 = Mathf.Clamp01(0.5f - (Mathf.Abs(rr - 0.8f) - 0.008f) / 0.02f) * 0.38f;
+                    float seg = Mathf.Repeat(Mathf.Atan2(p.y, p.x) / (Mathf.PI * 2f) * 8f, 1f);
+                    float tick = (rr > 0.84f && rr < 0.92f && Mathf.Min(seg, 1f - seg) < 0.07f) ? 0.5f : 0f;
+                    float deco = Mathf.Max(Mathf.Max(ring1, ring2), tick);
+                    Color col = Color.Lerp(ac, new Color(1f, 0.96f, 1f), fill);
+                    float a = Mathf.Max(fill, Mathf.Max(glow * 0.75f, deco));
+                    return new Color(col.r, col.g, col.b, a);
+                }
+                case "hunter":    // 猎人：粗糙边缘 + 三道爪痕 + 琥珀光
+                {
+                    float n = (IHash(p * 8f) - 0.5f) * 0.05f;
+                    float d = GlyphSdf(k, p) + n;
+                    float fill = IFill(d), glow = IGlow(d, 6.5f);
+                    float c1 = SdSeg(p, new Vector2(-0.8f, 0.55f), new Vector2(0.55f, -0.85f), 0.022f);
+                    float c2 = SdSeg(p, new Vector2(-0.6f, 0.8f), new Vector2(0.8f, -0.6f), 0.022f);
+                    float c3 = SdSeg(p, new Vector2(-0.85f, 0.3f), new Vector2(0.3f, -0.85f), 0.022f);
+                    float claw = Mathf.Clamp01(0.5f - Mathf.Min(c1, Mathf.Min(c2, c3)) / 0.02f) * 0.28f;
+                    Color col = Color.Lerp(ac, new Color(1f, 0.92f, 0.66f), fill);
+                    float a = Mathf.Max(fill, Mathf.Max(glow * 0.7f, claw));
+                    return new Color(col.r, col.g, col.b, a);
+                }
+                default:          // 科技：洁净霓虹线 + 细瞄准环
+                {
+                    float d = GlyphSdf(k, p);
+                    float fill = IFill(d), glow = IGlow(d, 8.5f);
+                    float ring = Mathf.Clamp01(0.5f - (Mathf.Abs(p.magnitude - 0.94f) - 0.01f) / 0.02f) * 0.5f;
+                    Color col = Color.Lerp(ac, Color.white, fill);
+                    float a = Mathf.Max(fill, Mathf.Max(glow * 0.8f, ring));
+                    return new Color(col.r, col.g, col.b, a);
+                }
+            }
+        }
+
         // ====================== 美术图标（game-icons.net CC BY，存 Resources/DWIcons，白图运行时着色；缺失→SDF 兜底） ======================
         static readonly Dictionary<string, Sprite> _pngIcons = new Dictionary<string, Sprite>();
         static Sprite PngIcon(string name)
@@ -680,13 +778,12 @@ namespace DW
             _pngIcons[name] = sp;
             return sp;
         }
-        // 技能格图标：统一霓虹矢量。战斗技能辉光=本次元主色（不同次元不同霓虹），翻滚=冰蓝、次元技=金
+        // 技能格图标：战斗技能与次元技用「本次元专属质感」（科技霓虹/修仙玉光/赛博故障/魔法法阵/猎人爪痕）；
+        // 翻滚是通用位移机制，保持冰蓝霓虹以示区分。
         void SetSkillIcon(USkill us, string kind, bool locked)
         {
-            Color glow = kind == "dodge" ? new Color(0.32f, 0.62f, 1f)
-                       : kind == "dim" ? Pal.Gold
-                       : Data.Dim(myDim).accent;
-            us.icon.sprite = NeonIcon(kind, glow, locked);
+            if (kind == "dodge") us.icon.sprite = NeonIcon("dodge", new Color(0.32f, 0.62f, 1f), locked);
+            else us.icon.sprite = DimIcon(kind, myDim, locked);
             us.icon.color = Color.white;
         }
         // 按钮图标：统一霓虹矢量（攻击/背包/退出/关闭），不再依赖 PNG、不再回退文字
