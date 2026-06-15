@@ -130,8 +130,8 @@ namespace DW
             cam.gameObject.tag = "MainCamera";
 
             // 清运行时生成的图标/特效/贴图缓存：编辑器关闭 Domain Reload 时防止引用到上次已销毁的对象
-            _kindIcons.Clear(); _slotIcons.Clear(); _pngIcons.Clear(); _fxCache.Clear();
-            _groundTex = _ringTex = _dotTex = null;
+            _kindIcons.Clear(); _slotIcons.Clear(); _pngIcons.Clear(); _fxCache.Clear(); _fxPools.Clear(); _fxBroken.Clear();
+            _groundTex = _ringTex = _dotTex = _slashTex = null;
             _sparkMat = _trailMat = null;
         }
 
@@ -1212,30 +1212,40 @@ namespace DW
         /* 每个技能独立的施放特效（颜色/大小/形态不同） */
         void SkillCastFx(string key, string kind, Vector3 at, Vector3 dir)
         {
-            Color c = Data.Dim(myDim).accent;                  // 主色随次元（科技蓝/修仙绿/赛博粉/魔法紫/猎人橙）
-            Color c2 = Color.Lerp(c, Color.white, 0.35f);      // 高光
+            // 每个「次元+职业+技能」固定散列 → 从特效池里各取一个不同特效；同时给程序化兜底略调色
+            int seed = Mathf.Abs((myDim + "_" + myCls + "_" + key).GetHashCode());
+            Color c = Color.Lerp(Data.Dim(myDim).accent, Color.HSVToRGB((seed % 100) / 100f, 0.7f, 1f), 0.22f);
+            Color c2 = Color.Lerp(c, Color.white, 0.35f);
             Quaternion face = dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity;
             Vector3 p = at + dir * 1.3f + Vector3.up * 1.0f;
             if (kind == "aoe")
             {
-                if (SpawnFx("aoe", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
-                { SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "aoe", myDim); SpawnSparks(p, c2, 26, 7f); }
+                if (SpawnPoolFx("fxp_aoe", seed, at + Vector3.up * 0.1f, Quaternion.identity, key == "r" ? 1.3f : 1f, 3f) == null
+                    && SpawnFx("aoe", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
+                { SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "x", null); SpawnSparks(p, c2, 26, 7f); }
             }
             else if (kind == "aoeheal" || kind == "heal")
-                SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, Color.Lerp(c, new Color(0.3f, 1f, 0.5f), 0.6f), "heal", myDim);
-            else if (kind == "dashmelee")
             {
-                if (SpawnFx("slash", p, face, 1.4f, 1.2f, dim: myDim) == null)
-                { SpawnSlash(at + Vector3.up * 0.05f, dir, c, 3.4f); SpawnShockwave(at + dir * 1.4f + Vector3.up * 0.1f, 2.4f, c, "x", null); SpawnSparks(p, c2, 26, 7.5f); SpawnFlash(p, c, 2.2f); }
+                if (SpawnPoolFx("fxp_buff", seed, at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f) == null
+                    && SpawnFx("heal", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
+                    SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, Color.Lerp(c, new Color(0.3f, 1f, 0.5f), 0.6f), "x", null);
             }
-            else if (kind == "melee")   // 近战：剑斩弧光 + 火花 + 闪光（程序化，绝不变粉）
+            else if (kind == "dashmelee" || kind == "melee")
             {
-                if (SpawnFx("slash", p, face, 1.2f, 1.2f, dim: myDim) == null)
-                { SpawnSlash(at + Vector3.up * 0.05f, dir, c, 2.8f); SpawnSparks(p, c2, 22, 6.5f); SpawnFlash(p, c, 2f); }
+                bool dash = kind == "dashmelee";
+                if (SpawnPoolFx("fxp_slash", seed, p, face, dash ? 1.4f : 1.2f, 1.4f) == null
+                    && SpawnFx("slash", p, face, dash ? 1.4f : 1.2f, 1.2f, dim: myDim) == null)
+                {
+                    SpawnSlash(at + Vector3.up * 0.05f, dir, c, dash ? 3.4f : 2.8f);
+                    SpawnSparks(p, c2, dash ? 26 : 22, dash ? 7.5f : 6.5f); SpawnFlash(p, c, 2f);
+                    if (dash) SpawnShockwave(at + dir * 1.4f + Vector3.up * 0.1f, 2.4f, c, "x", null);
+                }
             }
             else   // proj：身前施法闪光 + 火花（弹道本身另有拖尾）
             {
-                if (SpawnFx("cast", p, face, 1f, 1.5f, dim: myDim) == null) { SpawnSparks(p, c2, 18, 6f); SpawnFlash(p, c, 1.8f); }
+                if (SpawnPoolFx("fxp_cast", seed, p, face, 1f, 1.4f) == null
+                    && SpawnFx("cast", p, face, 1f, 1.5f, dim: myDim) == null)
+                { SpawnSparks(p, c2, 18, 6f); SpawnFlash(p, c, 1.8f); }
             }
         }
 
@@ -1475,11 +1485,8 @@ namespace DW
             _fxBroken[pf] = b;
             return b;
         }
-        GameObject SpawnFx(string name, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f, bool killScripts = false, string dim = null)
+        GameObject InstFx(GameObject pf, Vector3 at, Quaternion rot, float scale, float life, bool killScripts)
         {
-            var pf = dim != null ? FxPrefab(name + "_" + dim) : null;   // 优先次元专属变体
-            if (pf == null) pf = FxPrefab(name);
-            if (pf == null || FxBroken(pf)) return null;   // 缺失或 shader 不可用(变粉) → 交给程序化兜底
             var go = Instantiate(pf, at, rot);
             if (!Mathf.Approximately(scale, 1f)) go.transform.localScale *= scale;
             if (killScripts)
@@ -1487,6 +1494,29 @@ namespace DW
             foreach (var r in go.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             if (life > 0) Destroy(go, life);
             return go;
+        }
+        GameObject SpawnFx(string name, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f, bool killScripts = false, string dim = null)
+        {
+            var pf = dim != null ? FxPrefab(name + "_" + dim) : null;   // 优先次元专属变体
+            if (pf == null) pf = FxPrefab(name);
+            if (pf == null || FxBroken(pf)) return null;   // 缺失或 shader 不可用(变粉) → 交给程序化兜底
+            return InstFx(pf, at, rot, scale, life, killScripts);
+        }
+        // 特效池：DWFx 里所有以 cat 开头、可正常渲染的预制体，按技能稳定散列取用 → 每技能不同特效
+        static readonly Dictionary<string, GameObject[]> _fxPools = new Dictionary<string, GameObject[]>();
+        static GameObject[] FxPool(string cat)
+        {
+            if (_fxPools.TryGetValue(cat, out var arr)) return arr;
+            var list = new List<GameObject>();
+            foreach (var g in Resources.LoadAll<GameObject>("DWFx"))
+                if (g != null && g.name.StartsWith(cat) && !FxBroken(g)) list.Add(g);
+            arr = list.ToArray(); _fxPools[cat] = arr; return arr;
+        }
+        GameObject SpawnPoolFx(string cat, int seed, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f)
+        {
+            var pool = FxPool(cat);
+            if (pool.Length == 0) return null;
+            return InstFx(pool[Mathf.Abs(seed) % pool.Length], at, rot, scale, life, false);
         }
 
         void UpdateCamera()

@@ -94,7 +94,10 @@ namespace DW.EditorTools
         const string SceneDir = "Assets/Resources/DWScene";
 
         /* 适合散布到野外的"道具型"静态模型关键词（柱子/石棺/木桶/骸骨…） */
-        static readonly string[] ScenePropKeys = { "pillar", "column", "statue", "barrel", "crate", "box", "rock", "stone", "tree", "plant", "chest", "pot", "vase", "lamp", "lantern", "torch", "brazier", "grave", "tomb", "ruin", "rubble", "fountain", "cart", "shelf", "throne", "sarcophag", "coffin", "skull", "bone", "banner", "fence", "well", "altar", "mushroom", "crystal", "pile", "debris", "pumpkin", "candle", "cage" };
+        static readonly string[] ScenePropKeys = { "pillar", "column", "statue", "barrel", "crate", "box", "rock", "stone", "tree", "plant", "chest", "pot", "vase", "lamp", "lantern", "torch", "brazier", "grave", "tomb", "ruin", "rubble", "fountain", "cart", "shelf", "throne", "sarcophag", "coffin", "skull", "bone", "banner", "fence", "well", "altar", "mushroom", "crystal", "pile", "debris", "pumpkin", "candle", "cage",
+            // 工业(RPG_FPS) + 自然(SimpleNature/PurePoly) 通用道具，尽量用上各包
+            "container", "tank", "oil", "dumpster", "pallet", "pipe", "machine", "generator", "vent", "console", "antenna", "sack", "bag", "tire", "scaffold",
+            "bush", "grass", "flower", "fern", "shrub", "log", "stump", "branch", "cactus", "reed", "lily", "boulder", "pebble", "cliff", "leaf", "weed", "root", "moss", "vine", "hedge", "pp_", "sm_", "sn_" };
         /* 结构件不散布（平铺会很丑） */
         static readonly string[] SceneBadKeys = { "floor", "wall", "ceiling", "door", "stair", "tile", "ground", "roof", "corner", "arch", "bridge", "platform", "ramp", "window", "frame", "plane", "terrain", "ceil", "_lod", "collision", "modular_" };
 
@@ -128,7 +131,7 @@ namespace DW.EditorTools
             var seen = new HashSet<string>();
             var res = new List<string>();
             foreach (var p in picks)
-                if (seen.Add(NormBase(p)) && res.Count < 30) res.Add(p);
+                if (seen.Add(NormBase(p)) && res.Count < 80) res.Add(p);
             return res;
         }
 
@@ -245,6 +248,24 @@ namespace DW.EditorTools
                 log.ToString() + "\n\n进游戏看技能特效：若变粉，删掉 Assets/Resources/DWFx 文件夹即回到程序化特效（按次元配色，不会粉）。", "好");
         }
 
+        /* 批量复制某文件夹下的特效到 Resources/DWFx/{name}{i}，供运行时按技能散列取用 */
+        static int CopyPool(StringBuilder log, string name, string folder, int max, string contains = null)
+        {
+            if (!AssetDatabase.IsValidFolder(folder)) return 0;
+            int i = 0;
+            foreach (var g in AssetDatabase.FindAssets("t:GameObject", new[] { folder }))
+            {
+                if (i >= max) break;
+                var p = AssetDatabase.GUIDToAssetPath(g);
+                if (!p.EndsWith(".prefab")) continue;
+                if (contains != null && !Path.GetFileName(p).Contains(contains)) continue;
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(p) == null) continue;
+                if (AssetDatabase.CopyAsset(p, $"Assets/Resources/DWFx/{name}{i}.prefab")) i++;
+            }
+            log.AppendLine($"特效池[{name}] 复制 {i} 个");
+            return i;
+        }
+
         /* 取某文件夹里第一个 .prefab（用于扫描"剑斩特效"这类包，不必知道具体文件名） */
         static string FirstPrefabIn(string folder)
         {
@@ -298,7 +319,12 @@ namespace DW.EditorTools
                 if (AssetDatabase.CopyAsset(src, $"{fxDir}/{name}.prefab")) { log.AppendLine($"特效[{name}] ← {src}"); n++; }
                 else log.AppendLine($"特效[{name}] 复制失败：{src}");
             }
-            log.AppendLine(n == 0 ? "未接入 Hovl 特效（全部程序化兜底）" : $"已接入 {n} 个 Hovl 特效到 Resources/DWFx");
+            // 特效池：成批复制，运行时按「次元+职业+技能」散列各取不同特效（尽量用上整套 Hovl）
+            CopyPool(log, "fxp_slash", "Assets/Hovl Studio/Sword slash VFX/Prefabs", 14);
+            CopyPool(log, "fxp_aoe", "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs", 18);
+            CopyPool(log, "fxp_cast", aaa + "Flash and hits", 16, "Flash ");
+            CopyPool(log, "fxp_buff", "Assets/Hovl Studio/Magic circles/Prefabs", 18);
+            log.AppendLine(n == 0 ? "未接入命名 Hovl 特效（程序化兜底）" : $"已接入 {n} 个命名 Hovl 特效 + 特效池到 Resources/DWFx");
         }
 
         /* 清空并重建文件夹（去掉上次生成的预制体） */
