@@ -34,6 +34,9 @@ namespace DW
         public const string DEFAULT_SERVER = "119.45.129.74";   // ★ 腾讯云服务器公网IP（玩家无需填写）
         string serverIp = DEFAULT_SERVER;
         string playerName = "";
+        string playerCode = "";    // 服务器下发的唯一找回码，本机保存→自动登录
+        string recoverCode = "";   // 登录界面"找回码"输入框
+        string pendingCode = "";   // 本次登录将用的编码（自动登录或找回时）
         int dimIdx = 1, clsIdx = 0;
 
         // 我的状态
@@ -113,6 +116,7 @@ namespace DW
             DWAudio.Music("bgm_menu");   // 登录界面背景音乐
             serverIp = DEFAULT_SERVER;   // 写死服务器，玩家不用填
             playerName = PlayerPrefs.GetString("dw_name", "");
+            playerCode = PlayerPrefs.GetString("dw_code", "");
             dimIdx = PlayerPrefs.GetInt("dw_dim", 1);
             clsIdx = PlayerPrefs.GetInt("dw_cls", 0);
             // 中文字体（IMGUI/TextMesh 兜底，避免显示为方框）
@@ -135,8 +139,8 @@ namespace DW
             _groundTex = _ringTex = _dotTex = _slashTex = null;
             _sparkMat = _trailMat = null;
 
-            // 已有存档名字 → 用上次的名字/次元/职业自动登录，跳过填写界面（连不上才回登录界面）
-            if (!string.IsNullOrEmpty(playerName)) Join();
+            // 有找回码或昵称 → 自动登录跳过填写界面（连不上才回登录界面）
+            if (!string.IsNullOrEmpty(playerCode) || !string.IsNullOrEmpty(playerName)) Join(true);
         }
 
         /* ================= 连接与消息 ================= */
@@ -159,8 +163,11 @@ namespace DW
             state = State.Menu;
         }
 
-        void Join()
+        void Join(bool auto = false)
         {
+            // 本次登录用编码？找回码优先，其次自动登录用已存编码，否则按昵称新建/登录
+            string rc = (recoverCode ?? "").Trim().ToUpper();
+            pendingCode = !string.IsNullOrEmpty(rc) ? rc : (auto ? (playerCode ?? "") : "");
             PlayerPrefs.SetString("dw_ip", serverIp);
             PlayerPrefs.SetString("dw_name", playerName);
             PlayerPrefs.SetInt("dw_dim", dimIdx);
@@ -190,7 +197,10 @@ namespace DW
             {
                 joinSent = true;
                 CancelInvoke(nameof(TrySendJoin));
-                Send(new { t = "join", name = playerName, dim = myDim, cls = myCls });
+                if (!string.IsNullOrEmpty(pendingCode))
+                    Send(new { t = "join", code = pendingCode });   // 自动登录 / 找回码
+                else
+                    Send(new { t = "join", name = playerName, dim = myDim, cls = myCls });
             }
         }
 
@@ -241,6 +251,10 @@ namespace DW
                     var youObj = (JObject)m["you"];
                     myDim = (string)youObj["dim"] ?? myDim;
                     if (youObj["cls"] != null) myCls = (string)youObj["cls"];
+                    // 保存服务器下发的唯一找回码 + 权威昵称（昵称现在是可改的显示名）
+                    if (m["code"] != null) { playerCode = (string)m["code"]; PlayerPrefs.SetString("dw_code", playerCode); }
+                    if (youObj["name"] != null) { playerName = (string)youObj["name"]; PlayerPrefs.SetString("dw_name", playerName); }
+                    recoverCode = ""; PlayerPrefs.Save();
                     if (m["shop"] != null && m["shop"].Type == JTokenType.Array) shopData = (JArray)m["shop"];
                     if (m["equip"] != null) equipData = (JObject)m["equip"];
                     if (m["inv"] != null) invData = (JArray)m["inv"];
