@@ -1220,20 +1220,20 @@ namespace DW
             Vector3 p = at + dir * 1.3f + Vector3.up * 1.0f;
             if (kind == "aoe")
             {
-                if (SpawnPoolFx("fxp_aoe", seed, at + Vector3.up * 0.1f, Quaternion.identity, key == "r" ? 1.3f : 1f, 3f) == null
+                if (SpawnPoolFx("fxp_aoe", myDim, seed, at + Vector3.up * 0.1f, Quaternion.identity, key == "r" ? 1.3f : 1f, 3f) == null
                     && SpawnFx("aoe", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
                 { SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "x", null); SpawnSparks(p, c2, 26, 7f); }
             }
             else if (kind == "aoeheal" || kind == "heal")
             {
-                if (SpawnPoolFx("fxp_buff", seed, at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f) == null
+                if (SpawnPoolFx("fxp_buff", null, seed, at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f) == null
                     && SpawnFx("heal", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
                     SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, Color.Lerp(c, new Color(0.3f, 1f, 0.5f), 0.6f), "x", null);
             }
             else if (kind == "dashmelee" || kind == "melee")
             {
                 bool dash = kind == "dashmelee";
-                if (SpawnPoolFx("fxp_slash", seed, p, face, dash ? 1.4f : 1.2f, 1.4f) == null
+                if (SpawnPoolFx("fxp_slash", null, seed, p, face, dash ? 1.4f : 1.2f, 1.4f) == null
                     && SpawnFx("slash", p, face, dash ? 1.4f : 1.2f, 1.2f, dim: myDim) == null)
                 {
                     SpawnSlash(at + Vector3.up * 0.05f, dir, c, dash ? 3.4f : 2.8f);
@@ -1241,9 +1241,9 @@ namespace DW
                     if (dash) SpawnShockwave(at + dir * 1.4f + Vector3.up * 0.1f, 2.4f, c, "x", null);
                 }
             }
-            else   // proj：身前施法闪光 + 火花（弹道本身另有拖尾）
+            else   // proj：身前施法闪光（按次元元素）+ 火花
             {
-                if (SpawnPoolFx("fxp_cast", seed, p, face, 1f, 1.4f) == null
+                if (SpawnPoolFx("fxp_cast", myDim, seed, p, face, 1f, 1.4f) == null
                     && SpawnFx("cast", p, face, 1f, 1.5f, dim: myDim) == null)
                 { SpawnSparks(p, c2, 18, 6f); SpawnFlash(p, c, 1.8f); }
             }
@@ -1509,12 +1509,19 @@ namespace DW
             if (_fxPools.TryGetValue(cat, out var arr)) return arr;
             var list = new List<GameObject>();
             foreach (var g in Resources.LoadAll<GameObject>("DWFx"))
-                if (g != null && g.name.StartsWith(cat) && !FxBroken(g)) list.Add(g);
+            {
+                var nm = g != null ? g.name : null;
+                if (nm == null || !nm.StartsWith(cat)) continue;
+                if (nm.Length <= cat.Length || !char.IsDigit(nm[cat.Length])) continue;   // cat 后必须紧跟数字，避免 fxp_aoe 误吞 fxp_aoe_tech
+                if (!FxBroken(g)) list.Add(g);
+            }
             arr = list.ToArray(); _fxPools[cat] = arr; return arr;
         }
-        GameObject SpawnPoolFx(string cat, int seed, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f)
+        // dim!=null 时优先取该次元元素专属池(cat_dim)，否则通用池(cat)
+        GameObject SpawnPoolFx(string cat, string dim, int seed, Vector3 at, Quaternion rot, float scale = 1f, float life = 2.5f)
         {
-            var pool = FxPool(cat);
+            var pool = dim != null ? FxPool(cat + "_" + dim) : null;
+            if (pool == null || pool.Length == 0) pool = FxPool(cat);
             if (pool.Length == 0) return null;
             return InstFx(pool[Mathf.Abs(seed) % pool.Length], at, rot, scale, life, false);
         }

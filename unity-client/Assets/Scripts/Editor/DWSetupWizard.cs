@@ -326,10 +326,22 @@ namespace DW.EditorTools
                 else log.AppendLine($"特效[{name}] 复制失败：{src}");
             }
             // 特效池：成批复制，运行时按「次元+职业+技能」散列各取不同特效（尽量用上整套 Hovl）
+            const string aoeF = "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs";
+            const string flashF = aaa + "Flash and hits";
+            // 通用兜底池
             CopyPool(log, "fxp_slash", "Assets/Hovl Studio/Sword slash VFX/Prefabs", 14);
-            CopyPool(log, "fxp_aoe", "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs", 18);
-            CopyPool(log, "fxp_cast", aaa + "Flash and hits", 16, "Flash ");
+            CopyPool(log, "fxp_aoe", aoeF, 18);
+            CopyPool(log, "fxp_cast", flashF, 16, "Flash ");
             CopyPool(log, "fxp_buff", "Assets/Hovl Studio/Magic circles/Prefabs", 18);
+            // 次元元素专属：远程施法闪光（按元素）
+            foreach (var (dim, e) in new[] { ("tech", "electro"), ("cyber", "red laser"), ("xiuxian", "nature"), ("magic", "nova"), ("hunter", "orange") })
+                CopyPool(log, $"fxp_cast_{dim}", flashF, 8, e);
+            // 次元元素专属：范围魔法（科技=闪电/赛博=飞刀/修仙=自然尖刺/魔法=能量/猎人=陨石）
+            CopyPool(log, "fxp_aoe_tech", aoeF, 6, "Lightning");
+            CopyPool(log, "fxp_aoe_cyber", aoeF, 6, "Kni");
+            CopyPool(log, "fxp_aoe_xiuxian", aoeF, 6, "spikes");
+            CopyPool(log, "fxp_aoe_magic", aoeF, 6, "Magic");
+            CopyPool(log, "fxp_aoe_hunter", aoeF, 6, "Meteor");
             log.AppendLine(n == 0 ? "未接入命名 Hovl 特效（程序化兜底）" : $"已接入 {n} 个命名 Hovl 特效 + 特效池到 Resources/DWFx");
         }
 
