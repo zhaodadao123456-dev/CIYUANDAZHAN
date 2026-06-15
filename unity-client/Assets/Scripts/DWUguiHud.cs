@@ -166,6 +166,58 @@ namespace DW
             }
         }
 
+        // 柔光（径向渐变，中心亮→边缘透明），用于霓虹辉光（ui-ux-pro-max 推荐的 HUD 发光效果）
+        static Sprite _glowSprite;
+        static Sprite SoftGlowSprite()
+        {
+            if (_glowSprite != null) return _glowSprite;
+            const int N = 64; float c = (N - 1) / 2f;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c;   // 0 中心 → 1 边缘
+                    float a = Mathf.Clamp01(1f - d); a *= a;                            // 平滑衰减
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                }
+            t.SetPixels32(px); t.Apply(false);
+            _glowSprite = Sprite.Create(t, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
+            return _glowSprite;
+        }
+
+        // 加一圈呼吸辉光（置于元素底层，溢出到边框外形成光晕）
+        void AddGlow(Transform parent, Color c, float pad)
+        {
+            var g = MkImg("glow", parent, new Color(c.r, c.g, c.b, 0.30f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            g.rectTransform.offsetMin = new Vector2(-pad, -pad); g.rectTransform.offsetMax = new Vector2(pad, pad);
+            g.sprite = SoftGlowSprite(); g.type = Image.Type.Simple; g.raycastTarget = false;
+            g.transform.SetAsFirstSibling();
+            g.gameObject.AddComponent<UiGlowPulse>();
+        }
+
+        // 加载转圈（圆环 + 角度渐隐拖尾），旋转即为 spinner（ui-ux-pro-max：异步必须有加载反馈）
+        static Sprite _spinSprite;
+        static Sprite SpinnerSprite()
+        {
+            if (_spinSprite != null) return _spinSprite;
+            const int N = 64; float c = (N - 1) / 2f, rad = 0.72f, th = 0.18f;
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x - c) / c, v = (y - c) / c;
+                    float r = Mathf.Sqrt(u * u + v * v);
+                    float ring = 1f - Mathf.Clamp01(Mathf.Abs(r - rad) / th);
+                    float tail = (Mathf.Atan2(v, u) + Mathf.PI) / (2f * Mathf.PI);   // 0..1 拖尾
+                    px[y * N + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(ring * tail) * 255));
+                }
+            t.SetPixels32(px); t.Apply(false);
+            _spinSprite = Sprite.Create(t, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
+            return _spinSprite;
+        }
+
         void EnsureEventSystem()
         {
             if (FindObjectOfType<EventSystem>() != null) return;
@@ -321,6 +373,7 @@ namespace DW
                 new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-40, 60), new Vector2(170, 170),
                 () => Cast("basic"));
             GlassPanel((Image)atk.targetGraphic, new Color(1f, 0.74f, 0.45f, 0.7f));
+            AddGlow(atk.transform, Pal.Warm, 34);   // 攻击键霓虹呼吸辉光
             BtnIcon(atk.transform, "ui_attack", "攻击", 96, 34);
 
             BuildOverlays(root);
@@ -1033,17 +1086,25 @@ namespace DW
             uJoinBtn = MkBtn("join", pt, Pal.Accent,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-56, 64), () => Join());
             GlassPanel((Image)uJoinBtn.targetGraphic, new Color(0.7f, 0.95f, 1f, 0.7f));
+            AddGlow(uJoinBtn.transform, Pal.Accent, 22);   // 主行动按钮辉光，引导点击
             MkTxt("t", uJoinBtn.transform, "降临次元", 28, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             y -= 76;
             MkTxt("hint", pt, "WASD移动 · 右键转视角 · 左键普攻 · QER技能 · 空格翻滚 · F捕捉 · B面板", 15, new Color(0.6f, 0.62f, 0.74f), TextAnchor.UpperCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-40, 24));
 
-            // ---- 连接中 ----
-            menuConnecting = MkRect("Conn", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(700, 240)).gameObject;
-            uConnTxt = MkTxt("c", menuConnecting.transform, "正在连接次元…", 34, Color.white, TextAnchor.UpperCenter,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -20), new Vector2(0, 110));
+            // ---- 连接中（带加载转圈，ui-ux-pro-max：异步必须有加载反馈）----
+            menuConnecting = MkRect("Conn", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640, 320)).gameObject;
+            // 转圈：辉光底 + 旋转拖尾圆环（pivot 居中才能原地自转）
+            var spinGlow = MkImg("spinGlow", menuConnecting.transform, new Color(Pal.Accent.r, Pal.Accent.g, Pal.Accent.b, 0.35f),
+                new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 0.5f), new Vector2(0, -64), new Vector2(150, 150));
+            spinGlow.sprite = SoftGlowSprite(); spinGlow.raycastTarget = false; spinGlow.gameObject.AddComponent<UiGlowPulse>();
+            var spin = MkImg("spinner", menuConnecting.transform, Pal.Accent,
+                new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 0.5f), new Vector2(0, -64), new Vector2(86, 86));
+            spin.sprite = SpinnerSprite(); spin.raycastTarget = false; spin.gameObject.AddComponent<UiSpinner>();
+            uConnTxt = MkTxt("c", menuConnecting.transform, "正在连接次元…", 32, Color.white, TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -140), new Vector2(0, 100));
             var cancel = MkBtn("cancel", menuConnecting.transform, new Color(0.5f, 0.2f, 0.22f, 1f),
-                new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 24), new Vector2(220, 56),
+                new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 26), new Vector2(220, 58),
                 () => { try { net?.Close(); } catch { } state = State.Menu; });
             MkTxt("t", cancel.transform, "取消", 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             menuConnecting.SetActive(false);
@@ -1303,7 +1364,7 @@ namespace DW
     // 按钮按下回弹：按下缩小、松开带过冲弹性弹回 —— 让每次点击都有“按下去”的反馈感
     public class UiButtonFx : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
     {
-        public float pressScale = 0.90f;
+        public float pressScale = 0.93f;   // ui-ux-pro-max scale-feedback：按下回弹保持克制
         Vector3 baseScale = Vector3.one;
         float scale = 1f, vel = 0f, target = 1f;
         bool grabbed;
@@ -1357,5 +1418,31 @@ namespace DW
         Vector3 baseScale; float phase;
         void OnEnable() { baseScale = transform.localScale; if (baseScale == Vector3.zero) baseScale = Vector3.one; }
         void Update() { phase += Time.unscaledDeltaTime * speed; float s = 1f + Mathf.Sin(phase) * amp; transform.localScale = baseScale * s; }
+    }
+
+    // 呼吸辉光：脉动 Image 的透明度与轻微缩放，做出霓虹光晕（HUD 风格）
+    public class UiGlowPulse : MonoBehaviour
+    {
+        public float min = 0.16f, max = 0.42f, speed = 2.0f, scaleAmp = 0.07f;
+        Image img; Color baseCol; Vector3 baseScale; float phase;
+        void OnEnable()
+        {
+            img = GetComponent<Image>(); if (img != null) baseCol = img.color;
+            baseScale = transform.localScale; if (baseScale == Vector3.zero) baseScale = Vector3.one;
+        }
+        void Update()
+        {
+            phase += Time.unscaledDeltaTime * speed;
+            float k = Mathf.Sin(phase) * 0.5f + 0.5f;
+            if (img != null) { var c = baseCol; c.a = Mathf.Lerp(min, max, k); img.color = c; }
+            transform.localScale = baseScale * (1f + k * scaleAmp);
+        }
+    }
+
+    // 加载转圈：匀速旋转（配合 SpinnerSprite 的拖尾圆环）
+    public class UiSpinner : MonoBehaviour
+    {
+        public float speed = 240f;
+        void Update() { transform.Rotate(0f, 0f, -speed * Time.unscaledDeltaTime); }
     }
 }
