@@ -329,7 +329,7 @@ namespace DW.EditorTools
             const string aoeF = "Assets/Hovl Studio/AOE Magic spells Vol.1/Prefabs";
             const string flashF = aaa + "Flash and hits";
             // 通用兜底池
-            CopyPool(log, "fxp_slash", "Assets/Hovl Studio/Sword slash VFX/Prefabs", 14);
+            CopyPool(log, "fxp_slash", "Assets/Hovl Studio/Sword slash VFX/Prefabs", 60);   // 整包剑斩全用上
             CopyPool(log, "fxp_aoe", aoeF, 18);
             CopyPool(log, "fxp_cast", flashF, 16, "Flash ");
             CopyPool(log, "fxp_buff", "Assets/Hovl Studio/Magic circles/Prefabs", 18);
