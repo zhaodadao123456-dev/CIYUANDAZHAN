@@ -31,7 +31,7 @@ namespace DW
         Font cjkFont;
 
         // 登录选择
-        public const string DEFAULT_SERVER = "1.2.3.4";   // ★★ 改成你的腾讯云公网IP，玩家无需填写 ★★
+        public const string DEFAULT_SERVER = "119.45.129.74";   // ★ 腾讯云服务器公网IP（玩家无需填写）
         string serverIp = DEFAULT_SERVER;
         string playerName = "";
         int dimIdx = 1, clsIdx = 0;

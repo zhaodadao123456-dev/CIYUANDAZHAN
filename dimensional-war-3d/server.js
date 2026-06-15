@@ -215,6 +215,9 @@ const conns = new Map(); // ws -> player
 function newPlayer(ws, name, dimId, clsId) {
   const id = 'p' + nextPid++;
   const rec = saved[name] || {};
+  // 老角色：次元/职业以服务器存档为准（换设备/重装也能找回同一个角色）；新昵称才用本次选择
+  if (rec.dim && DIMENSIONS.some((d) => d.id === rec.dim)) dimId = rec.dim;
+  if (rec.cls && CLASS_MAP[rec.cls]) clsId = rec.cls;
   const p = {
     id, ws, name, dim: dimId, cls: clsId, room: dimId,
     x: rnd(-4, 4), z: rnd(-4, 4), ry: 0, anim: 'idle',
