@@ -303,7 +303,7 @@ function statsOf(p) {
 }
 const maxHp = (p) => statsOf(p).maxHp;
 const atkOf = (p) => { const st = statsOf(p); return clsOf(p).dmgType === 'magic' ? st.matk : st.patk; };
-const expNeed = (lvl) => 80 + (lvl - 1) * 60;
+const expNeed = (lvl) => (80 + (lvl - 1) * 60) * 3;   // 升级难度×3
 /* 技能等级增益：每点+18%伤害 / +15%治疗 */
 const skDmgMul = (p, k) => 1 + 0.18 * ((p.sk[k] || 1) - 1);
 const skHealMul = (p, k) => 1 + 0.15 * ((p.sk[k] || 1) - 1);
@@ -475,7 +475,7 @@ function makeNamed(dimId, slot, rar) {
 /* 商店固定货架：每槽位 精良/稀有/史诗 三档 */
 const SHOP = [];
 {
-  const prices = [350, 900, 2200];
+  const prices = [3500, 9000, 22000];   // 装备购买价×10
   const defs = [
     ['weapon', SHOP_WEAPON], ['helmet', HELMET_NAMES], ['armor', SHOP_ARMOR],
     ['boots', BOOTS_NAMES], ['acc', SHOP_ACC],
@@ -1502,7 +1502,7 @@ function killMonster(p, mo) {
   mo.state = 'dead';
   mo.dieT = now();
   p.kills++;
-  p.gold += Math.round(mo.gold * (1 + ((achEff(p) || {}).goldPct || 0)));   // 成就金币加成
+  p.gold += Math.round(mo.gold / 3 * (1 + ((achEff(p) || {}).goldPct || 0)));   // 金币获取难度×3（基础/3）+ 成就加成
   roomCast(p.room, { t: 'mdie', id: mo.id, by: p.id });
   if (mo.boss) {
     // 世界BOSS按伤害贡献结算：MVP必得史诗，≥10%贡献者得稀有+与半额经验，杜绝抢尾刀
@@ -1529,8 +1529,8 @@ function killMonster(p, mo) {
     if (!mvpGiven) giveItem(p, rollDrop(4, p.dim, 4, 0.5), `世界BOSS【${mo.name}】掉落`);
     allCast({ t: 'boss', alive: 0 });
     worldBoss = null;
-  } else if (Math.random() < 0.08 + mo.tier * 0.035) {
-    // 几率掉落装备（获取更难：层级越高概率越大、品质越好）
+  } else if (Math.random() < (0.08 + mo.tier * 0.035) / 3) {
+    // 几率掉落装备（获取难度×3：概率/3；层级越高概率越大、品质越好）
     giveItem(p, rollDrop(mo.tier, p.dim), `【${mo.name}】掉落`);
   }
   gainExp(p, mo.exp); // 内部会 sendYou + persist
