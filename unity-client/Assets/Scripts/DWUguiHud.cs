@@ -299,7 +299,7 @@ namespace DW
 
             // ---- 左上状态面板 ----
             var panel = MkImg("Status", root, Pal.Glass,
-                new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -24), new Vector2(560, 188));
+                new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(28, -30), new Vector2(540, 188));
             GlassPanel(panel, themed: true);
             uStatusTop = MkTxt("Top", panel.transform, "", 26, Color.white, TextAnchor.MiddleLeft,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(18, -12), new Vector2(-30, 36));
@@ -327,7 +327,7 @@ namespace DW
             string[] klabel = { "攻击", "Q", "E", "R", "翻滚", "F" };
             float sw = 128, sh = 150, gap = 14;
             float totalW = keys.Length * sw + (keys.Length - 1) * gap;
-            var barRoot = MkRect("SkillBar", root, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 24), new Vector2(totalW, sh));
+            var barRoot = MkRect("SkillBar", root, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 34), new Vector2(totalW, sh));
             for (int i = 0; i < keys.Length; i++)
             {
                 float x = -totalW / 2 + i * (sw + gap);
@@ -375,7 +375,7 @@ namespace DW
 
             // ---- 大攻击键（右下） ----
             var atk = MkBtn("AttackBtn", root, Pal.Warm,
-                new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-40, 60), new Vector2(170, 170),
+                new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-46, 70), new Vector2(170, 170),
                 () => Cast("basic"));
             GlassPanel((Image)atk.targetGraphic, new Color(1f, 0.74f, 0.45f, 0.7f));
             AddGlow(atk.transform, Pal.Warm, 34);   // 攻击键霓虹呼吸辉光
@@ -913,9 +913,9 @@ namespace DW
         // ====================== 小地图（左下角） ======================
         void BuildMinimap(Transform root)
         {
-            // 边框 + 画布（左下角，避开底部技能栏与右下攻击键）
+            // 边框 + 画布（左下角，抬高到技能栏之上，避免最左技能格被压住）
             var frame = MkImg("MiniFrame", root, Pal.Glass,
-                new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(20, 20), new Vector2(228, 228));
+                new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(26, 196), new Vector2(210, 210));
             GlassPanel(frame, Pal.Stroke, false, true);
             var go = new GameObject("Minimap", typeof(RectTransform));
             go.transform.SetParent(frame.transform, false);
@@ -1109,7 +1109,9 @@ namespace DW
             var title = MkTxt("title", pt, "次元大战", 54, Pal.Gold, TextAnchor.UpperCenter,
                 new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -26), new Vector2(0, 68));
             title.gameObject.AddComponent<UiPulse>();   // 标题轻轻呼吸
-            float y = -120;
+            MkTxt("sub", pt, "五大次元 · 实时混战 · 选择你的阵营降临", 18, Pal.TextDim, TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -96), new Vector2(0, 24));
+            float y = -134;
             Label("降临者之名", y); y -= 34;
             uName = MkInput(pt, playerName, 12, y, v => playerName = v); y -= 70;
 
@@ -1124,7 +1126,11 @@ namespace DW
                     new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(dw, 54),
                     () => dimIdx = idx);
                 MkTxt("t", uDimBtns[i].transform, Data.Dims[i].name.Replace("世界", ""), 19, Color.white, TextAnchor.MiddleCenter,
-                    Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                    Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(0, 4), Vector2.zero);
+                // 每个次元自带身份色条 —— 不同次元不同风格，一眼可辨
+                var bar = MkImg("dimc", uDimBtns[i].transform, Data.Dims[i].accent,
+                    new Vector2(0.18f, 0), new Vector2(0.82f, 0), new Vector2(0.5f, 0), new Vector2(0, 7), new Vector2(0, 5));
+                Round(bar); bar.raycastTarget = false;
             }
             y -= 62;
             uHunterHint = MkTxt("hh", pt, "", 18, new Color(1f, 0.82f, 0.4f), TextAnchor.UpperLeft,
@@ -1230,20 +1236,20 @@ namespace DW
         {
             // 右上 背包 开关
             var bag = MkBtn("BagBtn", root, Pal.AccentDp,
-                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -24), new Vector2(76, 76),
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-30, -30), new Vector2(76, 76),
                 () => panelOpen = !panelOpen);
             GlassPanel((Image)bag.targetGraphic, Pal.Accent);
             BtnIcon(bag.transform, "ui_bag", "背包", 46, 26);
             // 退出
             var exit = MkBtn("ExitBtn", root, new Color(0.52f, 0.20f, 0.27f, 0.96f),
-                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-110, -24), new Vector2(76, 76),
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-116, -30), new Vector2(76, 76),
                 () => ExitToMenu());
             GlassPanel((Image)exit.targetGraphic, Pal.Danger);
             BtnIcon(exit.transform, "ui_exit", "退出", 46, 26);
 
-            // 面板
+            // 面板（右侧略内缩，避免最右的“关/卖”按钮贴边被裁）
             var panelImg = MkImg("Panel", root, Pal.PanelBg,
-                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -112), new Vector2(680, 760));
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-30, -118), new Vector2(680, 760));
             GlassPanel(panelImg, Pal.Stroke);
             uPanel = panelImg.gameObject;
             uPanel.AddComponent<UiAppear>();
