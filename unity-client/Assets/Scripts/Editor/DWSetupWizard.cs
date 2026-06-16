@@ -160,6 +160,7 @@ namespace DW.EditorTools
             // 动画源：优先用户新加的「狐狸(huli)」整套人形动作 → 应用到所有英雄；
             // 仅当狐狸含人形(Humanoid)动作时才采用，否则回退悟空，避免非人形动作让所有英雄不会动。
             string animFolder = FindFolder("huli", "fox", "狐狸");
+            if (animFolder != null) ForceFolderHumanoid(animFolder, log);   // 自动把狐狸模型/动作转 Humanoid
             if (animFolder != null && FolderHasHumanClip(animFolder))
                 log.AppendLine($"动画源：狐狸(huli)整套人形动作 → 应用到所有英雄  来自:{animFolder}");
             else { if (animFolder != null) log.AppendLine("⚠ 狐狸动作非人形(Humanoid)，无法套到人形英雄，改用悟空动作"); animFolder = FindFolder("wukong", "悟空"); }
@@ -622,6 +623,21 @@ namespace DW.EditorTools
         {
             foreach (var c in AllClips(folder)) if (c.isHumanMotion) return true;
             return false;
+        }
+
+        /* 把文件夹内所有模型/动作 FBX 的导入骨骼改为 Humanoid 并重导（让狐狸动作可套到人形英雄） */
+        static void ForceFolderHumanoid(string folder, StringBuilder log)
+        {
+            foreach (var guid in AssetDatabase.FindAssets("t:Model", new[] { folder }))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var imp = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (imp == null || imp.animationType == ModelImporterAnimationType.Human) continue;
+                imp.animationType = ModelImporterAnimationType.Human;
+                imp.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+                try { imp.SaveAndReimport(); log.AppendLine($"  ↳ 狐狸:{Path.GetFileName(path)} → Humanoid"); }
+                catch (System.Exception e) { log.AppendLine($"  ⚠ {Path.GetFileName(path)} 转人形失败:{e.Message}"); }
+            }
         }
 
         /* 按动作名关键词挑选状态片段（关键词按优先级排序，越靠前越优先匹配） */
