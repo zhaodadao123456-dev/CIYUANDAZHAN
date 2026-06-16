@@ -649,7 +649,12 @@ namespace DW
                     var m = mats[i];
                     var sh = m != null ? m.shader : null;
                     bool bad = sh == null || !sh.isSupported || sh.name == "Hidden/InternalErrorShader";
-                    if (!bad) { arr[i] = m; continue; }
+                    // 也修：兼容材质但「无主贴图 + 底色发白」的道具（含之前向导生成成白模的）→ 按名字给自然色，杜绝死白
+                    bool whiteFlat = !bad && m != null
+                        && (!m.HasProperty("_MainTex") || m.GetTexture("_MainTex") == null)
+                        && (!m.HasProperty("_BaseMap") || m.GetTexture("_BaseMap") == null)
+                        && m.HasProperty("_Color") && m.color.r > 0.9f && m.color.g > 0.9f && m.color.b > 0.9f;
+                    if (!bad && !whiteFlat) { arr[i] = m; continue; }
                     anyBad = true;
                     // 尝试读原底色/贴图；URP 丢失读不到则按部件名给自然色
                     Color baseC = Color.white; Texture tex = null;
@@ -1088,7 +1093,7 @@ namespace DW
                 var a = Input.GetTouch(0); var b = Input.GetTouch(1);
                 float d = (a.position - b.position).magnitude;
                 if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began) pinchPrev = d;
-                else { camDist = Mathf.Clamp(camDist - (d - pinchPrev) * 0.02f, 2.4f, 16f); pinchPrev = d; }
+                else { camDist = Mathf.Clamp(camDist - (d - pinchPrev) * 0.02f, 1.4f, 16f); pinchPrev = d; }
                 return;
             }
             for (int i = 0; i < Input.touchCount; i++)
@@ -1118,7 +1123,7 @@ namespace DW
                     else if (t.phase == TouchPhase.Moved)
                     {
                         camYaw -= t.deltaPosition.x * 0.004f;
-                        camPitch = Mathf.Clamp(camPitch + t.deltaPosition.y * 0.003f, 0.32f, 1.4f);
+                        camPitch = Mathf.Clamp(camPitch + t.deltaPosition.y * 0.003f, 0.1f, 1.4f);
                     }
                 }
             }
@@ -1138,9 +1143,9 @@ namespace DW
             if (!touching && Input.GetMouseButton(1))
             {
                 camYaw -= Input.GetAxis("Mouse X") * 0.03f;
-                camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.022f, 0.32f, 1.4f);
+                camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.022f, 0.1f, 1.4f);
             }
-            camDist = Mathf.Clamp(camDist - Input.GetAxis("Mouse ScrollWheel") * 6f, 2.4f, 16f);   // 可贴脸近看
+            camDist = Mathf.Clamp(camDist - Input.GetAxis("Mouse ScrollWheel") * 6f, 1.4f, 16f);   // 可贴脸近看
 
             if (meDead)
             {
@@ -1597,14 +1602,14 @@ namespace DW
 
         void UpdateCamera()
         {
-            // 俯仰越低(越平视)→相机更低、更退、看向身体中段，露出英雄全身；俯仰越高→近距看脸
-            float t = Mathf.InverseLerp(0.32f, 0.9f, camPitch);            // 0=最低平视, 1=俯视
-            float dist = camDist + (1f - t) * 2.4f;                        // 低视角多退 2.4 米
-            float baseY = Mathf.Lerp(0.65f, 1.5f, t);                      // 低视角相机更低
-            float lookY = Mathf.Lerp(1.0f, 1.85f, t);                      // 低视角看身体中段，高视角看脸
-            float cx = pos.x + Mathf.Sin(camYaw) * dist * Mathf.Cos(camPitch);
-            float cz = pos.z + Mathf.Cos(camYaw) * dist * Mathf.Cos(camPitch);
-            float cy = baseY + Mathf.Sin(camPitch) * dist;
+            // 按缩放自动调焦点：拉近→怼脸(头部)，拉远→看全身(身体中段)；俯仰越低相机越低，可低角度仰看
+            float zt = Mathf.InverseLerp(1.4f, 9f, camDist);              // 0=最近, 1=远
+            float pt = Mathf.InverseLerp(0.1f, 0.9f, camPitch);         // 0=最低平视, 1=俯视
+            float lookY = Mathf.Lerp(1.95f, 0.95f, zt);                  // 近怼脸 / 远全身
+            float baseY = Mathf.Lerp(0.85f, 1.5f, pt);                   // 低俯仰相机更低
+            float cx = pos.x + Mathf.Sin(camYaw) * camDist * Mathf.Cos(camPitch);
+            float cz = pos.z + Mathf.Cos(camYaw) * camDist * Mathf.Cos(camPitch);
+            float cy = baseY + Mathf.Sin(camPitch) * camDist;
             cam.transform.position = Vector3.Lerp(cam.transform.position, new Vector3(cx, cy, cz), 0.25f);
             cam.transform.LookAt(new Vector3(pos.x, lookY, pos.z));
             if (Time.time < shakeUntil)
