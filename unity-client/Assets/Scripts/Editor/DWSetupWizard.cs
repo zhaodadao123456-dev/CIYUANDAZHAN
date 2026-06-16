@@ -161,7 +161,7 @@ namespace DW.EditorTools
             // 狐狸文件夹仍转为 Humanoid，以便狐狸作为修仙刺客能套用悟空的人形动作。
             var huliFolder = FindFolder("huli", "fox", "狐狸");
             if (huliFolder != null) ForceFolderHumanoid(huliFolder, log);
-            AnimatorController ctrl = BuildController(FindFolder("wukong", "悟空"), log);
+            AnimatorController ctrl = BuildController(FindFolder("wukong", "悟空"), log, huliFolder);
 
             // 分类：小丑→BOSS；骷髅/亡灵→怪物；其余人物→英雄池
             bool IsBoss(string p) => BossKeys.Any((k) => Lower(p).Contains(k));
@@ -579,10 +579,19 @@ namespace DW.EditorTools
         }
 
         /* 用某个包的人形动作片段搭通用控制器 */
-        static AnimatorController BuildController(string clipFolder, StringBuilder log)
+        static AnimatorController BuildController(string clipFolder, StringBuilder log, string otherFolder = null)
         {
             if (clipFolder == null) { log.AppendLine("⚠ 未找到悟空动画包，角色将静态展示"); return null; }
-            var states = PickStates(AllClips(clipFolder));
+            var states = PickStates(AllClips(clipFolder));   // 悟空：全套
+            // 战斗(Attack/Skill)与走跑(Run)用悟空；其余动作(Idle/Dodge/Death 等)用狐狸
+            if (otherFolder != null && FolderHasHumanClip(otherFolder))
+            {
+                var fox = PickStates(AllClips(otherFolder));
+                var keepWukong = new HashSet<string> { "Run", "Attack1", "Attack2", "Skill", "Skill2" };
+                int n = 0;
+                foreach (var kv in fox) if (!keepWukong.Contains(kv.Key)) { states[kv.Key] = kv.Value; n++; }
+                log.AppendLine($"动画：战斗+走跑用悟空，其余 {n} 个动作(Idle等)用狐狸");
+            }
             if (states.Count == 0) { log.AppendLine("⚠ 未识别出可用动作片段"); return null; }
             var ctrlPath = ResDir + "/dw_hero_anim.controller";
             AssetDatabase.DeleteAsset(ctrlPath);

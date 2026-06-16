@@ -851,9 +851,10 @@ namespace DW
         void AddMonster(string id, float x, float z, string mstate, int hp, int maxHp, int tier, string name, int level = 1)
         {
             var e = new Ent { name = name, tier = tier, level = level, hp = hp, maxHp = maxHp, isMonster = true, target = new Vector3(x, 0, z) };
-            e.go = MakeCreature(tier, id);
+            e.go = MakeCreature(tier, level, id);
             e.go.transform.position = e.target;
-            e.plateH = tier >= 5 ? (1.6f + tier * 0.55f) * 3f + 1.2f : 2.1f + tier * 0.55f;   // BOSS 放大3倍后名牌抬高到头顶
+            float lm = tier >= 5 ? 1f : 1f + Mathf.Clamp01(level / 100f) * 0.9f;   // 等级越高体型越大
+            e.plateH = tier >= 5 ? (1.6f + tier * 0.55f) * 3f + 1.2f : (2.1f + tier * 0.55f) * lm;
             monsters[id] = e;
             e.dead = mstate == "dead";
             e.go.SetActive(!e.dead);
@@ -863,7 +864,7 @@ namespace DW
         GameObject[] mobPool;
 
         /* 怪物模型：tier≥5(世界BOSS)→小丑 DW/mon_boss；普通怪→怪物池按id稳定取；再退 KayKit；最后占位 */
-        GameObject MakeCreature(int tier, string id)
+        GameObject MakeCreature(int tier, int level, string id)
         {
             GameObject prefab = null;
             if (tier >= 5) prefab = Resources.Load<GameObject>("DW/mon_boss");
@@ -880,6 +881,7 @@ namespace DW
                 var b = CalcBounds(inst);
                 float target = 1.6f + tier * 0.55f;   // 放大怪物（BOSS tier5 更大）
                 if (tier >= 5) target *= 3f;           // 世界BOSS体型再放大3倍
+                else target *= 1f + Mathf.Clamp01(level / 100f) * 0.9f;   // 等级越高体型越大
                 inst.transform.localScale = Vector3.one * (target / Mathf.Max(0.1f, b.size.y));
                 b = CalcBounds(inst);
                 inst.transform.localPosition = new Vector3(0, -b.min.y, 0);
