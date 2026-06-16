@@ -645,15 +645,15 @@ namespace DW.EditorTools
             if (baseTex == null) { log.AppendLine("⚠ 狐狸未找到 basecolor 贴图，仍为白模"); return; }
             var normTex = Find("normal");
             var mrTex = Find("metalrough", "metallic", "_mr");
-            if (normTex != null)
-            {
-                var ni = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(normTex)) as TextureImporter;
-                if (ni != null && ni.textureType != TextureImporterType.NormalMap) { ni.textureType = TextureImporterType.NormalMap; ni.SaveAndReimport(); }
-            }
+            SetTexImport(baseTex, sRGB: true, normal: false);          // 颜色贴图按 sRGB
+            if (normTex != null) SetTexImport(normTex, sRGB: false, normal: true);
             var mat = new Material(Shader.Find("Standard"));
             mat.SetTexture("_MainTex", baseTex);
-            if (normTex != null) { mat.EnableKeyword("_NORMALMAP"); mat.SetTexture("_BumpMap", normTex); }
-            if (mrTex != null) { mat.EnableKeyword("_METALLICGLOSSMAP"); mat.SetTexture("_MetallicGlossMap", mrTex); }
+            if (normTex != null) { mat.EnableKeyword("_NORMALMAP"); mat.SetTexture("_BumpMap", normTex); mat.SetFloat("_BumpScale", 1f); }
+            // metalrough(glTF: G=粗糙度, B=金属度) → Unity _MetallicGlossMap(R=金属, A=光滑=1-粗糙)
+            var mg = mrTex != null ? RepackMetalRough(mrTex, log) : null;
+            if (mg != null) { mat.EnableKeyword("_METALLICGLOSSMAP"); mat.SetTexture("_MetallicGlossMap", mg); mat.SetFloat("_GlossMapScale", 1f); }
+            else { mat.SetFloat("_Metallic", 0f); mat.SetFloat("_Glossiness", 0.3f); }   // 兜底：哑光毛发
             var matPath = ResDir + "/mat_huli.mat";
             AssetDatabase.DeleteAsset(matPath);
             AssetDatabase.CreateAsset(mat, matPath);
@@ -669,6 +669,46 @@ namespace DW.EditorTools
             PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
             PrefabUtility.UnloadPrefabContents(root);
             log.AppendLine($"✓ 狐狸材质已贴：albedo={baseTex.name}{(normTex != null ? " +法线" : "")}{(mrTex != null ? " +金属粗糙" : "")}");
+        }
+
+        /* 设贴图导入参数：法线/sRGB */
+        static void SetTexImport(Texture2D tex, bool sRGB, bool normal)
+        {
+            var imp = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(tex)) as TextureImporter;
+            if (imp == null) return;
+            bool dirty = false;
+            if (normal) { if (imp.textureType != TextureImporterType.NormalMap) { imp.textureType = TextureImporterType.NormalMap; dirty = true; } }
+            else
+            {
+                if (imp.textureType != TextureImporterType.Default) { imp.textureType = TextureImporterType.Default; dirty = true; }
+                if (imp.sRGBTexture != sRGB) { imp.sRGBTexture = sRGB; dirty = true; }
+            }
+            if (dirty) imp.SaveAndReimport();
+        }
+
+        /* glTF metalrough(G=粗糙度,B=金属度) 重打包为 Unity Standard 的 _MetallicGlossMap(R=金属,A=光滑=1-粗糙) */
+        static Texture2D RepackMetalRough(Texture2D mrTex, StringBuilder log)
+        {
+            try
+            {
+                var path = AssetDatabase.GetAssetPath(mrTex);
+                var imp = AssetImporter.GetAtPath(path) as TextureImporter;
+                if (imp != null && (!imp.isReadable || imp.sRGBTexture)) { imp.isReadable = true; imp.sRGBTexture = false; imp.SaveAndReimport(); }
+                var src = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                var px = src.GetPixels();
+                for (int i = 0; i < px.Length; i++) { var c = px[i]; px[i] = new Color(c.b, c.b, c.b, 1f - c.g); }
+                var packed = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+                packed.SetPixels(px); packed.Apply();
+                var outPath = ResDir + "/huli_metalgloss.png";
+                System.IO.File.WriteAllBytes(outPath, packed.EncodeToPNG());
+                UnityEngine.Object.DestroyImmediate(packed);
+                AssetDatabase.ImportAsset(outPath);
+                var pimp = AssetImporter.GetAtPath(outPath) as TextureImporter;
+                if (pimp != null) { pimp.sRGBTexture = false; pimp.SaveAndReimport(); }
+                log.AppendLine("✓ metalrough 已重打包为 Unity 金属/光滑贴图");
+                return AssetDatabase.LoadAssetAtPath<Texture2D>(outPath);
+            }
+            catch (System.Exception e) { log.AppendLine("⚠ metalrough 重打包失败:" + e.Message + "，改用哑光默认"); return null; }
         }
 
         /* 把文件夹内所有模型/动作 FBX 的导入骨骼改为 Humanoid 并重导（让狐狸动作可套到人形英雄） */
