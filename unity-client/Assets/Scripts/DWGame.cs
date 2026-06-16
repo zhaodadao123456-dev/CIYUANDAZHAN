@@ -619,25 +619,40 @@ namespace DW
         }
 
         /* 哑光：去掉高光/金属感，避免地面中央出现刺眼白斑 */
-        // 把用了「不兼容/缺失 shader」(会渲染成洋红) 的材质换成普通 Standard 材质，避免场景道具变粉
-        static Material _pinkFixMat;
+        // 把用了「不兼容/缺失 shader」(会渲染成洋红) 的道具材质，换成顶点色 Standard，
+        // 还原低多边形包的原始颜色（而不是统一染成主题色一片死绿）。
+        static Shader _vcShader;
         static void FixPinkMaterials(GameObject go, Color tint)
         {
+            if (_vcShader == null) _vcShader = Shader.Find("DW/VertexColor") ?? Shader.Find("Standard");
             foreach (var r in go.GetComponentsInChildren<Renderer>(true))
             {
                 var mats = r.sharedMaterials;
-                bool bad = false;
-                foreach (var m in mats)
-                {
-                    var sh = m != null ? m.shader : null;
-                    if (sh == null || !sh.isSupported || sh.name == "Hidden/InternalErrorShader") { bad = true; break; }
-                }
-                if (!bad) continue;
-                if (_pinkFixMat == null) { _pinkFixMat = new Material(Shader.Find("Standard")); }
-                var fix = new Material(_pinkFixMat) { color = tint };
+                bool anyBad = false;
                 var arr = new Material[mats.Length];
-                for (int i = 0; i < arr.Length; i++) arr[i] = fix;
-                r.sharedMaterials = arr;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var m = mats[i];
+                    var sh = m != null ? m.shader : null;
+                    bool bad = sh == null || !sh.isSupported || sh.name == "Hidden/InternalErrorShader";
+                    if (!bad) { arr[i] = m; continue; }
+                    anyBad = true;
+                    // 尽量保留原材质的底色/贴图（顶点色由 shader 还原），只朝主题色轻微偏移，避免一片死绿
+                    Color baseC = Color.white;
+                    Texture tex = null;
+                    if (m != null)
+                    {
+                        if (m.HasProperty("_BaseColor")) baseC = m.GetColor("_BaseColor");
+                        else if (m.HasProperty("_Color")) baseC = m.color;
+                        if (m.HasProperty("_BaseMap")) tex = m.GetTexture("_BaseMap");
+                        else if (m.HasProperty("_MainTex")) tex = m.GetTexture("_MainTex");
+                    }
+                    var fix = new Material(_vcShader);
+                    fix.color = Color.Lerp(baseC, tint, 0.12f);   // 主要保留原色，仅 12% 主题色
+                    if (tex != null) fix.SetTexture("_MainTex", tex);
+                    arr[i] = fix;
+                }
+                if (anyBad) r.sharedMaterials = arr;
             }
         }
 
