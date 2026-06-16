@@ -94,8 +94,7 @@ function client(name, dim, cls) {
   await sleep(300);
   Y.send({ t: 'mv', x: 0, z: 0, ry: 0, anim: 'idle' }); await sleep(80);
   Y.send({ t: 'dimskill' }); await sleep(200);
-  const blink = Y.got('dimfx', (m) => m.kind === 'blink');
-  check('赛博次元技能·相位闪现', !!(blink && (Math.abs(blink.x) > 1 || Math.abs(blink.z) > 1)), blink && `→(${blink.x},${blink.z})`);
+  check('赛博次元技能·强化针剂', !!Y.got('dimfx', (m) => m.kind === 'amp'));
   const Z = client(); await Z.open;
   Z.send({ t: 'join', name: '测试法师', dim: 'magic', cls: 'healer' });
   await sleep(300); Z.send({ t: 'dimskill' }); await sleep(200);

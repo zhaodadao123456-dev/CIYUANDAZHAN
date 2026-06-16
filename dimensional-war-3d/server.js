@@ -255,6 +255,7 @@ function newPlayer(ws, uid, name, dimId, clsId, rec) {
     cds: { basic: 0, q: 0, e: 0, r: 0 },
     pet: null, capCd: 0,
     statBuff: null, vehicle: null, treasure: null,   // 次元技能临时增益（不入档）
+    amp: null,                                        // 赛博强化针剂：全属性/范围/体型倍增
     sk: { basic: 1, q: 1, e: 1, r: 1, ...(rec.sk || {}) },
     skPts: rec.skPts != null ? rec.skPts : Math.max(0, (rec.level || 1) - 1),
     inv: Array.isArray(rec.inv) ? rec.inv.slice(0, INV_MAX) : [],
@@ -307,6 +308,11 @@ function statsOf(p) {
     hp += b.hp || 0; patk += b.patk || 0; matk += b.matk || 0;
     armor += b.armor || 0; mres += b.mres || 0; spd += b.spd || 0;
     crit += b.crit || 0; critDmg += b.critDmg || 0;
+  }
+  // 赛博·强化针剂：全属性 ×(1+等级/10)
+  if (p.amp && now() < p.amp.until) {
+    const mul = p.amp.mul;
+    hp *= mul; patk *= mul; matk *= mul; armor *= mul; mres *= mul; spd *= mul;
   }
   return {
     maxHp: Math.round(hp), patk, matk, armor, mres, spd,
@@ -642,6 +648,7 @@ function sendYou(p) {
     shield: (p.shield > 0 && now() < p.shieldUntil) ? p.shield : 0,
     treasure: (p.treasure && now() < p.treasure.until) ? p.treasure.cls : null,        // 头顶法宝(炼宝诀)
     vehicle: (p.vehicle && now() < p.vehicle.until) ? { hp: Math.round(p.vehicle.hp), maxHp: Math.round(p.vehicle.maxHp) } : null,
+    amp: (p.amp && now() < p.amp.until) ? +p.amp.mul.toFixed(2) : 0,                     // 强化针剂倍率→客户端放大体型
   });
 }
 
@@ -650,6 +657,7 @@ function publicP(p) {
     id: p.id, name: p.name, dim: p.dim, cls: p.cls, level: p.level, x: +p.x.toFixed(2), z: +p.z.toFixed(2), ry: +p.ry.toFixed(2), anim: p.anim, hp: Math.round(p.hp), maxHp: maxHp(p), dead: p.dead,
     tr: (p.treasure && now() < p.treasure.until) ? 1 : 0,                                // 别人看你头顶法宝
     veh: (p.vehicle && now() < p.vehicle.until) ? 1 : 0,                                 // 别人看你载具
+    amp: (p.amp && now() < p.amp.until) ? +p.amp.mul.toFixed(2) : 0,                     // 别人看你强化变大
   };
 }
 
@@ -983,12 +991,19 @@ function handle(ws, m) {
       if (t < (p.potCd[m.id] || 0)) return send(p.ws, { t: 'err', msg: `${def.name}冷却中（${Math.ceil((p.potCd[m.id] - t) / 1000)}s）` });
       if (def.kind === 'heal') {
         const mx = maxHp(p);
-        if (p.hp >= mx) return send(p.ws, { t: 'err', msg: '生命已满' });
+        const petCanHeal = p.pet && p.pet.hp < p.pet.maxHp;
+        if (p.hp >= mx && !petCanHeal) return send(p.ws, { t: 'err', msg: '生命已满' });
         const heal = Math.round(mx * def.healPct);
         p.hp = Math.min(mx, p.hp + heal);
         roomCast(p.room, { t: 'heal', id: p.id, amt: heal, hp: Math.round(p.hp), by: p.id });
         roomCast(p.room, { t: 'dimfx', kind: 'heal', id: p.id });
-        send(p.ws, { t: 'feed', msg: `${def.icon} 服用${def.name}，恢复 ${heal} 点生命` });
+        // 猎人吃药同时为宝宝加血
+        if (p.pet) {
+          const ph = Math.round(p.pet.maxHp * def.healPct);
+          p.pet.hp = Math.min(p.pet.maxHp, p.pet.hp + ph);
+          roomCast(p.room, { t: 'heal', kind: 'pet', id: p.id, amt: ph, hp: Math.round(p.pet.hp), by: p.id });
+        }
+        send(p.ws, { t: 'feed', msg: `${def.icon} 服用${def.name}，恢复 ${heal} 点生命${p.pet ? '（宝宝也回血）' : ''}` });
       } else if (def.kind === 'energy') {
         p.cds = { basic: 0, q: 0, e: 0, r: 0 };
         p.dimCd = 0;
@@ -1031,7 +1046,7 @@ const DIM_DUR = 60000, DIM_CD = 300000;
 const DIM_SKILL = {
   tech:    { name: '载具冲锋', cd: DIM_CD, dur: DIM_DUR, desc: '召唤战斗载具：移速大幅提升，载具有独立护甲优先承伤。持续60秒，冷却5分钟' },
   xiuxian: { name: '炼宝诀',   cd: DIM_CD, dur: DIM_DUR, desc: '熔炼背包前5件装备为法宝悬浮头顶，按(5件属性总和×等级/10)全面强化自身。持续60秒，冷却5分钟' },
-  cyber:   { name: '相位超载', cd: DIM_CD, dur: DIM_DUR, desc: '相位闪现并超载：移速大幅提升，落点敌人减速。持续60秒，冷却5分钟' },
+  cyber:   { name: '强化针剂', cd: DIM_CD, dur: DIM_DUR, desc: '注射强化针剂：体型、技能范围、伤害与全属性 ×(1+等级/10)。持续60秒，冷却5分钟' },
   magic:   { name: '召唤天使恶魔', cd: DIM_CD, dur: DIM_DUR, desc: '天使为你和队友加增益，恶魔削弱周围敌人。持续60秒，冷却5分钟' },
   hunter:  { name: '猎手陷阱', cd: 3000,  desc: '将虚弱野怪收为宝宝；对附近敌人布下缠丝，命中减速' },
 };
@@ -1241,19 +1256,11 @@ function dimSkill(p) {
     send(p.ws, { t: 'feed', msg: `🚗 战斗载具召唤！独立护甲 ${vhp}、移速大增，持续60秒` });
     sendYou(p);
   } else if (p.dim === 'cyber') {
-    // 相位超载：闪现 + 60秒加速 + 落点减速
-    const dist = 9, R = 5;
-    p.x = clamp(p.x + Math.sin(p.ry) * dist, -MAP_HALF, MAP_HALF);
-    p.z = clamp(p.z + Math.cos(p.ry) * dist, -MAP_HALF, MAP_HALF);
-    p.lastMoveT = t;
-    p.statBuff = mergeBuff(p, until, { spd: 3 });
-    for (const mo of room.monsters.values())
-      if (mo.state !== 'dead' && dist2(p.x, p.z, mo.x, mo.z) <= R * R) applyCC(p, mo, { type: 'slow', ms: 2000, pct: 0.45 });
-    if (p.room === 'war' || p.room === 'melee')
-      for (const o of room.players.values())
-        if (!o.dead && o.dim !== p.dim && dist2(p.x, p.z, o.x, o.z) <= R * R) applyCC(p, o, { type: 'slow', ms: 2000, pct: 0.45 });
-    roomCast(p.room, { t: 'dimfx', kind: 'blink', id: p.id, x: +p.x.toFixed(2), z: +p.z.toFixed(2) });
-    send(p.ws, { t: 'feed', msg: '⚡ 相位超载：闪现并加速，持续60秒' });
+    // 强化针剂：全属性 / 技能范围 / 体型 ×(1+等级/10)（不足1为1倍），持续60秒
+    const mul = Math.max(1, 1 + p.level / 10);
+    p.amp = { until, mul };
+    roomCast(p.room, { t: 'dimfx', kind: 'amp', id: p.id });
+    send(p.ws, { t: 'feed', msg: `💉 强化针剂：全属性·技能范围·体型 ×${mul.toFixed(1)}，持续60秒` });
     sendYou(p);
   } else if (p.dim === 'magic') {
     // 召唤天使恶魔：天使加持己方(自身+队友)，恶魔削弱周围敌人
@@ -1299,16 +1306,19 @@ function capturePet(p) {
   }
   if (!best) return send(p.ws, { t: 'err', msg: '附近没有可捕捉的野怪（T4头目无法捕捉）' });
   const ratio = best.hp / best.maxHp;
-  if (ratio > 0.4) return send(p.ws, { t: 'err', msg: `先把【${best.name}】打到40%血以下再捕捉（当前${Math.round(ratio * 100)}%）` });
-  const chance = Math.min(0.9, 0.95 - ratio * 1.5);   // 40%血≈35%成功率，10%血≈80%
+  if (ratio > 0.3) return send(p.ws, { t: 'err', msg: `先把【${best.name}】打到30%血以下再捕捉（当前${Math.round(ratio * 100)}%）` });
+  const chance = Math.min(0.6, 0.65 - ratio * 1.6);   // 捕捉更难：30%血≈17%，5%血≈57%
   if (Math.random() < chance) {
     best.state = 'dead'; best.dieT = t;
     roomCast(p.room, { t: 'mdie', id: best.id, by: p.id });
-    if (p.pet) send(p.ws, { t: 'feed', msg: `🔄 你放生了【${p.pet.name}】` });
+    // 新宝宝与上一只融合：叠加上一只 60% 的属性，越抓越强
+    const old = p.pet;
+    let nHp = best.maxHp * 1.1, nAtk = best.atk * 0.9;
+    if (old) { nHp += (old.maxHp || 0) * 0.6; nAtk += (old.atk || 0) * 0.6; send(p.ws, { t: 'feed', msg: `🧬 新宝宝与【${old.name}】融合，属性叠加增强！` }); }
     p.pet = {
       name: best.name, tier: best.tier,
-      maxHp: Math.round(best.maxHp * 1.1), hp: Math.round(best.maxHp * 1.1),
-      atk: Math.round(best.atk * 0.9),
+      maxHp: Math.round(nHp), hp: Math.round(nHp),
+      atk: Math.round(nAtk),
       x: p.x + 1.2, z: p.z + 1.2, ry: 0, atkT: 0, state: 'idle',
     };
     persist(p);
@@ -1406,12 +1416,13 @@ function cast(p, m) {
 
   const room = rooms[p.room];
   const dmgType = clsOf(p).dmgType;
+  const rm = (p.amp && now() < p.amp.until) ? p.amp.mul : 1;   // 强化针剂：技能范围倍增
 
   if (sk.kind === 'proj') {
     const id = 'j' + nextMid++;
     room.projectiles.set(id, {
       id, owner: p.id, x: p.x + dx * 0.5, z: p.z + dz * 0.5, dx, dz,
-      speed: sk.speed, born: t, life: sk.life, hitR: sk.radius || 1.6,
+      speed: sk.speed, born: t, life: sk.life, hitR: (sk.radius || 1.6) * rm,
       dmg: atkOf(p) * sk.mult * skDmgMul(p, kind), dmgType, cc: sk.cc || null,
     });
     roomCast(p.room, { t: 'proj', id, owner: p.id, x: p.x, z: p.z, dx, dz, speed: sk.speed, dim: p.dim });
@@ -1424,7 +1435,7 @@ function cast(p, m) {
     let worst = null, worstRatio = 1;
     for (const o of room.players.values()) {
       if (o.id === p.id || o.dead || o.dim !== p.dim) continue;
-      if (dist2(p.x, p.z, o.x, o.z) > sk.range * sk.range) continue;
+      if (dist2(p.x, p.z, o.x, o.z) > (sk.range * rm) * (sk.range * rm)) continue;
       const r = o.hp / maxHp(o);
       if (r < worstRatio) { worstRatio = r; worst = o; }
     }
@@ -1436,7 +1447,7 @@ function cast(p, m) {
   if (sk.kind === 'aoeheal') {
     for (const o of room.players.values()) {
       if (o.dead || o.dim !== p.dim) continue;
-      if (dist2(p.x, p.z, o.x, o.z) <= sk.radius * sk.radius) applyHeal(p, o, sk.pct * skHealMul(p, kind));
+      if (dist2(p.x, p.z, o.x, o.z) <= (sk.radius * rm) * (sk.radius * rm)) applyHeal(p, o, sk.pct * skHealMul(p, kind));
     }
     return;
   }
@@ -1448,9 +1459,9 @@ function cast(p, m) {
     const d = Math.sqrt(dx2 * dx2 + dz2 * dz2);
     let hit = false;
     const br = tgt.r || 0;   // 大体积怪（BOSS）按其身体边缘判定，不必戳到中心
-    if (sk.kind === 'aoe') hit = d <= sk.radius + br;
+    if (sk.kind === 'aoe') hit = d <= sk.radius * rm + br;
     else {
-      if (d <= sk.range + br) {
+      if (d <= sk.range * rm + br) {
         const ang = Math.acos(clamp((dx2 * dx + dz2 * dz) / (d || 1), -1, 1));
         hit = ang <= sk.arc / 2;
       }
