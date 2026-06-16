@@ -622,6 +622,19 @@ namespace DW
         // 把用了「不兼容/缺失 shader」(会渲染成洋红) 的道具材质，换成顶点色 Standard，
         // 还原低多边形包的原始颜色（而不是统一染成主题色一片死绿）。
         static Shader _vcShader;
+        static bool NameHas(string n, params string[] keys) { foreach (var k in keys) if (n.Contains(k)) return true; return false; }
+        // 读不回原色时，按道具/部件名给自然色（树绿、干棕、石灰…），避免一片死绿或死白
+        static Color NaturalColor(string name)
+        {
+            string n = name.ToLowerInvariant();
+            if (NameHas(n, "trunk", "bark", "log", "wood", "stump", "branch", "plank", "root", "stick", "fence")) return new Color(0.50f, 0.36f, 0.22f);
+            if (NameHas(n, "leaf", "leaves", "foliage", "bush", "tree", "pine", "fir", "fern", "hedge", "shrub", "plant", "grass", "cactus", "palm", "vine")) return new Color(0.34f, 0.52f, 0.26f);
+            if (NameHas(n, "rock", "stone", "cliff", "boulder", "gravel", "mountain", "pebble")) return new Color(0.60f, 0.61f, 0.58f);
+            if (NameHas(n, "flower", "mushroom", "crystal", "gem")) return new Color(0.78f, 0.72f, 0.55f);
+            if (NameHas(n, "sand", "dirt", "path", "dune", "ground")) return new Color(0.72f, 0.62f, 0.44f);
+            if (NameHas(n, "water", "pond", "lake", "river")) return new Color(0.35f, 0.55f, 0.68f);
+            return new Color(0.66f, 0.68f, 0.66f);   // 默认浅灰
+        }
         static void FixPinkMaterials(GameObject go, Color tint)
         {
             if (_vcShader == null) _vcShader = Shader.Find("DW/VertexColor") ?? Shader.Find("Standard");
@@ -637,9 +650,8 @@ namespace DW
                     bool bad = sh == null || !sh.isSupported || sh.name == "Hidden/InternalErrorShader";
                     if (!bad) { arr[i] = m; continue; }
                     anyBad = true;
-                    // 尽量保留原材质的底色/贴图（顶点色由 shader 还原），只朝主题色轻微偏移，避免一片死绿
-                    Color baseC = Color.white;
-                    Texture tex = null;
+                    // 尝试读原底色/贴图；URP 丢失读不到则按部件名给自然色
+                    Color baseC = Color.white; Texture tex = null;
                     if (m != null)
                     {
                         if (m.HasProperty("_BaseColor")) baseC = m.GetColor("_BaseColor");
@@ -647,8 +659,10 @@ namespace DW
                         if (m.HasProperty("_BaseMap")) tex = m.GetTexture("_BaseMap");
                         else if (m.HasProperty("_MainTex")) tex = m.GetTexture("_MainTex");
                     }
+                    bool blank = baseC.r > 0.92f && baseC.g > 0.92f && baseC.b > 0.92f && tex == null;
+                    Color col = blank ? NaturalColor(go.name + " " + r.name + " " + (m != null ? m.name : "")) : baseC;
                     var fix = new Material(_vcShader);
-                    fix.color = Color.Lerp(baseC, tint, 0.12f);   // 主要保留原色，仅 12% 主题色
+                    fix.color = Color.Lerp(col, tint, 0.1f);   // 主要保留原/自然色，仅 10% 主题
                     if (tex != null) fix.SetTexture("_MainTex", tex);
                     arr[i] = fix;
                 }
