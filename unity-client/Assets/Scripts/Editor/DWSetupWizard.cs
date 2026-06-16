@@ -274,6 +274,7 @@ namespace DW.EditorTools
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(src);
                 if (go == null) continue;
                 var inst = (GameObject)Object.Instantiate(go);
+                RecoverProps(inst);   // URP 材质→Built-in 顶点色，保留原贴图/颜色（修地图道具发白/发绿）
                 PrefabUtility.SaveAsPrefabAsset(inst, $"{SceneDir}/sc_{si:00}.prefab");
                 Object.DestroyImmediate(inst);
                 log.AppendLine($"场景#{++si} ← {src}");
@@ -709,6 +710,68 @@ namespace DW.EditorTools
                 return AssetDatabase.LoadAssetAtPath<Texture2D>(outPath);
             }
             catch (System.Exception e) { log.AppendLine("⚠ metalrough 重打包失败:" + e.Message + "，改用哑光默认"); return null; }
+        }
+
+        /* 把场景道具的 URP/不兼容材质转成 Built-in 顶点色，并用 SerializedObject 读回原贴图/颜色——
+         * 编辑器里即使 shader 不被支持，也能从序列化数据读到原贴图(调色板)/底色，从而还原低多边形包的颜色。 */
+        static Shader _vcShaderE;
+        static void RecoverProps(GameObject inst)
+        {
+            if (_vcShaderE == null) _vcShaderE = Shader.Find("DW/VertexColor") ?? Shader.Find("Standard");
+            foreach (var r in inst.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = r.sharedMaterials;
+                var arr = new Material[mats.Length];
+                bool changed = false;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var m = mats[i];
+                    if (m == null) { arr[i] = m; continue; }
+                    var sh = m.shader;
+                    bool ok = sh != null && sh.isSupported && sh.name != "Hidden/InternalErrorShader"
+                              && !sh.name.StartsWith("Universal Render Pipeline") && !sh.name.StartsWith("HDRP");
+                    if (ok) { arr[i] = m; continue; }   // 已是兼容材质，保留原样
+                    var fix = new Material(_vcShaderE);
+                    var tex = MatTex(m, "_BaseMap", "_MainTex", "_BaseColorMap");
+                    if (tex != null) fix.SetTexture("_MainTex", tex);
+                    fix.color = MatColor(m, "_BaseColor", "_Color");
+                    arr[i] = fix; changed = true;
+                }
+                if (changed) r.sharedMaterials = arr;
+            }
+        }
+        static Texture MatTex(Material m, params string[] names)
+        {
+            var so = new SerializedObject(m);
+            var te = so.FindProperty("m_SavedProperties.m_TexEnvs");
+            if (te != null)
+                for (int i = 0; i < te.arraySize; i++)
+                {
+                    var el = te.GetArrayElementAtIndex(i);
+                    var key = el.FindPropertyRelative("first");
+                    if (key == null) continue;
+                    foreach (var n in names)
+                        if (key.stringValue == n)
+                        {
+                            var t = el.FindPropertyRelative("second.m_Texture");
+                            if (t != null && t.objectReferenceValue is Texture tx) return tx;
+                        }
+                }
+            return null;
+        }
+        static Color MatColor(Material m, params string[] names)
+        {
+            var so = new SerializedObject(m);
+            var cs = so.FindProperty("m_SavedProperties.m_Colors");
+            if (cs != null)
+                for (int i = 0; i < cs.arraySize; i++)
+                {
+                    var el = cs.GetArrayElementAtIndex(i);
+                    var key = el.FindPropertyRelative("first");
+                    if (key == null) continue;
+                    foreach (var n in names) if (key.stringValue == n) return el.FindPropertyRelative("second").colorValue;
+                }
+            return Color.white;
         }
 
         /* 把文件夹内所有模型/动作 FBX 的导入骨骼改为 Humanoid 并重导（让狐狸动作可套到人形英雄） */
