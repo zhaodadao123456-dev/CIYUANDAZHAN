@@ -630,11 +630,11 @@ namespace DW
             string n = name.ToLowerInvariant();
             if (NameHas(n, "trunk", "bark", "log", "wood", "stump", "branch", "plank", "root", "stick", "fence")) return new Color(0.50f, 0.36f, 0.22f);
             if (NameHas(n, "leaf", "leaves", "foliage", "bush", "tree", "pine", "fir", "fern", "hedge", "shrub", "plant", "grass", "cactus", "palm", "vine")) return new Color(0.34f, 0.52f, 0.26f);
-            if (NameHas(n, "rock", "stone", "cliff", "boulder", "gravel", "mountain", "pebble")) return new Color(0.60f, 0.61f, 0.58f);
-            if (NameHas(n, "flower", "mushroom", "crystal", "gem")) return new Color(0.78f, 0.72f, 0.55f);
-            if (NameHas(n, "sand", "dirt", "path", "dune", "ground")) return new Color(0.72f, 0.62f, 0.44f);
-            if (NameHas(n, "water", "pond", "lake", "river")) return new Color(0.35f, 0.55f, 0.68f);
-            return new Color(0.66f, 0.68f, 0.66f);   // 默认浅灰
+            if (NameHas(n, "rock", "stone", "cliff", "boulder", "gravel", "mountain", "pebble")) return new Color(0.50f, 0.51f, 0.48f);
+            if (NameHas(n, "flower", "mushroom", "crystal", "gem")) return new Color(0.66f, 0.6f, 0.46f);
+            if (NameHas(n, "sand", "dirt", "path", "dune", "ground")) return new Color(0.62f, 0.53f, 0.38f);
+            if (NameHas(n, "water", "pond", "lake", "river")) return new Color(0.32f, 0.5f, 0.62f);
+            return new Color(0.5f, 0.52f, 0.5f);   // 默认中灰（偏暗，避免被强光冲白）
         }
         static void FixPinkMaterials(GameObject go, Color tint)
         {

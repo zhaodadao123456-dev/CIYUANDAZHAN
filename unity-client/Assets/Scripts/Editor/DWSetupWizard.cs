@@ -268,7 +268,7 @@ namespace DW.EditorTools
 
             // 场景池 DWScene/sc_XX（你买的静态场景模型，如黑暗地牢的柱子/石棺/木桶等；地图据此散布）
             RebuildFolder(SceneDir);
-            int si = 0;
+            int si = 0; _propTexN = 0; _propColN = 0;
             foreach (var src in SceneryProps())
             {
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(src);
@@ -279,6 +279,7 @@ namespace DW.EditorTools
                 Object.DestroyImmediate(inst);
                 log.AppendLine($"场景#{++si} ← {src}");
             }
+            if (si > 0) log.AppendLine($"道具材质恢复：{_propTexN} 个用了原贴图(调色板)，{_propColN} 个用底色/自然色");
             if (si == 0) log.AppendLine("未发现可用场景模型，地图沿用 KayKit 道具");
 
             // 注意：不在这里自动接入 Hovl 特效——它在内置管线下常变粉。
@@ -715,6 +716,7 @@ namespace DW.EditorTools
         /* 把场景道具的 URP/不兼容材质转成 Built-in 顶点色，并用 SerializedObject 读回原贴图/颜色——
          * 编辑器里即使 shader 不被支持，也能从序列化数据读到原贴图(调色板)/底色，从而还原低多边形包的颜色。 */
         static Shader _vcShaderE;
+        static int _propTexN, _propColN;
         static void RecoverProps(GameObject inst)
         {
             if (_vcShaderE == null) _vcShaderE = Shader.Find("DW/VertexColor") ?? Shader.Find("Standard");
@@ -733,31 +735,46 @@ namespace DW.EditorTools
                     if (ok) { arr[i] = m; continue; }   // 已是兼容材质，保留原样
                     var fix = new Material(_vcShaderE);
                     var tex = MatTex(m, "_BaseMap", "_MainTex", "_BaseColorMap");
-                    if (tex != null) fix.SetTexture("_MainTex", tex);
-                    fix.color = MatColor(m, "_BaseColor", "_Color");
+                    if (tex != null) { fix.SetTexture("_MainTex", tex); fix.color = Color.white; _propTexN++; }
+                    else
+                    {
+                        var col = MatColor(m, "_BaseColor", "_Color");
+                        if (col.r > 0.92f && col.g > 0.92f && col.b > 0.92f) col = NaturalColorE(inst.name + " " + r.name + " " + m.name);
+                        fix.color = col; _propColN++;
+                    }
                     arr[i] = fix; changed = true;
                 }
                 if (changed) r.sharedMaterials = arr;
             }
         }
+        // 读不回原色时按名字给自然色（编辑器版，与运行时一致）
+        static Color NaturalColorE(string name)
+        {
+            string n = name.ToLowerInvariant();
+            if (n.Contains("trunk") || n.Contains("bark") || n.Contains("log") || n.Contains("wood") || n.Contains("stump") || n.Contains("branch")) return new Color(0.46f, 0.32f, 0.19f);
+            if (n.Contains("leaf") || n.Contains("foliage") || n.Contains("bush") || n.Contains("tree") || n.Contains("pine") || n.Contains("fern") || n.Contains("plant") || n.Contains("grass")) return new Color(0.30f, 0.46f, 0.22f);
+            if (n.Contains("rock") || n.Contains("stone") || n.Contains("cliff") || n.Contains("boulder")) return new Color(0.52f, 0.53f, 0.5f);
+            return new Color(0.55f, 0.57f, 0.55f);
+        }
         static Texture MatTex(Material m, params string[] names)
         {
             var so = new SerializedObject(m);
             var te = so.FindProperty("m_SavedProperties.m_TexEnvs");
-            if (te != null)
-                for (int i = 0; i < te.arraySize; i++)
-                {
-                    var el = te.GetArrayElementAtIndex(i);
-                    var key = el.FindPropertyRelative("first");
-                    if (key == null) continue;
-                    foreach (var n in names)
-                        if (key.stringValue == n)
-                        {
-                            var t = el.FindPropertyRelative("second.m_Texture");
-                            if (t != null && t.objectReferenceValue is Texture tx) return tx;
-                        }
-                }
-            return null;
+            if (te == null) return null;
+            Texture any = null;
+            for (int i = 0; i < te.arraySize; i++)
+            {
+                var el = te.GetArrayElementAtIndex(i);
+                var key = el.FindPropertyRelative("first");
+                if (key == null) continue;
+                var t = el.FindPropertyRelative("second.m_Texture");
+                var tx = t != null ? t.objectReferenceValue as Texture : null;
+                if (tx == null) continue;
+                foreach (var n in names) if (key.stringValue == n) return tx;     // 指定名优先
+                var kl = key.stringValue.ToLowerInvariant();
+                if (any == null && !kl.Contains("bump") && !kl.Contains("normal") && !kl.Contains("metal") && !kl.Contains("mask")) any = tx;
+            }
+            return any;   // 兜底：任意非法线/金属贴图（多为调色板）
         }
         static Color MatColor(Material m, params string[] names)
         {
