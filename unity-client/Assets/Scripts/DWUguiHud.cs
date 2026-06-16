@@ -409,7 +409,7 @@ namespace DW
                 float y = -(10 + i * (ebH + egap));
                 var b = MkBtn("em" + i, ep.transform, Pal.Slate,
                     new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-16, ebH),
-                    () => { if (meDrv != null) meDrv.PlayOnce(em.Item1, 3f); });
+                    () => { if (meDrv != null) meDrv.PlayOnce(em.Item1, 3f); Send(new { t = "emote", s = em.Item1 }); });
                 MkTxt("t", b.transform, em.Item2, 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             }
             emotePanel.SetActive(false);

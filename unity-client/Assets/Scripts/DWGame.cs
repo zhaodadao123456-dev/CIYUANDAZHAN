@@ -359,6 +359,16 @@ namespace DW
                     }
                     break;
                 }
+                case "emote":
+                {
+                    Ent e;
+                    if (players.TryGetValue((string)m["id"], out e))
+                    {
+                        var drv = e.go != null ? e.go.GetComponent<DWAnimDriver>() : null;
+                        if (drv != null) drv.PlayOnce((string)m["s"], 3f);
+                    }
+                    break;
+                }
                 case "war":
                     if (m["state"] != null) warInfo = (JObject)m["state"];
                     break;

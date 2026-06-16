@@ -811,6 +811,15 @@ function handle(ws, m) {
       return;
     }
     case 'cast': return cast(p, m);
+    case 'emote': {   // 动作/表情：广播给同房间其他人播放
+      const s = String(m.s || '').slice(0, 16);
+      if (!s || p.dead) return;
+      const t = now();
+      if (t < (p.emoteCd || 0)) return;
+      p.emoteCd = t + 400;
+      roomCast(p.room, { t: 'emote', id: p.id, s }, p.id);
+      return;
+    }
     case 'war': {
       if (!war.active) return send(p.ws, { t: 'err', msg: '重叠战场未开启' });
       if (m.enter) {
