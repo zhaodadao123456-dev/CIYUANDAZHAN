@@ -641,10 +641,10 @@ namespace DW.EditorTools
                 }
                 return null;
             }
-            var baseTex = Find("basecolor", "albedo", "diffuse", "color");
+            var baseTex = Find("basecolor", "颜色", "albedo", "diffuse", "basecol");
             if (baseTex == null) { log.AppendLine("⚠ 狐狸未找到 basecolor 贴图，仍为白模"); return; }
-            var normTex = Find("normal");
-            var mrTex = Find("metalrough", "metallic", "_mr");
+            var normTex = Find("normal", "法线", "_nrm");
+            var mrTex = Find("metalrough", "金属粗糙", "金属", "metallic", "_mr");
             SetTexImport(baseTex, sRGB: true, normal: false);          // 颜色贴图按 sRGB
             if (normTex != null) SetTexImport(normTex, sRGB: false, normal: true);
             var mat = new Material(Shader.Find("Standard"));
