@@ -5,7 +5,7 @@
 
 ## 一句话简介
 多人在线动作 RPG：**5 个次元 × 5 个职业**、实时战斗、世界BOSS、PvP 重叠战场、每晚五次元大混战。
-一套权威服务器 + 两个客户端：**网页版（Three.js，最完善，已冻结不再开发）** 和 **Unity 原生客户端（出 iOS/安卓/PC，当前开发重点）**。两端连同一服务器、**共用按昵称的玩家存档**。
+一套权威服务器 + 两个客户端：**网页版（Three.js，最完善，已冻结不再开发）** 和 **Unity 原生客户端（出 iOS/安卓/PC，当前开发重点）**。两端连同一服务器、**共用玩家存档（已从「按昵称」改为「按唯一找回码 uid」，见下「存档/账号」）**。
 
 ## 仓库结构（重点只看前两个）
 - `dimensional-war-3d/` — **主项目**：Node.js 权威服务器(`server.js`) + 网页版前端(`public/`)。
@@ -24,7 +24,8 @@
   curl -fsSL https://raw.githubusercontent.com/zhaodadao123456-dev/CIYUANDAZHAN/main/dimensional-war-3d/deploy/quickstart.sh | bash
   ```
 - **Unity 出 iOS 包**（在用户 Mac + Unity，需装 iOS Build Support 模块）：菜单 **「次元大战 → ④ 准备iOS」「⑤ 导出iOS工程(Xcode)」**（`Editor/DWBuildIOS.cs`）自动建空场景+加入 Build Settings+设包名/横屏/IL2CPP/自动签名+导出 Xcode 到工程根 `iOSBuild/`；再用 Xcode 选开发者团队签名→连手机▶运行。免费证书 7 天过期，重导即可。`Editor/DWiOSPostBuild.cs` 自动放行明文 ws://（否则真机连不上）。
-- **Unity 客户端更新**：用户重下仓库 ZIP（`main`），覆盖 `unity-client/Assets/Scripts/`（含 `Editor/`）+ `Assets/Resources/DWIcons/` + 改了包依赖时的 `Packages/manifest.json`；**不要覆盖整个 Assets**（会删掉用户买的、不在仓库里的角色/特效包）。
+- **Unity 客户端更新**：用户重下仓库 ZIP（`main`：https://github.com/zhaodadao123456-dev/CIYUANDAZHAN/archive/refs/heads/main.zip），覆盖 `unity-client/Assets/Scripts/`（含 `Editor/` 子目录 + `*.shader` 自定义 shader）+ `Assets/Resources/DWIcons/` + 改了包依赖时的 `Packages/manifest.json`；**不要覆盖整个 Assets**（会删掉用户买的、不在仓库里的角色/特效包）。覆盖后视改动重跑向导菜单②/③，再 ▶ 运行。
+- **盲改铁律**：UI/3D/观感类改动这边看不到，必须靠用户**截图 + 向导日志**校准。改完给用户「下哪个链接/覆盖哪个文件夹/跑哪个菜单/看什么」的具体步骤。
 - **网页版玩**：浏览器/iPhone Safari 开 `http://119.45.129.74`。
 
 ## 约定（重要）
@@ -40,10 +41,19 @@
 - 房间：5 个次元各一张图 + `war`(重叠战场) + `melee`(大混战)。
 - 数据在 `public/js/data.js`（DIMENSIONS/CLASSES/RARITIES/MAP_HALF=210/LAIR_R=174），**服务器与网页前端共用**；Unity 端另有 `DWData.cs`（数值需手动同步）。
 - 职业：warrior/assassin/ranger/tank/healer；技能 kind：melee/proj/aoe/dashmelee/heal/aoeheal。
-- 已实现：5职业(basic/q/e/r，**无上限**升级)、**次元专属技能**(F键：科技护盾/修仙回血/赛博闪现/魔法禁锢/猎人捕宠)、装备(掉落/商店/强化+1~20/融合/词缀/可装备成就)、药剂(H喝/自动复活)、**世界BOSS**(多阶段+预警圈`warn`落地判定+5技能；**body radius r=3：模型放大3倍，玩家撞不进、可从边缘打中**)、怪物(等级1~100、精英远程/范围技、按次元染色)、**重叠战场**双次元PvP、**每晚21点五次元大混战**、组队共享经验、成就、PvP段位天梯、**障碍物碰撞**(圆形`obstacles`，玩家+怪物都挡)、每日签到。
-- **存档（按昵称，存服务器 `players.json`）**：等级/经验/金币/装备/技能点/成就/宝宝等。**返回玩家用昵称读回同一角色**——`newPlayer` 对已有昵称用存档里的 `dim/cls`（服务器为准），换设备/重装也能找回；新昵称才用本次选择。
+- 已实现：5职业(basic/q/e/r，**无上限**升级)、装备(掉落/商店/强化+1~20/融合/词缀/可装备成就)、药剂(H喝/自动复活；**商店也卖药**)、**世界BOSS**(多阶段+预警圈`warn`落地判定+5技能；**body radius r=3：模型放大3倍，玩家撞不进、可从边缘打中**)、**重叠战场**双次元PvP、**每晚21点五次元大混战**、组队共享经验、成就、PvP段位天梯、**障碍物碰撞**(圆形`obstacles`，玩家+怪物都挡)、每日签到、**动作表情`emote`**(同房间广播)。
+- **次元专属技能（F键，本会话全部重做，统一持续60秒/冷却5分钟，常量 `DIM_DUR=60000`/`DIM_CD=300000`）**：
+  - **修仙=炼宝诀**：熔炼背包前5件装备→`p.treasure` 法宝，全属性加成 = Σ(装备属性)×等级/10，不同职业不同法宝（客户端应渲染**头顶悬浮 3D 法宝**，待办）。
+  - **科技=载具冲锋**：生成 `p.vehicle{until,hp,maxHp}`，受击经 `absorbShield` **优先扣载具血**、大幅+移速、载具自带攻击（客户端待办**载具 3D 模型**）。
+  - **魔法=召唤天使恶魔**：天使给己方+队友增益、恶魔给周围敌人减益（客户端待办**天使/恶魔 3D 模型**）。
+  - **赛博=强化针剂**：`p.amp{until,mul}`，全属性/技能范围(cast 里 `rm`)/**体型** ×(1+等级/10)（不足1为1倍）；客户端应按下发的 `amp` **放大英雄体型**，待办。
+  - **猎人=捕宠强化**：捕捉更难(ratio>0.3 才可捕、几率 `min(0.6,0.65-ratio*1.6)`)；吃药同时**给宝宝回血**；**新宝宝与上一只属性融合**(叠加)。
+  - 实现要点：`mergeBuff`、`statsOf` 里乘 amp/treasure 加成、`absorbShield` 先吃 vehicle 血。
+- **怪物（本会话大改）**：**近战+远程混合**(约40%远程弹幕)、**每10只1个精英**(`monSpawnCount`计数；属性×2.6/攻×1.7/技能更频)、整体血攻大幅提高、**等级随离出生点距离平滑增长**(`frac=clamp((r-55)/(MAP_HALF-55))`)、**脱战回满血**、`snapRow` 下发 `mo.elite`(客户端精英视觉待办)。
+- **经济/难度再平衡（本会话）**：升级经验 `expNeed ×3`、野怪金币 `/3`、掉装几率 `/3`、商店售价 `prices=[3500,9000,22000]`(原×10)。
+- **存档/账号（本会话改造，存服务器 `players.json`）**：主键从昵称→**唯一找回码 uid `DWxxxxxxx`**（`uniqCode` 生成、`saved` 按 uid、`nameIndex` 兼容老昵称登录、`migrateSaved` 迁移老档）。`welcome` 下发 `code:p.uid`，客户端存本机自动登录；可输码换设备找回。混战/排行/签到均按 uid。**昵称改名功能待加**（拟 `rename` 消息）。存等级/经验/金币/装备/技能点/成就/宝宝等。
 - 战场/混战中**死亡不能原地复活**，回本次元复活。
-- 关键消息：`welcome/you/snap/cast/proj/dmg/heal/mdie/pdie/lvl/feed/chat/ach/party/pinvite/boss/baoe/maoe/bstorm/warn/dimfx/rooted/war/melee/rank/...`
+- 关键消息：`welcome(含code)/you/snap(含mo.elite)/cast/proj/dmg/heal/mdie/pdie/lvl/feed/chat/ach/party/pinvite/boss/baoe/maoe/bstorm/warn/dimfx/rooted/war/melee/rank/emote/...`
 
 ## 网页客户端（`dimensional-war-3d/public/`）— 已冻结
 - `index.html` + `js/game.js` + `js/models.js`(Three.js+KayKit GLB) + `js/data.js` + `js/audio.js` + `style.css`(玻璃拟态)。功能/UI 完善，**用户已明确不再开发网页版**。
@@ -51,19 +61,27 @@
 ## Unity 客户端（`unity-client/`）— 当前开发重点
 - Unity **2022.3 LTS**（标准 Unity，**内置渲染管线 Built-in**，非 URP/HDRP）。`Packages/manifest.json` 含内置模块 + `com.unity.cloud.gltfast`(.glb) + `com.unity.ugui` + `com.unity.nuget.newtonsoft-json`。
 - 自启动：`DWGame` 用 `[RuntimeInitializeOnLoadMethod]` 引导，无需配置场景。
-- **登录**：服务器IP 写死在 `DWGame.DEFAULT_SERVER`(="119.45.129.74")，玩家不填 IP；登录界面只填**昵称+选次元+选职业**。**首次降临后存档，再次启动自动登录跳过填写**（连不上才回登录界面；游戏内「退出」回登录界面可改昵称=换/新建角色）。
+- **登录**：服务器IP 写死在 `DWGame.DEFAULT_SERVER`(="119.45.129.74")，玩家不填 IP；登录界面填**昵称+选次元+选职业（+找回码框待加）**。客户端存服务器下发的 `code`(playerCode/recoverCode/pendingCode)、`Join(bool auto)` 自动登录；**首次降临后自动登录跳过填写**（连不上才回登录界面；「退出」回登录可改昵称）。
+  - **⏳ 登录界面重做（用户已选方案A，未动工）**：准备界面**左右分屏**——右=输入账号/找回码+选次元+选职业；左=**当前所选英雄 3D 预览**(可拖动旋转/缩放查看)。
 - 脚本（都在 `Assets/Scripts/`，`partial class Game`）：
-  - `DWGame.cs` — 主逻辑/网络/移动/相机/实体/模型加载(`MakeHero` 按 `hero_{dim}_{cls}`→`hero_{dim}`→池→占位；`MakeCreature` 怪物/BOSS，BOSS×3；`BuildWorld` 程序化网格地面+渐变天空盒+散布道具)/碰撞/**全部战斗特效**(见下)。
-  - `DWUguiHud.cs` — **UGUI HUD**（Canvas 1920×1080）：状态栏/血条经验条、技能栏(6格)、大攻击键、横幅、信息流、升级/提示/死亡、背包/商店/属性面板、队伍小血条、**小地图**(左下 RawImage 每帧重绘 ~12.5Hz)、**头顶名牌血条**(独立世界画布逐帧投影)、**伤害飘字**、**登录界面**。图标优先用 `DWIcons` 真图标(白图运行时着色)缺失回退程序化 SDF 字形。**面板/按钮已圆角化**(`RoundSprite` 9-slice)。
+  - `DWGame.cs` — 主逻辑/网络/移动/相机/实体/模型加载(`MakeHero` 按 `hero_{dim}_{cls}`→`hero_{dim}`→池→占位；`MakeCreature(tier,level,id)` 怪物/BOSS，BOSS×3，**怪物体型随 level 放大**`1+Clamp01(level/100)*0.9`；`BuildWorld` 程序化网格地面+渐变天空盒+散布道具)/碰撞/**全部战斗特效**(见下)/`DWAnimDriver`(`SetBase/PlayOnce/Apply`)。
+    - **相机（本会话调）**：`CamPitch0=0.5/CamDist0=7.5`、`ResetCamera()`（HUD 有「视角」复位键）；缩放联动焦点(`UpdateCamera` 里 `zt/lookY/baseY`)——**拉远压低看全身、拉近怼脸看脸**；pitch 0.1~1.4、dist 1.4~16、双指捏合缩放。
+    - **光照（本会话调）**：环境光中性 `ambientLight=(0.74,0.75,0.77)`（**不再叠次元主题色**，修角色发灰发绿）+ 主光 1.05 + 柔和补光 0.45。
+    - **地图道具修色（本会话）**：`FixPinkMaterials` 用 `DW/VertexColor`、不叠主题色；运行时白模兜底 `whiteFlat`/`NaturalColor(name)`。道具真彩主要靠向导②（见下）。
+    - **动作表情（本会话）**：收 `emote` 在对应玩家 `DWAnimDriver.PlayOnce` 播放；本地点动作同时 `Send{t:"emote"}`。
+  - `DWUguiHud.cs` — **UGUI HUD**（Canvas 1920×1080）：状态栏/血条经验条、技能栏(6格)、大攻击键、横幅、信息流、升级/提示/死亡、背包/**商店(含买药区)**/属性面板、队伍小血条、**小地图**、**头顶名牌血条**、**伤害飘字**、**登录界面**、**「视角」复位键 + 「动作」表情键**(弹 7 个动作面板)。图标优先用 `DWIcons` 真图标(白图运行时着色)缺失回退程序化 SDF。**面板/按钮已圆角化**(`RoundSprite` 9-slice)。
   - `DWHud.cs` — 旧 IMGUI，**现仅剩虚拟摇杆 + 聊天输入**；其余为死代码未删。
-  - `DWData.cs` `DWNet.cs` `DWAudio.cs`(CC0，M静音) + `DWAnimDriver`(动画)。
+  - `DWData.cs` `DWNet.cs` `DWAudio.cs`(CC0，M静音)。
+  - **自定义 shader（本会话新增，在 `Assets/Scripts/`）**：`DWVertexColor.shader`(`DW/VertexColor`：顶点色×贴图×_Color，近黑顶点色按白处理) 修低多边形道具；`DWDoubleSided.shader`(`DW/DoubleSided`：Cull Off) 修狐妖衣服布料破洞。
   - `Editor/DWSetupWizard.cs` — 菜单「① 生成资源清单 / ② 一键接入已购模型 / ③ 接入Hovl特效」。详见下「向导」。
   - `Editor/DWiOSPostBuild.cs`(ATS放行) `Editor/DWBuildIOS.cs`(④/⑤ 一键出 iOS)。
 - `Assets/Resources/`：`DWMon`(KayKit怪物glb) `DWProps`(KayKit场景glb) `DWAudio` `DWIcons`(game-icons.net CC BY 白图)；**向导生成**：`DW/`(hero_{dim}_{cls} 25个 + hero_{dim} + mon_boss) `DWHeroes` `DWMobs` `DWScene` `DWFx`(Hovl特效，运行时按名/池加载，缺失/变粉则程序化兜底)。
 
 ### 向导（DWSetupWizard）做什么
-- **角色**：小丑(LittleWitch1)→世界BOSS(Generic骨骼用自带动作)；骷髅→怪物池；其余人物→**按「次元×职业」分配 25 个 `hero_{dim}_{cls}`**，用上所有角色。偏好表(可加)：修仙·战士=悟空、修仙·奶妈=兔女郎、修仙·刺客=女巫、魔法·奶妈=修女、魔法·战士=半血、猎人·弓手=牛仔、科技/赛博·战士=士兵妹v1/v2；其余从角色库轮流补满。排除 URP/HDRP 变体(内置管线变粉)、残缺件、特效/粒子预制体(`IsEffectPrefab`，防 FX_Waterfall 混进英雄)。
-- **场景道具**(DWScene)：关键词白名单(自然/通用/工业)，**排除武器/地形大块/主题杂物/建筑墙路**；上限 80。`BuildWorld` 在障碍点 + 额外 110 个随机散布，铺满地图；`FixPinkMaterials` 把变粉(不兼容shader)的道具材质换成 Standard。
+- **角色**：小丑(LittleWitch1)→世界BOSS(Generic骨骼用自带动作)；骷髅→怪物池；其余人物→**按「次元×职业」分配 25 个 `hero_{dim}_{cls}`**，用上所有角色。偏好表(可加)：修仙·刺客=**狐妖(huli/fox)**、修仙·奶妈=兔女郎、魔法·奶妈=修女、魔法·战士=半血、猎人·弓手=牛仔、科技/赛博·战士=士兵妹v1/v2；其余从角色库轮流补满。排除 URP/HDRP 变体(内置管线变粉)、残缺件、特效/粒子预制体(`IsEffectPrefab`)、**`.blend`**(149MB 狐狸源文件含2个mesh→只用 `.fbx`)。
+- **狐妖(huli)专门处理（本会话）**：`ApplyHuliMaterial` 从散图建 Standard 材质(BaseColor sRGB、Normal NormalMap、`RepackMetalRough` 把 glTF 的 G=粗糙/B=金属 重打包成 Unity R=金属/A=光滑)，用 `DW/DoubleSided`(修衣服破洞)，贴到 `hero_xiuxian_assassin`。**动画混合**`BuildController(wukong,huli)`：战斗+走跑(Run/Attack1/Attack2/Skill/Skill2)用**悟空**，其余(Idle/Dodge/Death)用**狐狸**。
+- **场景道具**(DWScene)：关键词白名单(自然/通用/工业)，**排除武器/地形大块/主题杂物/建筑墙路**；上限 80。`BuildWorld` 在障碍点 + 额外 110 个随机散布，铺满地图。
+- **道具真彩恢复（本会话，关键）**：用户的 Pure Poly 道具是 URP 材质(内置管线变 InternalErrorShader/粉)，用**调色板贴图**`PP_Color_Palette`(256×256，颜色在第一套 UV)。`RecoverProps`：用 `SerializedObject` 从坏材质的 `m_SavedProperties` 读回原贴图(`MatTex`)/颜色(`MatColor`)，换成 `DW/VertexColor`；**`EnsurePaletteImport` 把调色板贴图强制 sRGB + 点采样(Point) + 关 mipmap**——否则 mipmap/双线性会把小色块混成一片灰白(用户「道具发白」就是这个)。日志打印 `首个道具诊断:`(贴图名/尺寸/有无第二套UV/原shader)。若日志 `有第二套UV=True` 才需改 shader 取 UV1；目前用户日志=False，已确认 sRGB+点采样修复对路。
 - **③ Hovl 特效**(opt-in，因内置管线常变粉)：复制命名特效 + **特效池**(`fxp_slash` 整包剑斩 / `fxp_aoe` / `fxp_cast` / `fxp_buff`) + **次元元素池**(`fxp_cast_{dim}`、`fxp_aoe_{dim}`)到 `Resources/DWFx`。
 
 ### 战斗特效系统（DWGame，关键设计）
@@ -74,19 +92,26 @@
 ### 用户已买资源包（不在仓库，在用户本地 Assets/）
 悟空、半血男女/教会侍从、女巫、牛仔女警长、修女、兔女郎、小丑(LittleWitch1)、骷髅合集、科幻士兵、黑暗地牢、**Pure Poly/PurePoly 终极低多边形自然包**、**SimpleNaturePack**、**RPG_FPS 工业道具**、**Hovl Studio 特效**(AAA Projectiles / AOE Magic spells / Magic circles / 3D Lasers / **Sword slash VFX** / RPG VFX Bundle)、PlasmaWeaponVol1(武器,未接)、MapMagic(地形工具,**不用**)、各种武器包。
 
-## 当前状态 / 路线图（改动后请更新）
-- ✅ 服务器全部玩法系统完成；冒烟 34/34。服务器IP 写死、按昵称服务器存档、返回玩家找回角色。
-- ✅ Unity：连服务器、登录/自动登录、模型按次元×职业接入(含兔女郎=修仙奶妈)、碰撞、横屏、音效、iOS 一键导出。
-- ✅ UI 全 UGUI（队伍血条/小地图/头顶名牌/伤害飘字/登录）、真图标、**面板按钮圆角化**。
-- ✅ 美术：Pure Poly+工业+自然包铺满地图(已清理武器/地形/杂物)、世界BOSS×3、按技能+次元匹配的特效系统(Hovl池+程序化兜底)。
-- ⏳ **待办（多需用户截图校准）**：①**UI 美化下一轮**(配色/玻璃拟态/排版/描边投影/CD反馈，圆角已做)；②UGUI 坐标/大小/锚点真机微调；③**Hovl 在用户内置管线下变粉**——`FxBroken` 会自动跳过、回退程序化(不粉、够看)，若想用 Hovl 需修 shader 或确认包是否 Built-in；④PlasmaWeapon 武器未绑到角色手上。
-- ❌ 暂不做：MapMagic 3D 地形（与「服务器 2D 平面、脚踩 y=0」冲突）。
+## 当前状态 / 路线图（改动后请更新；详细需求清单见 `BACKLOG.md`）
+### ✅ 本会话已上线 main（冒烟均 34/34）
+- **服务器**：①账号改造(昵称→唯一找回码 uid，自动迁移老档)；②经济再平衡(升级×3、金币/掉装难度×3、售价×10)；③**5 个次元技能全部重做**(炼宝诀/载具冲锋/天使恶魔/强化针剂/捕宠融合，统一 60s/300s)；④**怪物大改**(近战+远程、每10只1精英、随距离升级、脱战回血、体型随级)；⑤商店卖药；⑥动作表情 emote 联网。
+- **Unity**：①**全部图标换成 game-icons.net 真图标**(下载的 PNG，CC BY，已署名，替代旧程序化霓虹)；②**狐妖 huli** 接入修仙刺客(材质/双面/动画混合)；③相机(怼脸看脸 + 退远看全身 + 「视角」复位键)；④光照中性化(角色不发灰发绿)；⑤**地图道具真彩恢复**(DW/VertexColor + 调色板贴图 sRGB/点采样/关mipmap)——**最近一次用户日志确认下对了版本、`有第二套UV=False`，待用户进游戏视觉确认**；⑥「动作」表情键(7 动作)；⑦商店买药 UI。
+- **新增自定义 shader**：`DW/VertexColor`、`DW/DoubleSided`（都在 `Assets/Scripts/`，随 Scripts 一起覆盖）。
+
+### ⏳ 待办（用户已排优先级，多需截图校准）
+1. **登录界面重做（方案A，未动工，下一步重点）**：左右分屏 = 右侧账号/找回码/选次元职业 + 左侧**英雄 3D 预览(可转/缩放)**；客户端联调找回码自动登录 + **昵称改名功能**(服务器加 `rename`)。
+2. **次元技能客户端 3D 表现（服务器逻辑已就绪，客户端待做）**：炼宝诀**头顶悬浮法宝模型**(不同职业不同)、科技**载具模型**、魔法**天使/恶魔模型**、强化针剂**英雄体型按 `amp` 放大**、精英怪 `mo.elite` **视觉区分**。
+3. **技能特效匹配（Phase 2）**：特效与技能类型/范围匹配，**R 技能用最大范围特效(大招感)**；每个英雄每个技能尽量独立，匹配次元元素 + 职业，参考 LoL/魔兽/笑傲江湖。
+4. **每个英雄技能独立化**：数值/手感/表现按次元+职业区分。
+5. **UI 美化下一轮**：配色/玻璃拟态/排版/描边投影/CD 反馈(圆角已做)；UGUI 坐标真机微调。
+6. **遗留**：Hovl 特效在内置管线变粉(`FxBroken` 自动跳过回退程序化)；PlasmaWeapon 武器未绑手上。
+- ❌ 暂不做：MapMagic 3D 地形（与「服务器 2D 平面、脚踩 y=0」冲突）；网页版（已冻结）。
 
 ## 给新会话：如何高效继续优化
-1. **先读本文件全文**，再动手。Unity 改完务必大括号配平自检；改 server.js 必跑冒烟测试。
-2. **看不到 Unity 画面**——UI/观感类改动让用户**截图**(登录界面 / 战斗HUD / 背包面板 / 放技能)再针对性调；优先「程序化兜底 + 素材可选」写法，避免单点失败/变粉。
-3. **当前用户最想要的**：把 Unity 整体 UI 做精致(圆角已完成，下一步配色/排版/玻璃质感)。其次特效、手感。
-4. 改完**提交并推 main**，给用户**清晰的「你该做什么」步骤**(覆盖哪些文件 / 跑哪个菜单 / 重启服务器命令)。
+1. **先读本文件 + `BACKLOG.md` 全文**，再动手。Unity 改完务必大括号配平自检；改 server.js 必跑 `cd dimensional-war-3d && rm -f players.json && node smoke-test.js`（须 34/34）。
+2. **看不到 Unity 画面**——UI/观感类改动让用户**截图 + 发向导日志**再针对性调；优先「程序化兜底 + 素材可选」写法，避免单点失败/变粉。
+3. **当前进度卡点**：地图道具发白——已推 `EnsurePaletteImport`(sRGB+点采样+关mipmap)修复，用户最新日志已是新版且 `有第二套UV=False`，**等用户进游戏确认颜色是否恢复**；若仍白则加运行时强制点采样兜底。确认后进「登录界面方案A」。
+4. 改完**提交并推 main**，给用户**清晰的「你该做什么」步骤**(下哪个链接 / 覆盖哪个文件夹 / 跑哪个菜单 / 重启服务器命令)。
 
 ## 用户偏好（沟通）
 - 中文；非程序员，按「具体步骤 + 截图反馈」推进；喜欢说「继续」让你自主升级。
