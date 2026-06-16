@@ -174,10 +174,11 @@ function spawnMonsters(room, dimId) {
 let monSpawnCount = 0;   // 全局生成计数：每 10 个出 1 个精英
 function addMonster(room, { name, tier, x, z, level, elite }) {
   const id = 'm' + nextMid++;
-  // 等级跨度 1-100：越外圈层级越高（T1:1-10 / T2:11-35 / T3:36-70 / T4:71-100）
+  // 等级随「离出生点(地图中心)的距离」平滑增长：出生点附近≈1级，地图边缘≈100级
   if (level == null) {
-    const band = { 1: [1, 10], 2: [11, 35], 3: [36, 70], 4: [71, 100] }[tier] || [1, 10];
-    level = band[0] + Math.floor(rnd(0, band[1] - band[0] + 1));
+    const r = Math.sqrt(x * x + z * z);
+    const frac = clamp((r - 55) / (MAP_HALF - 55), 0, 1);
+    level = clamp(Math.round(frac * 99 + 1 + rnd(-3, 3)), 1, MON_MAX_LEVEL);
   }
   level = clamp(Math.round(level), 1, MON_MAX_LEVEL);
   if (elite == null) elite = (++monSpawnCount % 10 === 0);   // 每 10 个 1 个精英
@@ -1805,7 +1806,10 @@ function tickRoom(room) {
     const rooted = mo.rootUntil && t < mo.rootUntil;           // 定身：可攻击不可移动
     const moSpd = (mo.slowUntil && t < mo.slowUntil) ? mo.speed * (1 - (mo.slowPct || 0)) : mo.speed;  // 减速
     let tgt = mo.targetId ? room.players.get(mo.targetId) : null;
-    if (tgt && (tgt.dead || inSafeZone(room, tgt.x, tgt.z) || dist2(mo.x, mo.z, tgt.x, tgt.z) > 26 * 26)) { tgt = null; mo.targetId = null; }
+    if (tgt && (tgt.dead || inSafeZone(room, tgt.x, tgt.z) || dist2(mo.x, mo.z, tgt.x, tgt.z) > 26 * 26)) {
+      tgt = null; mo.targetId = null;
+      if (mo.hp < mo.maxHp) mo.hp = mo.maxHp;   // 脱战回满血
+    }
     if (!tgt) {
       // 索敌
       let best = null, bd = 13 * 13;
