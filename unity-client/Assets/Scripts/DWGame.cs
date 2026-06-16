@@ -491,7 +491,7 @@ namespace DW
             sky.SetFloat("_SunSize", 0.045f);
             RenderSettings.skybox = sky;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = Color.Lerp(theme.ground, new Color(0.74f, 0.76f, 0.82f), 0.78f);   // 更亮更中性，角色不发灰发绿
+            RenderSettings.ambientLight = new Color(0.74f, 0.75f, 0.77f);   // 中性环境光，道具/角色显真色不染次元色（次元感留给地面/雾/天空）
             cam.clearFlags = CameraClearFlags.Skybox;
             cam.backgroundColor = theme.fog;
             cam.farClipPlane = 400;
@@ -668,7 +668,7 @@ namespace DW
                     bool blank = baseC.r > 0.92f && baseC.g > 0.92f && baseC.b > 0.92f && tex == null;
                     Color col = blank ? NaturalColor(go.name + " " + r.name + " " + (m != null ? m.name : "")) : baseC;
                     var fix = new Material(_vcShader);
-                    fix.color = Color.Lerp(col, tint, 0.1f);   // 主要保留原/自然色，仅 10% 主题
+                    fix.color = col;   // 道具显真色/自然色，不再叠次元主题色
                     if (tex != null) fix.SetTexture("_MainTex", tex);
                     arr[i] = fix;
                 }
