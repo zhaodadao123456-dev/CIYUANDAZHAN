@@ -268,7 +268,7 @@ namespace DW.EditorTools
 
             // 场景池 DWScene/sc_XX（你买的静态场景模型，如黑暗地牢的柱子/石棺/木桶等；地图据此散布）
             RebuildFolder(SceneDir);
-            int si = 0; _propTexN = 0; _propColN = 0;
+            int si = 0; _propTexN = 0; _propColN = 0; _propDiag = "";
             foreach (var src in SceneryProps())
             {
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(src);
@@ -280,6 +280,7 @@ namespace DW.EditorTools
                 log.AppendLine($"场景#{++si} ← {src}");
             }
             if (si > 0) log.AppendLine($"道具材质恢复：{_propTexN} 个用了原贴图(调色板)，{_propColN} 个用底色/自然色");
+            if (!string.IsNullOrEmpty(_propDiag)) log.AppendLine(_propDiag);
             if (si == 0) log.AppendLine("未发现可用场景模型，地图沿用 KayKit 道具");
 
             // 注意：不在这里自动接入 Hovl 特效——它在内置管线下常变粉。
@@ -744,7 +745,18 @@ namespace DW.EditorTools
                     if (ok) { arr[i] = m; continue; }   // 已是兼容材质，保留原样
                     var fix = new Material(_vcShaderE);
                     var tex = MatTex(m, "_BaseMap", "_MainTex", "_BaseColorMap");
-                    if (tex != null) { fix.SetTexture("_MainTex", tex); fix.color = Color.white; _propTexN++; }
+                    if (tex != null)
+                    {
+                        EnsurePaletteImport(tex);   // 调色板贴图：sRGB + 点采样 + 关 mipmap，避免色块被混成灰/白
+                        fix.SetTexture("_MainTex", tex); fix.color = Color.white; _propTexN++;
+                        if (string.IsNullOrEmpty(_propDiag))
+                        {
+                            var t2 = tex as Texture2D;
+                            var mf = r.GetComponent<MeshFilter>();
+                            bool uv2 = mf && mf.sharedMesh && mf.sharedMesh.uv2 != null && mf.sharedMesh.uv2.Length > 0;
+                            _propDiag = $"首个道具诊断: 贴图={tex.name} 尺寸={(t2 ? t2.width : 0)}x{(t2 ? t2.height : 0)} 有第二套UV={uv2} 原shader={sh?.name}";
+                        }
+                    }
                     else
                     {
                         var col = MatColor(m, "_BaseColor", "_Color");
@@ -755,6 +767,19 @@ namespace DW.EditorTools
                 }
                 if (changed) r.sharedMaterials = arr;
             }
+        }
+        static string _propDiag = "";
+        // 调色板/渐变贴图：必须 sRGB 颜色 + 点采样 + 关闭 mipmap，否则色块被插值/远处 mip 混成一片灰白
+        static void EnsurePaletteImport(Texture tex)
+        {
+            var p = AssetDatabase.GetAssetPath(tex);
+            var imp = AssetImporter.GetAtPath(p) as TextureImporter;
+            if (imp == null || imp.textureType == TextureImporterType.NormalMap) return;
+            bool dirty = false;
+            if (!imp.sRGBTexture) { imp.sRGBTexture = true; dirty = true; }
+            if (imp.filterMode != FilterMode.Point) { imp.filterMode = FilterMode.Point; dirty = true; }
+            if (imp.mipmapEnabled) { imp.mipmapEnabled = false; dirty = true; }
+            if (dirty) imp.SaveAndReimport();
         }
         // 读不回原色时按名字给自然色（编辑器版，与运行时一致）
         static Color NaturalColorE(string name)
