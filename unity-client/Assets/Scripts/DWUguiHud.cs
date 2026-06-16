@@ -381,6 +381,13 @@ namespace DW
             AddGlow(atk.transform, Pal.Warm, 34);   // 攻击键霓虹呼吸辉光
             BtnIcon(atk.transform, "ui_attack", "攻击", 96, 34);
 
+            // ---- 复位视角键（右侧，攻击键上方）----
+            var resetCam = MkBtn("ResetView", root, Pal.AccentDp,
+                new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-74, 252), new Vector2(84, 84),
+                () => ResetCamera());
+            GlassPanel((Image)resetCam.targetGraphic, Pal.Accent);
+            MkTxt("t", resetCam.transform, "视角", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
             BuildOverlays(root);
             BuildParty(root);
             BuildMinimap(root);

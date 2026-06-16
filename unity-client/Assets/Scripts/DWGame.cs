@@ -82,8 +82,10 @@ namespace DW
         class Proj { public GameObject go; public Vector3 dir; public float speed, dieAt; }
         readonly Dictionary<string, Proj> projs = new Dictionary<string, Proj>();
 
-        // 相机
-        float camYaw, camPitch = 0.78f, camDist = 9f;   // 更俯视、更近
+        // 相机（默认更低角度，能看清角色的脸；可右键/拖动转视角、滚轮缩放）
+        const float CamPitch0 = 0.5f, CamDist0 = 8.5f;
+        float camYaw, camPitch = CamPitch0, camDist = CamDist0;
+        void ResetCamera() { camYaw = 0f; camPitch = CamPitch0; camDist = CamDist0; }
 
         // 技能冷却（Time.time 秒）
         readonly Dictionary<string, float> readyAt = new Dictionary<string, float>();
@@ -1067,7 +1069,7 @@ namespace DW
                     else if (t.phase == TouchPhase.Moved)
                     {
                         camYaw -= t.deltaPosition.x * 0.004f;
-                        camPitch = Mathf.Clamp(camPitch + t.deltaPosition.y * 0.003f, 0.55f, 1.4f);
+                        camPitch = Mathf.Clamp(camPitch + t.deltaPosition.y * 0.003f, 0.32f, 1.4f);
                     }
                 }
             }
@@ -1087,7 +1089,7 @@ namespace DW
             if (!touching && Input.GetMouseButton(1))
             {
                 camYaw -= Input.GetAxis("Mouse X") * 0.03f;
-                camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.022f, 0.55f, 1.4f);
+                camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.022f, 0.32f, 1.4f);
             }
             camDist = Mathf.Clamp(camDist - Input.GetAxis("Mouse ScrollWheel") * 6f, 5f, 16f);
 
@@ -1550,7 +1552,7 @@ namespace DW
             float cz = pos.z + Mathf.Cos(camYaw) * camDist * Mathf.Cos(camPitch);
             float cy = 1.5f + Mathf.Sin(camPitch) * camDist;
             cam.transform.position = Vector3.Lerp(cam.transform.position, new Vector3(cx, cy, cz), 0.25f);
-            cam.transform.LookAt(new Vector3(pos.x, 1.6f, pos.z));
+            cam.transform.LookAt(new Vector3(pos.x, 1.85f, pos.z));   // 看向上半身/头部，露脸更清楚
             if (Time.time < shakeUntil)
             {
                 float k = shakeAmp * (shakeUntil - Time.time);
