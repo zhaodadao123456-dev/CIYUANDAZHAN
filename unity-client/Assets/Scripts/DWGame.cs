@@ -490,7 +490,7 @@ namespace DW
             sky.SetFloat("_SunSize", 0.045f);
             RenderSettings.skybox = sky;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = Color.Lerp(theme.ground, new Color(0.6f, 0.62f, 0.68f), 0.6f);
+            RenderSettings.ambientLight = Color.Lerp(theme.ground, new Color(0.74f, 0.76f, 0.82f), 0.78f);   // 更亮更中性，角色不发灰发绿
             cam.clearFlags = CameraClearFlags.Skybox;
             cam.backgroundColor = theme.fog;
             cam.farClipPlane = 400;
@@ -507,10 +507,18 @@ namespace DW
 
             var sun = new GameObject("Sun").AddComponent<Light>();
             sun.type = LightType.Directional;
-            sun.intensity = 0.85f;
-            sun.color = new Color(1f, 0.97f, 0.9f);
+            sun.intensity = 1.05f;
+            sun.color = new Color(1f, 0.98f, 0.94f);
             sun.transform.rotation = Quaternion.Euler(52, -30, 0);
             worldObjs.Add(sun.gameObject);
+            // 柔和补光：从相机斜前方打中性光，减弱脸上硬阴影（接近素材预览的均匀打光）
+            var fill = new GameObject("Fill").AddComponent<Light>();
+            fill.type = LightType.Directional;
+            fill.intensity = 0.45f;
+            fill.color = new Color(0.85f, 0.88f, 0.96f);
+            fill.transform.rotation = Quaternion.Euler(28, 150, 0);
+            fill.shadows = LightShadows.None;
+            worldObjs.Add(fill.gameObject);
 
             // 场景摆件：优先用你买的场景模型(DWScene，如黑暗地牢)，其次 KayKit，最后方块占位
             var rng = new System.Random(theme.id.GetHashCode());
