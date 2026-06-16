@@ -83,7 +83,7 @@ namespace DW
         readonly Dictionary<string, Proj> projs = new Dictionary<string, Proj>();
 
         // 相机（默认更低角度，能看清角色的脸；可右键/拖动转视角、滚轮缩放）
-        const float CamPitch0 = 0.5f, CamDist0 = 8.5f;
+        const float CamPitch0 = 0.5f, CamDist0 = 7.5f;
         float camYaw, camPitch = CamPitch0, camDist = CamDist0;
         void ResetCamera() { camYaw = 0f; camPitch = CamPitch0; camDist = CamDist0; }
 
@@ -1039,9 +1039,20 @@ namespace DW
         protected int moveTouchId = -1;
         int lookTouchId = -1;
         protected Vector2 moveTouchStart, moveTouchVec;
+        float pinchPrev;
 
         void UpdateTouch()
         {
+            // 双指捏合缩放（贴脸近看）
+            if (Input.touchCount >= 2)
+            {
+                moveTouchVec = Vector2.zero;   // 缩放时不移动
+                var a = Input.GetTouch(0); var b = Input.GetTouch(1);
+                float d = (a.position - b.position).magnitude;
+                if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began) pinchPrev = d;
+                else { camDist = Mathf.Clamp(camDist - (d - pinchPrev) * 0.02f, 2.4f, 16f); pinchPrev = d; }
+                return;
+            }
             for (int i = 0; i < Input.touchCount; i++)
             {
                 var t = Input.GetTouch(i);
@@ -1091,7 +1102,7 @@ namespace DW
                 camYaw -= Input.GetAxis("Mouse X") * 0.03f;
                 camPitch = Mathf.Clamp(camPitch + Input.GetAxis("Mouse Y") * 0.022f, 0.32f, 1.4f);
             }
-            camDist = Mathf.Clamp(camDist - Input.GetAxis("Mouse ScrollWheel") * 6f, 5f, 16f);
+            camDist = Mathf.Clamp(camDist - Input.GetAxis("Mouse ScrollWheel") * 6f, 2.4f, 16f);   // 可贴脸近看
 
             if (meDead)
             {
