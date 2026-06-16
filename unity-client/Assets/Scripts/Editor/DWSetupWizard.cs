@@ -157,8 +157,13 @@ namespace DW.EditorTools
             var allChars = AllCharacterPrefabs();
             log.AppendLine($"扫描到角色预制体 {allChars.Count} 个\n");
 
-            string wukong = FindFolder("wukong", "悟空");
-            AnimatorController ctrl = BuildController(wukong, log);
+            // 动画源：优先用户新加的「狐狸(huli)」整套人形动作 → 应用到所有英雄；
+            // 仅当狐狸含人形(Humanoid)动作时才采用，否则回退悟空，避免非人形动作让所有英雄不会动。
+            string animFolder = FindFolder("huli", "fox", "狐狸");
+            if (animFolder != null && FolderHasHumanClip(animFolder))
+                log.AppendLine($"动画源：狐狸(huli)整套人形动作 → 应用到所有英雄  来自:{animFolder}");
+            else { if (animFolder != null) log.AppendLine("⚠ 狐狸动作非人形(Humanoid)，无法套到人形英雄，改用悟空动作"); animFolder = FindFolder("wukong", "悟空"); }
+            AnimatorController ctrl = BuildController(animFolder, log);
 
             // 分类：小丑→BOSS；骷髅/亡灵→怪物；其余人物→英雄池
             bool IsBoss(string p) => BossKeys.Any((k) => Lower(p).Contains(k));
@@ -216,7 +221,7 @@ namespace DW.EditorTools
             {
                 { "xiuxian/warrior",  new[]{ "wukong", "悟空" } },
                 { "xiuxian/healer",   new[]{ "bunny", "兔" } },          // 兔女郎 = 修仙奶妈（用户指定）
-                { "xiuxian/assassin", new[]{ "witch", "女巫" } },
+                { "xiuxian/assassin", new[]{ "huli", "fox", "狐狸" } },   // 狐狸 = 修仙刺客（用户指定）
                 { "magic/healer",     new[]{ "nun", "修女" } },
                 { "magic/warrior",    new[]{ "half_blood" } },
                 { "magic/assassin",   new[]{ "servant", "church" } },
@@ -610,6 +615,13 @@ namespace DW.EditorTools
                 foreach (var c in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GUIDToAssetPath(guid)).OfType<AnimationClip>())
                     if (!c.name.StartsWith("__preview")) list.Add(c);
             return list;
+        }
+
+        /* 文件夹内是否有人形(Humanoid)动作片段——决定能否把这套动作套到所有人形英雄上 */
+        static bool FolderHasHumanClip(string folder)
+        {
+            foreach (var c in AllClips(folder)) if (c.isHumanMotion) return true;
+            return false;
         }
 
         /* 按动作名关键词挑选状态片段（关键词按优先级排序，越靠前越优先匹配） */
