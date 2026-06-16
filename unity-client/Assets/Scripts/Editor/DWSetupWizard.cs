@@ -647,7 +647,7 @@ namespace DW.EditorTools
             var mrTex = Find("metalrough", "金属粗糙", "金属", "metallic", "_mr");
             SetTexImport(baseTex, sRGB: true, normal: false);          // 颜色贴图按 sRGB
             if (normTex != null) SetTexImport(normTex, sRGB: false, normal: true);
-            var mat = new Material(Shader.Find("Standard"));
+            var mat = new Material(Shader.Find("DW/DoubleSided") ?? Shader.Find("Standard"));   // 双面，修布料破洞
             mat.SetTexture("_MainTex", baseTex);
             if (normTex != null) { mat.EnableKeyword("_NORMALMAP"); mat.SetTexture("_BumpMap", normTex); mat.SetFloat("_BumpScale", 1f); }
             // metalrough(glTF: G=粗糙度, B=金属度) → Unity _MetallicGlossMap(R=金属, A=光滑=1-粗糙)
