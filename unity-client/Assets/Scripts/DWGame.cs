@@ -56,7 +56,7 @@ namespace DW
         float inviteUntil;
         float shakeUntil, shakeAmp;
         JObject equipData;
-        JArray invData, shopData;
+        JArray invData, shopData, potionDefs;
 
         // 实体
         class Ent
@@ -258,6 +258,7 @@ namespace DW
                     if (youObj["name"] != null) { playerName = (string)youObj["name"]; PlayerPrefs.SetString("dw_name", playerName); }
                     recoverCode = ""; PlayerPrefs.Save();
                     if (m["shop"] != null && m["shop"].Type == JTokenType.Array) shopData = (JArray)m["shop"];
+                    if (m["potionDefs"] != null && m["potionDefs"].Type == JTokenType.Array) potionDefs = (JArray)m["potionDefs"];
                     if (m["equip"] != null) equipData = (JObject)m["equip"];
                     if (m["inv"] != null) invData = (JArray)m["inv"];
                     if (m["dimSkill"] != null)
@@ -1596,11 +1597,16 @@ namespace DW
 
         void UpdateCamera()
         {
-            float cx = pos.x + Mathf.Sin(camYaw) * camDist * Mathf.Cos(camPitch);
-            float cz = pos.z + Mathf.Cos(camYaw) * camDist * Mathf.Cos(camPitch);
-            float cy = 1.5f + Mathf.Sin(camPitch) * camDist;
+            // 俯仰越低(越平视)→相机更低、更退、看向身体中段，露出英雄全身；俯仰越高→近距看脸
+            float t = Mathf.InverseLerp(0.32f, 0.9f, camPitch);            // 0=最低平视, 1=俯视
+            float dist = camDist + (1f - t) * 2.4f;                        // 低视角多退 2.4 米
+            float baseY = Mathf.Lerp(0.65f, 1.5f, t);                      // 低视角相机更低
+            float lookY = Mathf.Lerp(1.0f, 1.85f, t);                      // 低视角看身体中段，高视角看脸
+            float cx = pos.x + Mathf.Sin(camYaw) * dist * Mathf.Cos(camPitch);
+            float cz = pos.z + Mathf.Cos(camYaw) * dist * Mathf.Cos(camPitch);
+            float cy = baseY + Mathf.Sin(camPitch) * dist;
             cam.transform.position = Vector3.Lerp(cam.transform.position, new Vector3(cx, cy, cz), 0.25f);
-            cam.transform.LookAt(new Vector3(pos.x, 1.85f, pos.z));   // 看向上半身/头部，露脸更清楚
+            cam.transform.LookAt(new Vector3(pos.x, lookY, pos.z));
             if (Time.time < shakeUntil)
             {
                 float k = shakeAmp * (shakeUntil - Time.time);

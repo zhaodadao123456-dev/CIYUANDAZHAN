@@ -1524,6 +1524,24 @@ namespace DW
         {
             int gold = you != null ? (int?)you["gold"] ?? 0 : 0;
             var hr = AddRow(30); RowLabel(hr.transform, $"<b>商店</b>（{gold}金）");
+            // 药剂区（H 键使用 / 复活药被动）
+            if (potionDefs != null)
+            {
+                var ph = AddRow(28); RowLabel(ph.transform, "<b>药剂</b>（H 键服用）");
+                var have = you != null ? you["potions"] as JObject : null;
+                foreach (JObject pd in potionDefs)
+                {
+                    var pid = (string)pd["id"];
+                    int cnt = (have != null && have[pid] != null) ? (int)have[pid] : 0;
+                    var r = AddRow(48);
+                    RowLabel(r.transform, $"{pd["name"]} <color=#8fd>×{cnt}</color>\n<size=13><color=#9aa>{pd["desc"]}</color></size>");
+                    var id1 = pid;
+                    RowBtn(r.transform, $"买1·{pd["price"]}", new Color(0.18f, 0.34f, 0.22f), () => Send(new { t = "buy", id = id1, qty = 1 }));
+                    RowBtn(r.transform, "买5", new Color(0.16f, 0.3f, 0.2f), () => Send(new { t = "buy", id = id1, qty = 5 }));
+                }
+            }
+            // 装备区
+            var eh = AddRow(28); RowLabel(eh.transform, "<b>装备</b>");
             if (shopData == null) return;
             foreach (JObject it in shopData)
             {
