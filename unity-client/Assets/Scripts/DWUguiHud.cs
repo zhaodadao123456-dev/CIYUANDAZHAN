@@ -23,6 +23,7 @@ namespace DW
 
         // 覆盖层
         GameObject uWar, uBoss, uMelee, uLevelUp, uToast, uDeath;
+        GameObject emotePanel;   // 动作(表情)面板
         Text uWarTxt, uBossTxt, uMeleeTxt, uLevelUpTxt, uToastTxt, uDeathTxt, uRespawnTxt;
         Button uWarBtn, uMeleeBtn, uRespawnBtn;
         Text uWarBtnTxt, uMeleeBtnTxt;
@@ -387,6 +388,31 @@ namespace DW
                 () => ResetCamera());
             GlassPanel((Image)resetCam.targetGraphic, Pal.Accent);
             MkTxt("t", resetCam.transform, "视角", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
+            // ---- 动作(表情)键（视角键上方）+ 弹出的动作列表 ----
+            var emoteBtn = MkBtn("EmoteBtn", root, Pal.AccentDp,
+                new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-74, 346), new Vector2(84, 84),
+                () => { if (emotePanel != null) emotePanel.SetActive(!emotePanel.activeSelf); });
+            GlassPanel((Image)emoteBtn.targetGraphic, Pal.Accent);
+            MkTxt("t", emoteBtn.transform, "动作", 26, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
+            var emotes = new[] { ("Skill2", "跳舞"), ("Attack1", "攻击"), ("Attack2", "重击"), ("Skill", "施法"), ("Dodge", "翻滚"), ("Death", "倒地"), ("Idle", "待机") };
+            float ebH = 60, egap = 8;
+            float epH = emotes.Length * ebH + (emotes.Length - 1) * egap + 20;
+            var ep = MkImg("EmotePanel", root, Pal.PanelBg, new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-168, 252), new Vector2(150, epH));
+            GlassPanel(ep, Pal.Stroke);
+            emotePanel = ep.gameObject;
+            emotePanel.AddComponent<UiAppear>();
+            for (int i = 0; i < emotes.Length; i++)
+            {
+                var em = emotes[i];
+                float y = -(10 + i * (ebH + egap));
+                var b = MkBtn("em" + i, ep.transform, Pal.Slate,
+                    new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-16, ebH),
+                    () => { if (meDrv != null) meDrv.PlayOnce(em.Item1, 3f); });
+                MkTxt("t", b.transform, em.Item2, 24, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            }
+            emotePanel.SetActive(false);
 
             BuildOverlays(root);
             BuildParty(root);
