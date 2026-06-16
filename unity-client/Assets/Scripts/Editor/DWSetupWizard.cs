@@ -249,6 +249,9 @@ namespace DW.EditorTools
                 }
             }
 
+            // 狐狸 FBX 不带贴图（贴图是松散 PNG）→ 建 Standard 材质贴上去，修白模
+            ApplyHuliMaterial(log);
+
             // 英雄池 DWHeroes/h_XX（运行时按「次元×职业」组合取用的兜底，用上全部人物 + 未来未知购买包）
             RebuildFolder(HeroDir);
             int hi = 0;
@@ -536,6 +539,7 @@ namespace DW.EditorTools
             return AssetDatabase.FindAssets("t:GameObject")
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where((p) => p.StartsWith("Assets/") && !p.StartsWith("Assets/Resources/"))
+                .Where((p) => !Lower(p).EndsWith(".blend"))   // 排除 .blend 源文件（会与 .fbx 重复导入、且常含多个网格→“两只”）
                 .Where((p) => !BadPrefabVariant(p))   // 排除 URP/HDRP（内置管线会变粉）与残缺部件
                 .Where((p) => {
                     var go = AssetDatabase.LoadAssetAtPath<GameObject>(p);
@@ -620,6 +624,51 @@ namespace DW.EditorTools
         {
             foreach (var c in AllClips(folder)) if (c.isHumanMotion) return true;
             return false;
+        }
+
+        /* 狐狸 FBX 不带贴图（贴图是松散 PNG）→ 建 Standard 材质贴上 basecolor/normal/metalrough，
+         * 应用到修仙刺客英雄预制体，修复白模。 */
+        static void ApplyHuliMaterial(StringBuilder log)
+        {
+            string folder = FindFolder("huli", "fox", "狐狸");
+            if (folder == null) return;
+            Texture2D Find(params string[] keys)
+            {
+                foreach (var g in AssetDatabase.FindAssets("t:Texture2D", new[] { folder }))
+                {
+                    var p = AssetDatabase.GUIDToAssetPath(g);
+                    foreach (var k in keys) if (Lower(p).Contains(k)) return AssetDatabase.LoadAssetAtPath<Texture2D>(p);
+                }
+                return null;
+            }
+            var baseTex = Find("basecolor", "albedo", "diffuse", "color");
+            if (baseTex == null) { log.AppendLine("⚠ 狐狸未找到 basecolor 贴图，仍为白模"); return; }
+            var normTex = Find("normal");
+            var mrTex = Find("metalrough", "metallic", "_mr");
+            if (normTex != null)
+            {
+                var ni = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(normTex)) as TextureImporter;
+                if (ni != null && ni.textureType != TextureImporterType.NormalMap) { ni.textureType = TextureImporterType.NormalMap; ni.SaveAndReimport(); }
+            }
+            var mat = new Material(Shader.Find("Standard"));
+            mat.SetTexture("_MainTex", baseTex);
+            if (normTex != null) { mat.EnableKeyword("_NORMALMAP"); mat.SetTexture("_BumpMap", normTex); }
+            if (mrTex != null) { mat.EnableKeyword("_METALLICGLOSSMAP"); mat.SetTexture("_MetallicGlossMap", mrTex); }
+            var matPath = ResDir + "/mat_huli.mat";
+            AssetDatabase.DeleteAsset(matPath);
+            AssetDatabase.CreateAsset(mat, matPath);
+            var prefabPath = $"{ResDir}/hero_xiuxian_assassin.prefab";
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) == null) { log.AppendLine("⚠ 未找到 hero_xiuxian_assassin，狐狸材质未应用"); return; }
+            var root = PrefabUtility.LoadPrefabContents(prefabPath);
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var arr = new Material[r.sharedMaterials.Length == 0 ? 1 : r.sharedMaterials.Length];
+                for (int i = 0; i < arr.Length; i++) arr[i] = mat;
+                r.sharedMaterials = arr;
+            }
+            PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+            PrefabUtility.UnloadPrefabContents(root);
+            log.AppendLine($"✓ 狐狸材质已贴：albedo={baseTex.name}{(normTex != null ? " +法线" : "")}{(mrTex != null ? " +金属粗糙" : "")}");
         }
 
         /* 把文件夹内所有模型/动作 FBX 的导入骨骼改为 Humanoid 并重导（让狐狸动作可套到人形英雄） */
