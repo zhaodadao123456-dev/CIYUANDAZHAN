@@ -157,14 +157,11 @@ namespace DW.EditorTools
             var allChars = AllCharacterPrefabs();
             log.AppendLine($"扫描到角色预制体 {allChars.Count} 个\n");
 
-            // 动画源：优先用户新加的「狐狸(huli)」整套人形动作 → 应用到所有英雄；
-            // 仅当狐狸含人形(Humanoid)动作时才采用，否则回退悟空，避免非人形动作让所有英雄不会动。
-            string animFolder = FindFolder("huli", "fox", "狐狸");
-            if (animFolder != null) ForceFolderHumanoid(animFolder, log);   // 自动把狐狸模型/动作转 Humanoid
-            if (animFolder != null && FolderHasHumanClip(animFolder))
-                log.AppendLine($"动画源：狐狸(huli)整套人形动作 → 应用到所有英雄  来自:{animFolder}");
-            else { if (animFolder != null) log.AppendLine("⚠ 狐狸动作非人形(Humanoid)，无法套到人形英雄，改用悟空动作"); animFolder = FindFolder("wukong", "悟空"); }
-            AnimatorController ctrl = BuildController(animFolder, log);
+            // 动画源：所有英雄统一用悟空整套人形动作（攻击/走路/奔跑等，按用户要求改回以前的）。
+            // 狐狸文件夹仍转为 Humanoid，以便狐狸作为修仙刺客能套用悟空的人形动作。
+            var huliFolder = FindFolder("huli", "fox", "狐狸");
+            if (huliFolder != null) ForceFolderHumanoid(huliFolder, log);
+            AnimatorController ctrl = BuildController(FindFolder("wukong", "悟空"), log);
 
             // 分类：小丑→BOSS；骷髅/亡灵→怪物；其余人物→英雄池
             bool IsBoss(string p) => BossKeys.Any((k) => Lower(p).Contains(k));
