@@ -353,8 +353,12 @@ namespace DW
                     {
                         e.tRy = Mathf.Atan2((float)m["dx"], (float)m["dz"]);
                         var drv = e.go != null ? e.go.GetComponent<DWAnimDriver>() : null;
-                        if (drv != null && !drv.PlayOnce(SkillAnim((string)m["k"]), 0.6f)) drv.PlayOnce("Attack1", 0.6f);
+                        string kKey = (string)m["k"];
+                        if (drv != null && !drv.PlayOnce(SkillAnim(kKey), 0.6f)) drv.PlayOnce("Attack1", 0.6f);
                         var kk = (string)m["kk"];
+                        // 其他玩家的技能也显示特效（之前只有动画+音效，看不到法术）
+                        Vector3 cdir = new Vector3((float)m["dx"], 0, (float)m["dz"]);
+                        CastVfx(kKey, kk, e.target, cdir, e.dim ?? myDim, 0f, false);
                         DWAudio.SfxAt(kk == "proj" ? "laser" : (kk == "aoe" ? "explosion" : "swing"), e.target, pos, 0.6f);
                     }
                     break;
@@ -418,7 +422,27 @@ namespace DW
                 case "dimfx":
                 {
                     var kind = (string)m["kind"];
-                    Vector3 at = m["x"] != null ? new Vector3((float)m["x"], 0.2f, (float)m["z"]) : EntPos((string)m["id"]);
+                    var fid = (string)m["id"];
+                    Vector3 at = m["x"] != null ? new Vector3((float)m["x"], 0.2f, (float)m["z"]) : EntPos(fid);
+                    // 次元专属技能：在施法者身上挂 60 秒的 3D 表现 + 一次施放爆发
+                    if (kind == "treasure" || kind == "vehicle" || kind == "amp" || kind == "angeldemon")
+                    {
+                        var go = EntGo(fid);
+                        Color dc = Data.Dim(EntDim(fid)).accent;
+                        if (go != null)
+                        {
+                            var aura = go.GetComponent<DimAura>() ?? go.AddComponent<DimAura>();
+                            float mul = 1.3f;
+                            if (kind == "amp" && fid == myId && you != null && you["amp"] != null && (float)you["amp"] > 1f) mul = (float)you["amp"];
+                            aura.Trigger(kind, dc, 60f, mul);
+                        }
+                        SpawnShockwave(at, kind == "vehicle" ? 3.6f : 3f, dc, "circle");
+                        SpawnFlash(at + Vector3.up * 1.3f, dc, 4.5f);
+                        SpawnSparks(at + Vector3.up * 1.0f, Color.Lerp(dc, Color.white, 0.4f), 30, 7.5f);
+                        DWAudio.SfxAt(kind == "vehicle" ? "warhorn" : "levelup", at, pos, 0.85f);
+                        if (fid == myId) Shake(0.32f, 0.36f);
+                        break;
+                    }
                     Color c = kind == "shield" ? new Color(0f, 0.66f, 1f)
                         : kind == "heal" ? new Color(0.18f, 0.8f, 0.44f)
                         : kind == "blink" ? new Color(0.91f, 0.27f, 0.58f)
@@ -1197,6 +1221,18 @@ namespace DW
             if (players.TryGetValue(id, out e) && e.go != null) return e.go.transform.position;
             return pos;
         }
+        GameObject EntGo(string id)
+        {
+            if (id == myId) return meGo;
+            Ent e;
+            return (players.TryGetValue(id, out e)) ? e.go : null;
+        }
+        string EntDim(string id)
+        {
+            if (id == myId) return myDim;
+            Ent e;
+            return (players.TryGetValue(id, out e)) ? e.dim : myDim;
+        }
 
         Vector3 MoveVec()
         {
@@ -1246,7 +1282,7 @@ namespace DW
             float ready;
             readyAt.TryGetValue(key, out ready);
             if (Time.time < ready) return;
-            if (def.minLvl > 0 && MyLevel < def.minLvl) { Toast($"【{def.name}】需要 Lv.{def.minLvl} 解锁"); return; }
+            if (def.minLvl > 0 && MyLevel < def.minLvl) { Toast($"【{Data.SkillName(myDim, myCls, key)}】需要 Lv.{def.minLvl} 解锁"); return; }
             readyAt[key] = Time.time + def.cdMs / 1000f;
 
             // 自动瞄准最近敌人
@@ -1295,43 +1331,59 @@ namespace DW
             switch (key) { case "basic": return "Attack1"; case "q": return "Attack2"; case "e": return "Skill"; default: return "Skill2"; }
         }
 
-        /* 每个技能独立的施放特效（颜色/大小/形态不同） */
+        /* 自己施放：特效按「技能实际范围」缩放，R 技能为大招级表现（更大/更亮/带震屏） */
         void SkillCastFx(string key, string kind, Vector3 at, Vector3 dir)
         {
-            // 每个「次元+职业+技能」固定散列 → 从特效池里各取一个不同特效；同时给程序化兜底略调色
-            int seed = Mathf.Abs((myDim + "_" + myCls + "_" + key).GetHashCode());
-            Color c = Color.Lerp(Data.Dim(myDim).accent, Color.HSVToRGB((seed % 100) / 100f, 0.7f, 1f), 0.22f);
+            var def = Data.Cls(myCls).Skill(key);
+            CastVfx(key, kind, at, dir, myDim, def.radius, true);
+        }
+
+        // 统一施放特效：自己和其他玩家都走这里，保证「技能特效 = 技能类型 + 范围 + 大招感」一致
+        void CastVfx(string key, string kind, Vector3 at, Vector3 dir, string dim, float radius, bool isMe)
+        {
+            bool ult = key == "r";   // R = 大招：更大范围特效 + 震屏
+            // 每个「次元+技能(+自身职业)」固定散列 → 特效池里取到稳定且互不相同的特效
+            int seed = Mathf.Abs((dim + "_" + key + (isMe ? "_" + myCls : "")).GetHashCode());
+            Color c = Color.Lerp(Data.Dim(dim).accent, Color.HSVToRGB((seed % 100) / 100f, 0.7f, 1f), 0.22f);
             Color c2 = Color.Lerp(c, Color.white, 0.35f);
             Quaternion face = dir.sqrMagnitude > 0.001f ? Quaternion.LookRotation(dir) : Quaternion.identity;
             Vector3 p = at + dir * 1.3f + Vector3.up * 1.0f;
+            Vector3 ground = at + Vector3.up * 0.1f;
             if (kind == "aoe")
             {
-                if (SpawnPoolFx("fxp_aoe", myDim, seed, at + Vector3.up * 0.1f, Quaternion.identity, key == "r" ? 1.3f : 1f, 3f) == null
-                    && SpawnFx("aoe", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
-                { SpawnShockwave(at + Vector3.up * 0.1f, key == "r" ? 5.5f : 4f, c, "x", null); SpawnSparks(p, c2, 26, 7f); }
+                float ringR = radius > 0.1f ? radius : (ult ? 5.5f : 4f);           // 用技能真实半径，描述写多少米就铺多大
+                float fxScale = Mathf.Clamp(ringR / 4.5f, 0.7f, 1.7f) * (ult ? 1.35f : 1f);
+                if (SpawnPoolFx("fxp_aoe", dim, seed, ground, Quaternion.identity, fxScale, 3f) == null
+                    && SpawnFx("aoe", ground, Quaternion.identity, fxScale, 3f, dim: dim) == null)
+                { SpawnShockwave(ground, ringR, c, "x", null); SpawnSparks(p, c2, ult ? 40 : 26, ult ? 9f : 7f); }
+                if (ult) { SpawnFlash(ground + Vector3.up * 0.5f, c, ringR); if (isMe) Shake(0.30f, 0.34f); }
             }
             else if (kind == "aoeheal" || kind == "heal")
             {
-                if (SpawnPoolFx("fxp_buff", null, seed, at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f) == null
-                    && SpawnFx("heal", at + Vector3.up * 0.1f, Quaternion.identity, 1f, 3f, dim: myDim) == null)
-                    SpawnShockwave(at + Vector3.up * 0.1f, 2.8f, Color.Lerp(c, new Color(0.3f, 1f, 0.5f), 0.6f), "x", null);
+                float ringR = radius > 0.1f ? radius : 4f;
+                if (SpawnPoolFx("fxp_buff", null, seed, ground, Quaternion.identity, Mathf.Clamp(ringR / 4f, 0.8f, 1.6f), 3f) == null
+                    && SpawnFx("heal", ground, Quaternion.identity, 1f, 3f, dim: dim) == null)
+                    SpawnShockwave(ground, Mathf.Clamp(ringR * 0.5f, 2.4f, 5f), Color.Lerp(c, new Color(0.3f, 1f, 0.5f), 0.6f), "x", null);
             }
             else if (kind == "dashmelee" || kind == "melee")
             {
                 bool dash = kind == "dashmelee";
-                if (SpawnPoolFx("fxp_slash", null, seed, p, face, dash ? 1.4f : 1.2f, 1.4f) == null
-                    && SpawnFx("slash", p, face, dash ? 1.4f : 1.2f, 1.2f, dim: myDim) == null)
+                float sc = (dash ? 1.4f : 1.2f) * (ult ? 1.3f : 1f);
+                if (SpawnPoolFx("fxp_slash", null, seed, p, face, sc, 1.4f) == null
+                    && SpawnFx("slash", p, face, sc, 1.2f, dim: dim) == null)
                 {
-                    SpawnSlash(at + Vector3.up * 0.05f, dir, c, dash ? 3.4f : 2.8f);
-                    SpawnSparks(p, c2, dash ? 26 : 22, dash ? 7.5f : 6.5f); SpawnFlash(p, c, 2f);
-                    if (dash) SpawnShockwave(at + dir * 1.4f + Vector3.up * 0.1f, 2.4f, c, "x", null);
+                    SpawnSlash(at + Vector3.up * 0.05f, dir, c, (dash ? 3.4f : 2.8f) * (ult ? 1.25f : 1f));
+                    SpawnSparks(p, c2, dash ? 26 : 22, dash ? 7.5f : 6.5f); SpawnFlash(p, c, ult ? 2.8f : 2f);
+                    if (dash) SpawnShockwave(at + dir * 1.4f + Vector3.up * 0.1f, ult ? 3.2f : 2.4f, c, "x", null);
                 }
+                if (ult && isMe) Shake(0.24f, 0.3f);
             }
             else   // proj：身前施法闪光（按次元元素）+ 火花
             {
-                if (SpawnPoolFx("fxp_cast", myDim, seed, p, face, 1f, 1.4f) == null
-                    && SpawnFx("cast", p, face, 1f, 1.5f, dim: myDim) == null)
-                { SpawnSparks(p, c2, 18, 6f); SpawnFlash(p, c, 1.8f); }
+                float sc = ult ? 1.4f : 1f;
+                if (SpawnPoolFx("fxp_cast", dim, seed, p, face, sc, 1.4f) == null
+                    && SpawnFx("cast", p, face, sc, 1.5f, dim: dim) == null)
+                { SpawnSparks(p, c2, ult ? 28 : 18, ult ? 7.5f : 6f); SpawnFlash(p, c, ult ? 2.6f : 1.8f); }
             }
         }
 
@@ -1653,6 +1705,148 @@ namespace DW
         }
     }
 
+    /* 次元专属技能的持续 3D 表现（程序化，绝不依赖素材、不会变粉）：
+     * 炼宝诀=头顶悬浮法宝；载具冲锋=脚下载具圆盘；强化针剂=放大体型+光环；召唤天使恶魔=头顶环绕天使/恶魔。 */
+    public class DimAura : MonoBehaviour
+    {
+        class Fx { public GameObject go; public float until; public string kind; }
+        readonly List<Fx> _fx = new List<Fx>();
+        Vector3 _baseScale = Vector3.one;
+        bool _scaled;
+        const float TopY = 2.7f;   // 英雄约 2.4~2.7 高，头顶法宝/光环据此摆放
+
+        static Material Glow(Color c, float emit, float alpha)
+        {
+            var m = new Material(Shader.Find("Standard"));
+            c.a = alpha; m.color = c;
+            if (alpha < 0.99f)
+            {
+                m.SetFloat("_Mode", 3);
+                m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);   // 叠加发光
+                m.SetInt("_ZWrite", 0);
+                m.EnableKeyword("_ALPHABLEND_ON");
+                m.renderQueue = 3000;
+            }
+            m.SetFloat("_Glossiness", 0.35f);
+            m.EnableKeyword("_EMISSION");
+            m.SetColor("_EmissionColor", new Color(c.r, c.g, c.b) * emit);
+            return m;
+        }
+        static GameObject Prim(PrimitiveType t, Transform parent, Vector3 lp, Vector3 ls, Material mat)
+        {
+            var g = GameObject.CreatePrimitive(t);
+            var col = g.GetComponent<Collider>(); if (col) Destroy(col);
+            g.transform.SetParent(parent, false);
+            g.transform.localPosition = lp; g.transform.localScale = ls;
+            var r = g.GetComponent<Renderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; r.receiveShadows = false;
+            return g;
+        }
+
+        public void Trigger(string kind, Color accent, float dur, float mul)
+        {
+            Remove(kind);
+            GameObject go = null;
+            if (kind == "treasure")
+            {
+                go = new GameObject("dimTreasure"); go.transform.SetParent(transform, false);
+                go.transform.localPosition = new Vector3(0, TopY + 0.45f, 0);
+                var gem = Prim(PrimitiveType.Cube, go.transform, Vector3.zero, Vector3.one * 0.42f, Glow(accent, 2.2f, 1f));
+                gem.transform.localRotation = Quaternion.Euler(35, 0, 45);
+                for (int i = 0; i < 3; i++)
+                {
+                    float a = i * 120f * Mathf.Deg2Rad;
+                    Prim(PrimitiveType.Sphere, go.transform, new Vector3(Mathf.Cos(a) * 0.55f, 0, Mathf.Sin(a) * 0.55f), Vector3.one * 0.13f, Glow(Color.Lerp(accent, Color.white, 0.5f), 2.6f, 1f));
+                }
+            }
+            else if (kind == "vehicle")
+            {
+                go = new GameObject("dimVehicle"); go.transform.SetParent(transform, false);
+                var cyan = new Color(0.18f, 0.72f, 1f);
+                var metal = new Color(0.22f, 0.25f, 0.32f);
+                Prim(PrimitiveType.Cylinder, go.transform, new Vector3(0, 0.04f, 0), new Vector3(2.5f, 0.03f, 2.5f), Glow(cyan, 0.9f, 1f));      // 悬浮光盘
+                Prim(PrimitiveType.Cylinder, go.transform, new Vector3(0, 0.16f, 0), new Vector3(2.0f, 0.12f, 2.0f), Glow(metal, 0f, 1f));      // 车体平台
+                var nose = Prim(PrimitiveType.Cube, go.transform, new Vector3(0, 0.34f, 1.05f), new Vector3(0.95f, 0.35f, 1.2f), Glow(metal, 0.05f, 1f));   // 车头楔形
+                nose.transform.localRotation = Quaternion.Euler(20, 0, 0);
+                Prim(PrimitiveType.Cube, go.transform, new Vector3(0.85f, 0.32f, -0.1f), new Vector3(0.22f, 0.32f, 1.8f), Glow(cyan, 0.5f, 1f));  // 两侧护栏
+                Prim(PrimitiveType.Cube, go.transform, new Vector3(-0.85f, 0.32f, -0.1f), new Vector3(0.22f, 0.32f, 1.8f), Glow(cyan, 0.5f, 1f));
+                Prim(PrimitiveType.Sphere, go.transform, new Vector3(0.46f, 0.3f, -1.2f), Vector3.one * 0.44f, Glow(new Color(0.4f, 0.92f, 1f), 1.3f, 1f));   // 尾部双推进器
+                Prim(PrimitiveType.Sphere, go.transform, new Vector3(-0.46f, 0.3f, -1.2f), Vector3.one * 0.44f, Glow(new Color(0.4f, 0.92f, 1f), 1.3f, 1f));
+            }
+            else if (kind == "amp")
+            {
+                if (!_scaled) { _baseScale = transform.localScale; _scaled = true; }
+                transform.localScale = _baseScale * Mathf.Clamp(mul, 1f, 2f);
+                go = new GameObject("dimAmpAura"); go.transform.SetParent(transform, false);
+                go.transform.localPosition = new Vector3(0, TopY * 0.5f, 0);
+                Prim(PrimitiveType.Sphere, go.transform, Vector3.zero, Vector3.one * 2.0f, Glow(new Color(1f, 0.25f, 0.78f), 0.7f, 0.12f));
+            }
+            else if (kind == "angeldemon")
+            {
+                go = new GameObject("dimAngelDemon"); go.transform.SetParent(transform, false);
+                go.transform.localPosition = new Vector3(0, TopY * 0.85f, 0);
+                BuildWinged(go.transform, new Vector3(1.55f, 0.7f, 0), new Color(1f, 0.96f, 0.7f), true);    // 天使（带光环）
+                BuildWinged(go.transform, new Vector3(-1.55f, 0.15f, 0), new Color(0.95f, 0.13f, 0.18f), false); // 恶魔（带角）
+            }
+            if (go != null) _fx.Add(new Fx { go = go, until = Time.time + dur, kind = kind });
+        }
+
+        static void BuildWinged(Transform parent, Vector3 lp, Color c, bool angel)
+        {
+            var body = Prim(PrimitiveType.Sphere, parent, lp, Vector3.one * 0.64f, Glow(c, 2.0f, 1f));
+            var w1 = Prim(PrimitiveType.Quad, body.transform, new Vector3(0.62f, 0.15f, 0), new Vector3(1.4f, 0.75f, 1f), Glow(c, 1.4f, 0.85f));
+            w1.transform.localRotation = Quaternion.Euler(0, 42, 24);
+            var w2 = Prim(PrimitiveType.Quad, body.transform, new Vector3(-0.62f, 0.15f, 0), new Vector3(1.4f, 0.75f, 1f), Glow(c, 1.4f, 0.85f));
+            w2.transform.localRotation = Quaternion.Euler(0, -42, -24);
+            if (angel)   // 头顶光环
+                Prim(PrimitiveType.Cylinder, body.transform, new Vector3(0, 0.62f, 0), new Vector3(0.55f, 0.02f, 0.55f), Glow(new Color(1f, 0.95f, 0.55f), 2.5f, 1f));
+            else
+            {            // 双角
+                var h1 = Prim(PrimitiveType.Cube, body.transform, new Vector3(0.22f, 0.55f, 0), new Vector3(0.1f, 0.38f, 0.1f), Glow(c, 1.6f, 1f));
+                h1.transform.localRotation = Quaternion.Euler(0, 0, 22);
+                var h2 = Prim(PrimitiveType.Cube, body.transform, new Vector3(-0.22f, 0.55f, 0), new Vector3(0.1f, 0.38f, 0.1f), Glow(c, 1.6f, 1f));
+                h2.transform.localRotation = Quaternion.Euler(0, 0, -22);
+            }
+        }
+
+        public void ClearAll() { Remove("treasure"); Remove("vehicle"); Remove("amp"); Remove("angeldemon"); }
+        void Remove(string kind)
+        {
+            for (int i = _fx.Count - 1; i >= 0; i--)
+                if (_fx[i].kind == kind)
+                {
+                    if (_fx[i].go) Destroy(_fx[i].go);
+                    _fx.RemoveAt(i);
+                    if (kind == "amp" && _scaled) { transform.localScale = _baseScale; _scaled = false; }
+                }
+        }
+
+        void Update()
+        {
+            float t = Time.unscaledTime;
+            for (int i = _fx.Count - 1; i >= 0; i--)
+            {
+                var f = _fx[i];
+                if (Time.time > f.until || f.go == null)
+                {
+                    if (f.go) Destroy(f.go);
+                    if (f.kind == "amp" && _scaled) { transform.localScale = _baseScale; _scaled = false; }
+                    _fx.RemoveAt(i);
+                    continue;
+                }
+                switch (f.kind)
+                {
+                    case "treasure": f.go.transform.localRotation = Quaternion.Euler(0, t * 60f, 0); f.go.transform.localPosition = new Vector3(0, TopY + 0.45f + Mathf.Sin(t * 2f) * 0.12f, 0); break;
+                    // 载具不自转（跟随角色朝向，车头朝前）
+                    case "angeldemon": f.go.transform.localRotation = Quaternion.Euler(0, t * 55f, 0); break;
+                    case "amp": f.go.transform.localScale = Vector3.one * (1f + Mathf.Sin(t * 3f) * 0.06f); break;
+                }
+            }
+        }
+    }
+
     /* 骨骼动画驱动：状态不存在时静默跳过（保证任何模型都不报错） */
     public class DWAnimDriver : MonoBehaviour
     {
@@ -1661,7 +1855,12 @@ namespace DW
         string applied = "";
         float oneUntil;
 
-        void Awake() { an = GetComponentInChildren<Animator>(); }
+        void Awake()
+        {
+            an = GetComponentInChildren<Animator>();
+            // 关键：关掉根运动。动作包(Mixamo)动作自带位移，否则会和服务器下发的位置打架→人前后左右乱闪现，预览里也会漂出画面
+            if (an != null) an.applyRootMotion = false;
+        }
 
         bool Has(string s) => an != null && an.runtimeAnimatorController != null
             && an.HasState(0, Animator.StringToHash(s));

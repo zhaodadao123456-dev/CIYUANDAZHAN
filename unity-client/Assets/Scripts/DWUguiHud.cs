@@ -49,9 +49,39 @@ namespace DW
         InputField uName;
         Button[] uDimBtns, uClsBtns;
         Text[] uClsTxt;
+        Image[] uDimRing, uClsRing, uDimIcon, uClsIcon;   // 选中高亮描边 + 图标
         Button uJoinBtn;
         Text uHunterHint, uConnTxt, uMenuToast;
         Image menuGlow;   // 登录背景光晕（随所选次元变色）
+        Image uMenuBg;    // 全屏次元背景图（随所选次元切换）
+        int _lastMenuDim = -1;   // 仅在次元变化时刷新背景/职业头像（避免每帧重建）
+        // 登录界面左侧英雄 3D 预览（拖动旋转 / 滚轮·双指缩放）
+        RawImage uHeroPreview;
+        RenderTexture _heroRT;
+        Camera _heroCam;
+        GameObject _heroRig, _heroModel;
+        Renderer _heroDisc;   // 脚下发光法阵圆盘
+        DWHeroPreviewInput _heroInput;
+        int _heroSig = -1;
+        readonly Dictionary<string, Sprite> _loginSprites = new Dictionary<string, Sprite>();
+        Sprite LoginSprite(string name)
+        {
+            Sprite s;
+            if (_loginSprites.TryGetValue(name, out s)) return s;
+            var tex = Resources.Load<Texture2D>("DWLogin/" + name);
+            s = tex != null ? Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f) : null;
+            _loginSprites[name] = s;
+            return s;
+        }
+        // 各次元 5 职业的风格化称号（与 DWLogin/cls_{dim}_{i} 头像顺序一致；机制仍是 warrior/assassin/ranger/tank/healer 按位）
+        static readonly Dictionary<string, string[]> LoginClsNames = new Dictionary<string, string[]>
+        {
+            { "tech",    new[] { "光刃武士", "量子刺客", "磁轨炮手", "重装机甲", "纳米医师" } },
+            { "xiuxian", new[] { "剑修",     "符箓师",   "炼丹师",   "御兽师",   "阵法师" } },
+            { "cyber",   new[] { "义体武士", "黑客",     "霓虹枪手", "无人机操控", "街头医生" } },
+            { "magic",   new[] { "圣骑士",   "元素法师", "暗影刺客", "精灵游侠", "神圣祭司" } },
+            { "hunter",  new[] { "荒野猎手", "陷阱大师", "兽语者",   "狙击游侠", "药剂猎医" } },
+        };
 
         class USkill
         {
@@ -600,7 +630,8 @@ namespace DW
                     var sk = def.Skill(us.key);
                     bool locked = sk.minLvl > 0 && MyLevel < sk.minLvl;
                     SetSkillIcon(us, "sk_" + myCls + "_" + us.key, sk.kind, KindColor(sk.kind), locked);
-                    us.nameText.text = locked ? sk.name + "(锁)" : sk.name;
+                    string snm = Data.SkillName(myDim, myCls, us.key);
+                    us.nameText.text = locked ? snm + "(锁)" : snm;
                     us.lvText.text = "Lv" + MySkLvl(us.key);
                     float ready; readyAt.TryGetValue(us.key, out ready);
                     SetCd(us, Mathf.Max(0, ready - Time.time), Mathf.Max(0.1f, sk.cdMs / 1000f));
@@ -1220,77 +1251,102 @@ namespace DW
             scaler.matchWidthOrHeight = 0.5f;
             go.AddComponent<GraphicRaycaster>();
             var root = go.transform;
-            MkImg("dim", root, new Color(0.035f, 0.045f, 0.10f, 0.985f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            // 顶部彩色光晕（渐变），随所选次元换色，让登录界面有空气感与动感
-            menuGlow = MkImg("glow", root, new Color(0.2f, 0.45f, 0.9f, 0.22f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            // 全屏次元背景图（随所选次元切换；铺满屏幕）
+            uMenuBg = MkImg("bg", root, Color.white, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            uMenuBg.type = Image.Type.Simple; uMenuBg.preserveAspect = false; uMenuBg.raycastTarget = false;
+            // 背景压暗，让右侧面板更聚焦
+            var scrim = MkImg("scrim", root, new Color(0.02f, 0.03f, 0.07f, 0.28f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            scrim.raycastTarget = false;
+            // 顶部彩色光晕（渐变），随所选次元换色
+            menuGlow = MkImg("glow", root, new Color(0.2f, 0.45f, 0.9f, 0.18f), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             menuGlow.sprite = GradientSprite(); menuGlow.type = Image.Type.Simple; menuGlow.raycastTarget = false;
             uMenuToast = MkTxt("toast", root, "", 22, new Color(1f, 0.85f, 0.5f), TextAnchor.LowerCenter,
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 60), new Vector2(960, 40));
 
-            // ---- 表单 ----
-            var panel = MkImg("Form", root, Pal.PanelBg,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(760, 880));
+            BuildHeroPreview(root);   // 左侧英雄 3D 预览（可旋转/缩放）
+
+            // ---- 右侧玻璃表单面板（靠右居中，仿参考图）----
+            float pw = 820, ph = 820;
+            var panel = MkImg("Form", root, Pal.Glass,
+                new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-40, 0), new Vector2(pw, ph));
             GlassPanel(panel, Pal.Stroke);
             menuForm = panel.gameObject;
             menuForm.AddComponent<UiAppear>();
             var pt = panel.transform;
-            float pw = 760;
+            float inner = pw - 92, padL = 46;
             Text Label(string s, float yy) => MkTxt("l", pt, s, 22, Pal.TextDim, TextAnchor.UpperLeft,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, yy), new Vector2(-56, 30));
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(padL, yy), new Vector2(-92, 30));
 
-            var title = MkTxt("title", pt, "次元大战", 54, Pal.Gold, TextAnchor.UpperCenter,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -26), new Vector2(0, 68));
+            var title = MkTxt("title", pt, "次元大战", 64, Pal.Gold, TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -30), new Vector2(0, 82));
+            title.fontStyle = FontStyle.Bold;
             title.gameObject.AddComponent<UiPulse>();   // 标题轻轻呼吸
-            MkTxt("sub", pt, "五大次元 · 实时混战 · 选择你的阵营降临", 18, Pal.TextDim, TextAnchor.UpperCenter,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -96), new Vector2(0, 24));
-            float y = -134;
-            Label("降临者之名", y); y -= 34;
-            uName = MkInput(pt, playerName, 12, y, v => playerName = v); y -= 70;
+            AddGlow(title.transform, new Color(1f, 0.8f, 0.3f, 0.5f), 10);
 
-            Label("选择次元", y); y -= 34;
+            float y = -140;
+            uName = MkInput(pt, playerName, 12, y, v => playerName = v); y -= 84;
+
+            Label("选择次元", y); y -= 38;
             uDimBtns = new Button[Data.Dims.Length];
-            float dw = (pw - 48 - (Data.Dims.Length - 1) * 8) / Data.Dims.Length;
+            uDimIcon = new Image[Data.Dims.Length];
+            uDimRing = new Image[Data.Dims.Length];
+            float dgap = 12;
+            float dw = (inner - (Data.Dims.Length - 1) * dgap) / Data.Dims.Length;
             for (int i = 0; i < Data.Dims.Length; i++)
             {
                 int idx = i;
-                float xc = -pw / 2 + 24 + dw / 2 + i * (dw + 8);
-                uDimBtns[i] = MkBtn("dim" + i, pt, Pal.Slate,
-                    new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(dw, 54),
+                float xc = padL + dw / 2 + i * (dw + dgap);
+                var b = MkBtn("dim" + i, pt, new Color(0.10f, 0.13f, 0.24f, 0.9f),
+                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(dw, dw),
                     () => dimIdx = idx);
-                MkTxt("t", uDimBtns[i].transform, Data.Dims[i].name.Replace("世界", ""), 19, Color.white, TextAnchor.MiddleCenter,
-                    Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(0, 4), Vector2.zero);
-                // 每个次元自带身份色条 —— 不同次元不同风格，一眼可辨
-                var bar = MkImg("dimc", uDimBtns[i].transform, Data.Dims[i].accent,
-                    new Vector2(0.18f, 0), new Vector2(0.82f, 0), new Vector2(0.5f, 0), new Vector2(0, 7), new Vector2(0, 5));
-                Round(bar); bar.raycastTarget = false;
+                uDimBtns[i] = b;
+                var ic = MkImg("ic", b.transform, Color.white, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-20, -20));
+                ic.sprite = LoginSprite("dim_" + Data.Dims[i].id); ic.preserveAspect = true; ic.raycastTarget = false;
+                uDimIcon[i] = ic;
+                var ring = MkImg("ring", b.transform, Pal.Gold, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                ring.sprite = RoundStrokeSprite(); ring.type = Image.Type.Sliced; ring.raycastTarget = false; uDimRing[i] = ring;
+                var nt = MkTxt("t", b.transform, Data.Dims[i].name.Replace("世界", ""), 16, Color.white, TextAnchor.LowerCenter,
+                    new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 5), new Vector2(0, 22));
+                nt.raycastTarget = false;
             }
-            y -= 62;
-            uHunterHint = MkTxt("hh", pt, "", 18, new Color(1f, 0.82f, 0.4f), TextAnchor.UpperLeft,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-56, 26)); y -= 30;
+            y -= dw + 6;
+            uHunterHint = MkTxt("hh", pt, "", 17, new Color(1f, 0.82f, 0.4f), TextAnchor.UpperLeft,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(padL, y), new Vector2(-92, 24)); y -= 30;
 
-            Label("选择职业", y); y -= 34;
+            Label("选择职业", y); y -= 38;
             uClsBtns = new Button[Data.Classes.Length];
             uClsTxt = new Text[Data.Classes.Length];
-            float cw = (pw - 48 - (Data.Classes.Length - 1) * 8) / Data.Classes.Length;
+            uClsIcon = new Image[Data.Classes.Length];
+            uClsRing = new Image[Data.Classes.Length];
+            float cgap = 12;
+            float cw = (inner - (Data.Classes.Length - 1) * cgap) / Data.Classes.Length;
             for (int i = 0; i < Data.Classes.Length; i++)
             {
                 int idx = i;
-                float xc = -pw / 2 + 24 + cw / 2 + i * (cw + 8);
-                uClsBtns[i] = MkBtn("cls" + i, pt, Pal.Slate,
-                    new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(cw, 74),
+                float xc = padL + cw / 2 + i * (cw + cgap);
+                var b = MkBtn("cls" + i, pt, new Color(0.10f, 0.13f, 0.24f, 0.9f),
+                    new Vector2(0, 1), new Vector2(0, 1), new Vector2(0.5f, 1), new Vector2(xc, y), new Vector2(cw, cw + 26),
                     () => clsIdx = idx);
-                uClsTxt[i] = MkTxt("t", uClsBtns[i].transform, "", 17, Color.white, TextAnchor.MiddleCenter,
-                    Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                uClsBtns[i] = b;
+                var ic = MkImg("ic", b.transform, Color.white, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -7), new Vector2(cw - 16, cw - 16));
+                ic.preserveAspect = true; ic.raycastTarget = false;
+                uClsIcon[i] = ic;
+                var ring = MkImg("ring", b.transform, Pal.Gold, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                ring.sprite = RoundStrokeSprite(); ring.type = Image.Type.Sliced; ring.raycastTarget = false; uClsRing[i] = ring;
+                uClsTxt[i] = MkTxt("t", b.transform, "", 15, Color.white, TextAnchor.LowerCenter,
+                    new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 4), new Vector2(0, 22));
+                uClsTxt[i].raycastTarget = false;
             }
-            y -= 92;
-            uJoinBtn = MkBtn("join", pt, Pal.Accent,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-56, 64), () => Join());
-            GlassPanel((Image)uJoinBtn.targetGraphic, new Color(0.7f, 0.95f, 1f, 0.7f));
-            AddGlow(uJoinBtn.transform, Pal.Accent, 22);   // 主行动按钮辉光，引导点击
-            MkTxt("t", uJoinBtn.transform, "降临次元", 28, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            y -= 76;
-            MkTxt("hint", pt, "WASD移动 · 右键转视角 · 左键普攻 · QER技能 · 空格翻滚 · F捕捉 · B面板", 15, new Color(0.6f, 0.62f, 0.74f), TextAnchor.UpperCenter,
-                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-40, 24));
+            y -= cw + 26 + 20;
+
+            uJoinBtn = MkBtn("join", pt, Pal.Gold,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-150, 80), () => Join());
+            GlassPanel((Image)uJoinBtn.targetGraphic, new Color(1f, 0.95f, 0.7f, 0.85f));
+            AddGlow(uJoinBtn.transform, new Color(1f, 0.84f, 0.3f, 1f), 24);   // 金色辉光
+            MkTxt("t", uJoinBtn.transform, "进 入 世 界", 30, new Color(0.18f, 0.12f, 0.02f), TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero).fontStyle = FontStyle.Bold;
+            y -= 96;
+            MkTxt("hint", pt, "WASD移动 · 右键转视角 · 左键普攻 · QER技能 · 空格翻滚 · F捕捉 · B面板", 14, new Color(0.72f, 0.76f, 0.88f), TextAnchor.UpperCenter,
+                new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, y), new Vector2(-50, 22));
 
             // ---- 连接中（带加载转圈，ui-ux-pro-max：异步必须有加载反馈）----
             menuConnecting = MkRect("Conn", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640, 320)).gameObject;
@@ -1310,6 +1366,72 @@ namespace DW
             menuConnecting.SetActive(false);
         }
 
+        // 左侧英雄 3D 预览：专用相机渲染到 RenderTexture（透明底）→ RawImage，叠在背景之上
+        void BuildHeroPreview(Transform root)
+        {
+            _heroRT = new RenderTexture(1000, 1040, 16, RenderTextureFormat.ARGB32) { antiAliasing = 2 };
+            // 占满面板左侧整块区域（0~面板左缘），英雄渲染时偏右，正好站在背景中央法阵上
+            var ri = MkRect("HeroPreview", root, new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f), new Vector2(0, 0), new Vector2(1050, 0));
+            uHeroPreview = ri.gameObject.AddComponent<RawImage>();
+            uHeroPreview.texture = _heroRT; uHeroPreview.raycastTarget = true;
+            _heroInput = uHeroPreview.gameObject.AddComponent<DWHeroPreviewInput>();
+            var hint = MkTxt("phint", ri, "拖动旋转 · 滚轮 / 双指缩放", 16, new Color(1f, 1f, 1f, 0.72f), TextAnchor.LowerCenter,
+                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 18), new Vector2(0, 24));
+            hint.raycastTarget = false;
+
+            _heroRig = new GameObject("DW_HeroPreviewRig");
+            DontDestroyOnLoad(_heroRig);
+            _heroRig.transform.position = new Vector3(6000, 0, 6000);   // 远离游戏世界，互不干扰
+            var camGo = new GameObject("HeroPreviewCam");
+            camGo.transform.SetParent(_heroRig.transform, false);
+            _heroCam = camGo.AddComponent<Camera>();
+            _heroCam.targetTexture = _heroRT;
+            _heroCam.clearFlags = CameraClearFlags.SolidColor;
+            _heroCam.backgroundColor = new Color(0, 0, 0, 0);   // 透明底，露出背景图
+            _heroCam.fieldOfView = 26; _heroCam.nearClipPlane = 0.05f; _heroCam.farClipPlane = 60f;
+            var l1 = new GameObject("pl1").AddComponent<Light>();
+            l1.transform.SetParent(_heroRig.transform, false);
+            l1.type = LightType.Directional; l1.intensity = 1.15f; l1.color = new Color(1f, 0.98f, 0.94f);
+            l1.transform.rotation = Quaternion.Euler(28, 150, 0);
+            var l2 = new GameObject("pl2").AddComponent<Light>();
+            l2.transform.SetParent(_heroRig.transform, false);
+            l2.type = LightType.Directional; l2.intensity = 0.55f; l2.color = new Color(0.82f, 0.86f, 1f);
+            l2.transform.rotation = Quaternion.Euler(18, -40, 0);
+            // 不再画程序化光环——直接让英雄站在背景图自带的法阵上
+            _heroRig.SetActive(false);
+        }
+
+        // 每帧驱动英雄预览（选择变化时重建模型 + 应用旋转/缩放 + 双指缩放）
+        void UpdateHeroPreview()
+        {
+            if (_heroRig == null || _heroInput == null) return;
+            int hsig = dimIdx * 10 + clsIdx;
+            if (hsig != _heroSig)
+            {
+                _heroSig = hsig;
+                if (_heroModel != null) Destroy(_heroModel);
+                _heroModel = MakeHero(Data.Classes[clsIdx].id, Data.Dims[dimIdx].id);
+                _heroModel.transform.SetParent(_heroRig.transform, false);
+                _heroModel.transform.localPosition = Vector3.zero;
+                var drv = _heroModel.GetComponent<DWAnimDriver>();
+                if (drv != null) drv.SetBase("Idle");
+            }
+            // 移动端双指捏合缩放
+            if (Input.touchCount == 2)
+            {
+                var t0 = Input.GetTouch(0); var t1 = Input.GetTouch(1);
+                float prev = ((t0.position - t0.deltaPosition) - (t1.position - t1.deltaPosition)).magnitude;
+                float cur = (t0.position - t1.position).magnitude;
+                _heroInput.zoom = Mathf.Clamp(_heroInput.zoom + (cur - prev) * 0.0016f, 0.55f, 1.7f);
+            }
+            // 相机偏右 + 拉远压低：英雄缩小并落在画面偏右下，正好踩在背景中央法阵上
+            float dist = Mathf.Clamp(7.2f / Mathf.Max(0.2f, _heroInput.zoom), 2.5f, 12f);
+            float camX = -1.5f;
+            _heroCam.transform.localPosition = new Vector3(camX, 1.5f, -dist);
+            _heroCam.transform.LookAt(_heroRig.transform.position + new Vector3(camX, 1.25f, 0));
+            if (_heroModel != null) _heroModel.transform.localRotation = Quaternion.Euler(0, _heroInput.yaw, 0);
+        }
+
         InputField MkInput(Transform parent, string val, int limit, float yy, UnityEngine.Events.UnityAction<string> onChange)
         {
             var bg = Round(MkImg("inp", parent, new Color(0.12f, 0.13f, 0.22f, 1f),
@@ -1321,6 +1443,10 @@ namespace DW
             txt.supportRichText = false;
             inp.textComponent = txt;
             inp.targetGraphic = bg;
+            var ph = MkTxt("ph", bg.transform, "输入用户名", 24, new Color(0.62f, 0.66f, 0.80f, 0.85f), TextAnchor.MiddleLeft,
+                new Vector2(0, 0), new Vector2(1, 1), new Vector2(0.5f, 0.5f), new Vector2(14, 0), new Vector2(-28, -8));
+            ph.supportRichText = false;
+            inp.placeholder = ph;
             inp.text = val ?? "";
             inp.characterLimit = limit;
             inp.onValueChanged.AddListener(onChange);
@@ -1332,29 +1458,55 @@ namespace DW
             if (menuCanvas == null) return;
             bool show = !playing;
             if (menuCanvas.enabled != show) menuCanvas.enabled = show;
-            if (!show) return;
+            if (!show) { if (_heroRig != null && _heroRig.activeSelf) { _heroRig.SetActive(false); if (_heroCam) _heroCam.enabled = false; } return; }
             uMenuToast.text = Time.time < toastUntil ? toastMsg : "";
             bool connecting = state == State.Connecting;
             if (menuForm.activeSelf == connecting) menuForm.SetActive(!connecting);
             if (menuConnecting.activeSelf != connecting) menuConnecting.SetActive(connecting);
+            // 英雄预览：仅在选择界面显示（连接中/游戏中隐藏）
+            bool previewOn = !connecting;
+            if (uHeroPreview != null && uHeroPreview.gameObject.activeSelf != previewOn) uHeroPreview.gameObject.SetActive(previewOn);
+            if (_heroRig != null && _heroRig.activeSelf != previewOn) _heroRig.SetActive(previewOn);
+            if (_heroCam != null) _heroCam.enabled = previewOn;
+            if (previewOn) UpdateHeroPreview();
             if (connecting) { uConnTxt.text = $"正在连接次元…\n<size=20>{serverIp}</size>"; return; }
-            // 背景光晕跟随所选次元的主色（平滑过渡）
+            string dimId = Data.Dims[dimIdx].id;
+            // 背景光晕跟随所选次元主色（平滑过渡）
             if (menuGlow != null)
             {
                 var a = Data.Dims[dimIdx].accent;
-                menuGlow.color = Color.Lerp(menuGlow.color, new Color(a.r, a.g, a.b, 0.24f), 1f - Mathf.Exp(-6f * Time.unscaledDeltaTime));
+                menuGlow.color = Color.Lerp(menuGlow.color, new Color(a.r, a.g, a.b, 0.18f), 1f - Mathf.Exp(-6f * Time.unscaledDeltaTime));
             }
+            // 仅在次元变化时切换背景图 + 职业头像/名称（避免每帧重建 canvas）
+            if (_lastMenuDim != dimIdx)
+            {
+                _lastMenuDim = dimIdx;
+                if (uMenuBg != null) { var bg = LoginSprite("bg_" + dimId); if (bg != null) uMenuBg.sprite = bg; }
+                string[] nm; LoginClsNames.TryGetValue(dimId, out nm);
+                for (int i = 0; i < uClsIcon.Length; i++)
+                {
+                    if (uClsIcon[i] != null) { var sp = LoginSprite("cls_" + dimId + "_" + i); if (sp != null) uClsIcon[i].sprite = sp; }
+                    if (uClsTxt[i] != null) uClsTxt[i].text = (nm != null && i < nm.Length) ? nm[i] : Data.ClassTitle(dimId, Data.Classes[i].id);
+                }
+            }
+            // 次元选中高亮（描边 + 提亮）
             for (int i = 0; i < uDimBtns.Length; i++)
-                ((Image)uDimBtns[i].targetGraphic).color = i == dimIdx ? Data.Dims[i].accent : Pal.Slate;
+            {
+                bool sel = i == dimIdx;
+                if (uDimRing[i] != null) uDimRing[i].enabled = sel;
+                if (uDimIcon[i] != null) uDimIcon[i].color = sel ? Color.white : new Color(0.6f, 0.64f, 0.76f, 0.85f);
+                ((Image)uDimBtns[i].targetGraphic).color = sel ? new Color(0.20f, 0.27f, 0.46f, 0.96f) : new Color(0.10f, 0.13f, 0.24f, 0.9f);
+            }
+            // 职业选中高亮
             for (int i = 0; i < uClsBtns.Length; i++)
             {
-                ((Image)uClsBtns[i].targetGraphic).color = i == clsIdx ? Pal.Gold : Pal.Slate;
-                uClsTxt[i].text = $"{Data.ClassTitle(Data.Dims[dimIdx].id, Data.Classes[i].id)}\n<size=14>({Data.Classes[i].role})</size>";
+                bool sel = i == clsIdx;
+                if (uClsRing[i] != null) uClsRing[i].enabled = sel;
+                if (uClsIcon[i] != null) uClsIcon[i].color = sel ? Color.white : new Color(0.72f, 0.74f, 0.84f, 0.92f);
+                ((Image)uClsBtns[i].targetGraphic).color = sel ? new Color(0.34f, 0.26f, 0.09f, 0.96f) : new Color(0.10f, 0.13f, 0.24f, 0.9f);
+                if (uClsTxt[i] != null) uClsTxt[i].color = sel ? Pal.Gold : Color.white;
             }
-            uHunterHint.text = Data.Dims[dimIdx].id == "hunter" ? "次元天赋：可捕捉野怪当宝宝（F键）" : "";
-            // 主行动按钮跟随所选次元主色 —— 不同次元不同风格
-            var da = Data.Dims[dimIdx].accent;
-            ((Image)uJoinBtn.targetGraphic).color = new Color(da.r, da.g, da.b, 1f);
+            uHunterHint.text = dimId == "hunter" ? "次元天赋：可捕捉野怪当宝宝（F键）" : "";
             uJoinBtn.interactable = (playerName ?? "").Trim().Length > 0;
         }
 
@@ -1510,7 +1662,22 @@ namespace DW
             Line($"击杀 野怪{you["kills"]} / 玩家{you["pvpKills"]}");
             Line($"技能点：{MySkPts}");
             Line("<b>技能</b>");
-            foreach (var sk in def.skills) Line($"<color=#ffd166>{sk.name}</color> Lv.{MySkLvl(sk.key)}\n<size=13><color=#999>{sk.desc}</color></size>");
+            foreach (var sk in def.skills)
+            {
+                int lv = MySkLvl(sk.key);
+                float scale = sk.ScaleAt(lv);
+                string scaleTxt;
+                if (sk.mult > 0)                                   // 伤害技：显示当前等级的实际倍率
+                    scaleTxt = $"实际威力 {Mathf.RoundToInt(sk.mult * scale * 100)}%（基础{Mathf.RoundToInt(sk.mult * 100)}%）";
+                else if (sk.pct > 0)                                // 治疗技：显示当前等级的实际治疗量
+                    scaleTxt = $"实际治疗 {Mathf.RoundToInt(sk.pct * scale * 100)}%（基础{Mathf.RoundToInt(sk.pct * 100)}%）";
+                else
+                    scaleTxt = "";
+                string head = $"<color=#ffd166>{Data.SkillName(myDim, myCls, sk.key)}</color> <color=#7fd1ff>Lv.{lv}</color>";
+                if (scaleTxt != "") head += $"  <size=12><color=#8fe39b>{scaleTxt}</color></size>";
+                Line($"{head}\n<size=13><color=#999>{Data.SkillDesc(myDim, myCls, sk.key)}</color></size>");
+            }
+            if (MySkPts > 0) Line("<size=12><color=#ffd166>有技能点可用：点技能格右上角的 + 升级，每级提升实际威力/治疗</color></size>");
         }
 
         Color RarCol(JObject it) => Data.RarityColors[Mathf.Clamp((int?)it["rar"] ?? 0, 0, 4)];
@@ -1665,5 +1832,13 @@ namespace DW
     {
         public float speed = 240f;
         void Update() { transform.Rotate(0f, 0f, -speed * Time.unscaledDeltaTime); }
+    }
+
+    // 登录界面英雄预览：在预览图上拖动旋转、滚轮缩放（双指缩放在 Game 里处理）
+    public class DWHeroPreviewInput : MonoBehaviour, IDragHandler, IScrollHandler
+    {
+        public float yaw = 192f, zoom = 1f;   // 默认略 3/4 正面朝向相机
+        public void OnDrag(PointerEventData e) { yaw -= e.delta.x * 0.5f; }
+        public void OnScroll(PointerEventData e) { zoom = Mathf.Clamp(zoom + e.scrollDelta.y * 0.08f, 0.55f, 1.7f); }
     }
 }

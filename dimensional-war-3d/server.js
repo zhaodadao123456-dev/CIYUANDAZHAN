@@ -268,6 +268,9 @@ function newPlayer(ws, uid, name, dimId, clsId, rec) {
     p.pet = { ...rec.pet, hp: rec.pet.maxHp, x: p.x + 1.2, z: p.z + 1.2, ry: 0, atkT: 0, state: 'idle' };
   }
   p.hp = maxHp(p);
+  // 退出重进：恢复下线时的血量与坐标（存活时才存），不再回满血/瞬移
+  if (rec.hp != null && rec.hp > 0) p.hp = clamp(Math.round(rec.hp), 1, maxHp(p));
+  if (typeof rec.px === 'number' && typeof rec.pz === 'number') { p._rx = rec.px; p._rz = rec.pz; }
   return p;
 }
 
@@ -329,6 +332,9 @@ const skDmgMul = (p, k) => 1 + 0.18 * ((p.sk[k] || 1) - 1);
 const skHealMul = (p, k) => 1 + 0.15 * ((p.sk[k] || 1) - 1);
 
 function persist(p) {
+  // 只在「本次元正常房间 + 存活」时保存血量/坐标，避免退出重进=回满血+瞬移（战场/混战/死亡则按常规重生）
+  const normalRoom = p.room && p.room !== 'war' && p.room !== 'melee';
+  const keepState = normalRoom && !p.dead && p.hp > 0;
   saved[p.uid] = {
     uid: p.uid, name: p.name,
     level: p.level, exp: p.exp, gold: p.gold, kills: p.kills, pvpKills: p.pvpKills, rankPts: p.rankPts || 0,
@@ -336,6 +342,9 @@ function persist(p) {
     daily: p.daily, dailyStreak: p.dailyStreak, ach: p.ach || {}, achEquip: p.achEquip || null,
     bagMode: p.bagMode || 'sell', potions: p.potions || {},
     pet: p.pet ? { name: p.pet.name, tier: p.pet.tier, maxHp: p.pet.maxHp, atk: p.pet.atk } : null,
+    hp: keepState ? Math.round(p.hp) : undefined,
+    px: keepState ? +p.x.toFixed(2) : undefined,
+    pz: keepState ? +p.z.toFixed(2) : undefined,
   };
   nameIndex[String(p.name).trim().toLowerCase()] = p.uid;
   saveDirty = true;
@@ -1359,7 +1368,14 @@ function joinRoom(p, roomId, isFirst = false) {
   }
   p.room = roomId;
   const sp = spawnPoint(p);
-  p.x = sp.x; p.z = sp.z;
+  // 首次登录且回本次元、且有存档坐标 → 回到下线位置（配合 mkPlayer 的血量恢复，杜绝退出回血+瞬移）
+  if (isFirst && roomId === p.dim && typeof p._rx === 'number') {
+    p.x = clamp(p._rx, -MAP_HALF, MAP_HALF);
+    p.z = clamp(p._rz, -MAP_HALF, MAP_HALF);
+  } else {
+    p.x = sp.x; p.z = sp.z;
+  }
+  p._rx = p._rz = undefined;
   p.dead = false;
   if (p.pet) { p.pet.x = p.x + 1.2; p.pet.z = p.z + 1.2; }
   if (p.hp <= 0) p.hp = maxHp(p);

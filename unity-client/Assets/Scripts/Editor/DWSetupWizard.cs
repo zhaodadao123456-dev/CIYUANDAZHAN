@@ -161,7 +161,10 @@ namespace DW.EditorTools
             // 狐狸文件夹仍转为 Humanoid，以便狐狸作为修仙刺客能套用悟空的人形动作。
             var huliFolder = FindFolder("huli", "fox", "狐狸");
             if (huliFolder != null) ForceFolderHumanoid(huliFolder, log);
-            AnimatorController ctrl = BuildController(FindFolder("wukong", "悟空"), log, huliFolder);
+            // 动作包：转 Humanoid 后把专业战斗/移动动作接到所有英雄
+            var dongFolder = FindFolder("dongzuobao", "动作包", "mixamo");
+            if (dongFolder != null) { ForceFolderHumanoid(dongFolder, log); log.AppendLine($"动作包：{dongFolder} → Humanoid"); }
+            AnimatorController ctrl = BuildController(FindFolder("wukong", "悟空"), log, huliFolder, dongFolder);
 
             // 分类：小丑→BOSS；骷髅/亡灵→怪物；其余人物→英雄池
             bool IsBoss(string p) => BossKeys.Any((k) => Lower(p).Contains(k));
@@ -224,18 +227,43 @@ namespace DW.EditorTools
                 { "magic/warrior",    new[]{ "half_blood" } },
                 { "magic/assassin",   new[]{ "servant", "church" } },
                 { "tech/warrior",     new[]{ "girlv1", "girl_v.1" } },
+                { "tech/healer",      new[]{ "waibang", "外邦", "wb_" } },   // 外邦 → 科技奶妈（用户指定）
                 { "cyber/warrior",    new[]{ "girlv2", "girl_v.2" } },
                 { "hunter/ranger",    new[]{ "cowboy", "sheriff", "牛仔" } },
+            };
+            // 各次元主题：未被 pin 的职业从「符合该次元气质」的模型里挑，避免科幻士兵跑进修仙/魔法/猎人
+            var dimPrefer = new Dictionary<string, string[]>
+            {
+                { "tech",    new[]{ "trooper", "soldier", "sci", "mech", "robot", "girl", "v.1", "v.2", "v1", "v2" } },
+                { "cyber",   new[]{ "trooper", "soldier", "sci", "mech", "robot", "girl", "punk", "v.1", "v.2", "v1", "v2" } },
+                { "xiuxian", new[]{ "wukong", "悟空", "huli", "fox", "狐", "bunny", "兔", "witch", "女巫", "monk", "ninja" } },
+                { "magic",   new[]{ "half_blood", "半", "nun", "修女", "servant", "church", "侍从", "witch", "女巫", "paladin", "knight", "mage", "cowboy", "sheriff" } },
+                { "hunter",  new[]{ "cowboy", "sheriff", "牛仔", "hunter", "archer", "ranger", "猎", "half_blood", "witch", "女巫", "bunny", "兔" } },
+            };
+            var dimAvoid = new Dictionary<string, string[]>
+            {
+                { "xiuxian", new[]{ "trooper", "soldier", "sci", "mech", "robot", "gun", "v.1", "v.2", "v1", "v2" } },
+                { "magic",   new[]{ "trooper", "soldier", "sci", "mech", "robot", "v.1", "v.2", "v1", "v2" } },
+                { "hunter",  new[]{ "trooper", "soldier", "sci", "mech", "robot", "v.1", "v.2", "v1", "v2" } },
             };
             int rot2 = 0;
             foreach (var dim in DimOrder)
             {
                 var usedHere = new HashSet<string>();
+                dimPrefer.TryGetValue(dim, out var prefer);
+                dimAvoid.TryGetValue(dim, out var avoid);
+                bool Avoid(string p) => avoid != null && Has(p, avoid);
                 foreach (var cls in classOrder)
                 {
                     string src = null;
                     if (pin.TryGetValue($"{dim}/{cls}", out var keys))
                         src = heroSrcs.FirstOrDefault((p) => !usedHere.Contains(p) && Has(p, keys));
+                    // 主题优先：先挑符合本次元气质的，再挑「至少不违和」(排除 avoid)
+                    if (src == null && prefer != null)
+                        src = heroSrcs.FirstOrDefault((p) => !usedHere.Contains(p) && Has(p, prefer) && !Avoid(p));
+                    if (src == null)
+                        src = heroSrcs.FirstOrDefault((p) => !usedHere.Contains(p) && !Avoid(p));
+                    // 实在没有合适的（模型太少）→ 轮转兜底，保证有模型
                     if (src == null && heroSrcs.Count > 0)
                         for (int k = 0; k < heroSrcs.Count; k++)
                         {
@@ -251,6 +279,8 @@ namespace DW.EditorTools
 
             // 狐狸 FBX 不带贴图（贴图是松散 PNG）→ 建 Standard 材质贴上去，修白模
             ApplyHuliMaterial(log);
+            // 外邦 同理：散图建 Standard 材质，贴到科技奶妈，避免白模
+            ApplyWaibangMaterial(log);
 
             // 英雄池 DWHeroes/h_XX（运行时按「次元×职业」组合取用的兜底，用上全部人物 + 未来未知购买包）
             RebuildFolder(HeroDir);
@@ -268,7 +298,7 @@ namespace DW.EditorTools
 
             // 场景池 DWScene/sc_XX（你买的静态场景模型，如黑暗地牢的柱子/石棺/木桶等；地图据此散布）
             RebuildFolder(SceneDir);
-            int si = 0; _propTexN = 0; _propColN = 0; _propDiag = "";
+            int si = 0; _propTexN = 0; _propColN = 0; _propMatN = 0; _propDiag = "";
             foreach (var src in SceneryProps())
             {
                 var go = AssetDatabase.LoadAssetAtPath<GameObject>(src);
@@ -397,6 +427,30 @@ namespace DW.EditorTools
         }
 
         /* 清空并重建文件夹（去掉上次生成的预制体） */
+        [MenuItem("次元大战/⑥ 修复地图道具颜色 %#&j")]
+        public static void FixMapProps()
+        {
+            var log = new StringBuilder();
+            RebuildFolder(SceneDir);
+            int si = 0; _propTexN = 0; _propColN = 0; _propMatN = 0; _propDiag = "";
+            foreach (var src in SceneryProps())
+            {
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(src);
+                if (go == null) continue;
+                var inst = (GameObject)Object.Instantiate(go);
+                RecoverProps(inst);   // 恢复原贴图/颜色，并把材质存成资产（不再丢成白模）
+                PrefabUtility.SaveAsPrefabAsset(inst, $"{SceneDir}/sc_{si:00}.prefab");
+                Object.DestroyImmediate(inst);
+                log.AppendLine($"场景#{++si} ← {src}");
+            }
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            string head = $"地图道具重建完成：{si} 个道具，{_propMatN} 个材质资产（{_propTexN} 用调色板贴图 / {_propColN} 用底色或自然色）。\n再点 ▶ 进游戏看颜色是否恢复。\n";
+            if (!string.IsNullOrEmpty(_propDiag)) head += _propDiag + "\n";
+            Debug.Log(head + log);
+            EditorUtility.DisplayDialog("次元大战 · 修复地图道具颜色", head, "好");
+        }
+
         static void RebuildFolder(string dir)
         {
             if (AssetDatabase.IsValidFolder(dir)) AssetDatabase.DeleteAsset(dir);
@@ -580,10 +634,10 @@ namespace DW.EditorTools
         }
 
         /* 用某个包的人形动作片段搭通用控制器 */
-        static AnimatorController BuildController(string clipFolder, StringBuilder log, string otherFolder = null)
+        static AnimatorController BuildController(string clipFolder, StringBuilder log, string otherFolder = null, string dongFolder = null)
         {
-            if (clipFolder == null) { log.AppendLine("⚠ 未找到悟空动画包，角色将静态展示"); return null; }
-            var states = PickStates(AllClips(clipFolder));   // 悟空：全套
+            Dictionary<string, AnimationClip> states = clipFolder != null ? PickStates(AllClips(clipFolder)) : new Dictionary<string, AnimationClip>();
+            if (clipFolder == null) log.AppendLine("⚠ 未找到悟空动画包，战斗动作改用动作包/狐狸");
             // 战斗(Attack/Skill)与走跑(Run)用悟空；其余动作(Idle/Dodge/Death 等)用狐狸
             if (otherFolder != null && FolderHasHumanClip(otherFolder))
             {
@@ -592,6 +646,16 @@ namespace DW.EditorTools
                 int n = 0;
                 foreach (var kv in fox) if (!keepWukong.Contains(kv.Key)) { states[kv.Key] = kv.Value; n++; }
                 log.AppendLine($"动画：战斗+走跑用悟空，其余 {n} 个动作(Idle等)用狐狸");
+            }
+            // 动作包：更专业的战斗/移动/死亡动作，覆盖对应状态（“把有用的动作加到英雄上”）
+            if (dongFolder != null && FolderHasHumanClip(dongFolder))
+            {
+                var dong = PickStates(AllClips(dongFolder));
+                // 待机(Idle)保留狐狸的安静站姿（用户要求不要双手分开的战斗待机），其余战斗/移动/死亡用动作包
+                var useDong = new HashSet<string> { "Run", "Attack1", "Attack2", "Skill", "Skill2", "Death" };
+                int n = 0;
+                foreach (var kv in dong) if (useDong.Contains(kv.Key)) { states[kv.Key] = kv.Value; n++; }
+                log.AppendLine($"动作包覆盖 {n} 个状态(攻击/技能/跑动/死亡等)");
             }
             if (states.Count == 0) { log.AppendLine("⚠ 未识别出可用动作片段"); return null; }
             var ctrlPath = ResDir + "/dw_hero_anim.controller";
@@ -640,6 +704,46 @@ namespace DW.EditorTools
 
         /* 狐狸 FBX 不带贴图（贴图是松散 PNG）→ 建 Standard 材质贴上 basecolor/normal/metalrough，
          * 应用到修仙刺客英雄预制体，修复白模。 */
+        // 外邦角色：FBX 贴图是松散 PNG（WB_Albedo/WB_Normal）→ 建 Standard 材质贴到 科技奶妈，避免白模
+        static void ApplyWaibangMaterial(StringBuilder log)
+        {
+            string folder = FindFolder("外邦", "waibang");   // 注意：别用 "wb"，会误命中 coWBoy
+            if (folder == null) return;
+            var prefabPath = $"{ResDir}/hero_tech_healer.prefab";
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) == null) return;   // 外邦没被分到该位则跳过
+            Texture2D Find(params string[] keys)
+            {
+                foreach (var g in AssetDatabase.FindAssets("t:Texture2D", new[] { folder }))
+                {
+                    var p = AssetDatabase.GUIDToAssetPath(g);
+                    foreach (var k in keys) if (Lower(p).Contains(k)) return AssetDatabase.LoadAssetAtPath<Texture2D>(p);
+                }
+                return null;
+            }
+            var baseTex = Find("albedo", "basecolor", "diffuse", "wb_a");
+            if (baseTex == null) { log.AppendLine("⚠ 外邦未找到 albedo 贴图，仍可能白模"); return; }
+            var normTex = Find("normal", "_nrm", "wb_n");
+            SetTexImport(baseTex, sRGB: true, normal: false);
+            if (normTex != null) SetTexImport(normTex, sRGB: false, normal: true);
+            var mat = new Material(Shader.Find("Standard"));
+            mat.SetTexture("_MainTex", baseTex);
+            if (normTex != null) { mat.EnableKeyword("_NORMALMAP"); mat.SetTexture("_BumpMap", normTex); mat.SetFloat("_BumpScale", 1f); }
+            mat.SetFloat("_Metallic", 0f); mat.SetFloat("_Glossiness", 0.3f);
+            var matPath = ResDir + "/mat_waibang.mat";
+            AssetDatabase.DeleteAsset(matPath);
+            AssetDatabase.CreateAsset(mat, matPath);
+            var root = PrefabUtility.LoadPrefabContents(prefabPath);
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var arr = new Material[r.sharedMaterials.Length == 0 ? 1 : r.sharedMaterials.Length];
+                for (int i = 0; i < arr.Length; i++) arr[i] = mat;
+                r.sharedMaterials = arr;
+            }
+            PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+            PrefabUtility.UnloadPrefabContents(root);
+            log.AppendLine($"✓ 外邦材质已贴到科技奶妈：albedo={baseTex.name}{(normTex != null ? " +法线" : "")}");
+        }
+
         static void ApplyHuliMaterial(StringBuilder log)
         {
             string folder = FindFolder("huli", "fox", "狐狸");
@@ -726,10 +830,12 @@ namespace DW.EditorTools
         /* 把场景道具的 URP/不兼容材质转成 Built-in 顶点色，并用 SerializedObject 读回原贴图/颜色——
          * 编辑器里即使 shader 不被支持，也能从序列化数据读到原贴图(调色板)/底色，从而还原低多边形包的颜色。 */
         static Shader _vcShaderE;
-        static int _propTexN, _propColN;
+        static int _propTexN, _propColN, _propMatN;
+        const string SceneMatDir = SceneDir + "/Mats";   // 恢复后的材质保存为资产，否则存进 prefab 会丢成 fileID:0(白模)
         static void RecoverProps(GameObject inst)
         {
             if (_vcShaderE == null) _vcShaderE = Shader.Find("DW/VertexColor") ?? Shader.Find("Standard");
+            if (!AssetDatabase.IsValidFolder(SceneMatDir)) { Directory.CreateDirectory(SceneMatDir); AssetDatabase.Refresh(); }
             foreach (var r in inst.GetComponentsInChildren<Renderer>(true))
             {
                 var mats = r.sharedMaterials;
@@ -763,6 +869,8 @@ namespace DW.EditorTools
                         if (col.r > 0.92f && col.g > 0.92f && col.b > 0.92f) col = NaturalColorE(inst.name + " " + r.name + " " + m.name);
                         fix.color = col; _propColN++;
                     }
+                    // 关键：把恢复出来的材质存成 .mat 资产再引用——直接用内存材质存进 prefab 会被丢成 fileID:0(显示为默认白模)
+                    AssetDatabase.CreateAsset(fix, $"{SceneMatDir}/m_{_propMatN++:000}.mat");
                     arr[i] = fix; changed = true;
                 }
                 if (changed) r.sharedMaterials = arr;
@@ -779,6 +887,8 @@ namespace DW.EditorTools
             if (!imp.sRGBTexture) { imp.sRGBTexture = true; dirty = true; }
             if (imp.filterMode != FilterMode.Point) { imp.filterMode = FilterMode.Point; dirty = true; }
             if (imp.mipmapEnabled) { imp.mipmapEnabled = false; dirty = true; }
+            // 压缩会把相邻色块混色(色块边界发灰/发白)——调色板小图直接不压缩，颜色才纯
+            if (imp.textureCompression != TextureImporterCompression.Uncompressed) { imp.textureCompression = TextureImporterCompression.Uncompressed; dirty = true; }
             if (dirty) imp.SaveAndReimport();
         }
         // 读不回原色时按名字给自然色（编辑器版，与运行时一致）
@@ -849,19 +959,22 @@ namespace DW.EditorTools
                 ("Idle",    new[] { "idle", "stand" }),
                 ("Run",     new[] { "jog", "run", "sprint", "walk" }),
                 ("Attack1", new[] { "attack1", "attackl", "attack_l", "attack", "slash", "1h_melee", "punch" }),
-                ("Attack2", new[] { "attack2", "attackr", "attack_r", "stab", "spin", "2h_melee", "dualwield" }),
-                ("Skill",   new[] { "spellcast", "cast", "skill", "spell", "shoot", "heavy", "rage", "chest" }),
-                ("Skill2",  new[] { "spellcast2", "dance", "pickup", "spellcast_long", "attack3", "attack4" }),
-                ("Dodge",   new[] { "roll", "dodge", "dash" }),
+                ("Attack2", new[] { "attack2", "attackr", "attack_r", "combo", "stab", "spin", "2h_melee", "dualwield" }),
+                ("Skill",   new[] { "spellcast", "cast", "magic", "skill", "spell", "shoot", "heavy", "rage", "chest" }),
+                ("Skill2",  new[] { "spellcast2", "hurricane", "kick", "power", "dance", "pickup", "spellcast_long", "attack3", "attack4" }),
+                ("Dodge",   new[] { "roll", "dodge", "dash", "jump" }),
                 ("Death",   new[] { "death", "die", "dead" }),
             };
             var res = new Dictionary<string, AnimationClip>();
             var taken = new HashSet<AnimationClip>();
+            // Mixamo 等导出的片段内部名常为 "mixamo.com"，按「文件名 + 片段名」一起匹配关键词
+            System.Func<AnimationClip, string> clipKey = (c) =>
+                Lower(c.name) + " " + Lower(Path.GetFileNameWithoutExtension(AssetDatabase.GetAssetPath(c)));
             foreach (var (state, keys) in rules)
             {
                 foreach (var k in keys)
                 {
-                    var hit = clips.FirstOrDefault((c) => Lower(c.name).Contains(k) && !taken.Contains(c));
+                    var hit = clips.FirstOrDefault((c) => clipKey(c).Contains(k) && !taken.Contains(c));
                     if (hit != null) { res[state] = hit; taken.Add(hit); break; }
                 }
             }
