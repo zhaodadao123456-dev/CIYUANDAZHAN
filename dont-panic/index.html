@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>别慌 · 心跳越快，世界越快</title>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#05070d;
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif;-webkit-user-select:none;user-select:none;touch-action:none;}
+  #c{display:block;position:absolute;inset:0;width:100%;height:100%;}
+  #ui{position:absolute;inset:0;pointer-events:none;color:#dfe6ff;}
+  .hud{position:absolute;top:14px;left:14px;font-size:14px;line-height:1.6;text-shadow:0 1px 3px rgba(0,0,0,.8);}
+  .hud b{font-size:22px;color:#fff;}
+  #bpm{position:absolute;top:14px;right:14px;text-align:right;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.8);}
+  #bpm .num{font-size:26px;font-weight:700;transition:color .2s;}
+  #calmBtn{position:absolute;right:22px;bottom:26px;width:96px;height:96px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,rgba(120,200,255,.35),rgba(30,60,110,.55));
+    border:2px solid rgba(160,210,255,.6);color:#eaf6ff;font-size:15px;display:flex;align-items:center;justify-content:center;
+    pointer-events:auto;box-shadow:0 0 22px rgba(90,170,255,.35);letter-spacing:2px;}
+  #calmBtn.active{background:radial-gradient(circle at 35% 30%,rgba(150,255,210,.55),rgba(20,90,70,.65));
+    box-shadow:0 0 30px rgba(110,255,190,.6);}
+  #hint{position:absolute;bottom:16px;left:14px;font-size:12px;opacity:.65;max-width:60%;line-height:1.5;}
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;
+    background:radial-gradient(ellipse at center,rgba(10,14,26,.55),rgba(3,5,10,.92));pointer-events:auto;text-align:center;padding:20px;}
+  #overlay h1{font-size:clamp(28px,6vw,48px);margin:0 0 6px;letter-spacing:6px;color:#fff;
+    text-shadow:0 0 24px rgba(255,90,110,.6);}
+  #overlay p{margin:4px 0;color:#b9c4e8;font-size:14px;max-width:520px;line-height:1.7;}
+  #overlay .stat{margin-top:14px;font-size:16px;color:#fff;}
+  #overlay .stat b{color:#7ee0ff;font-size:22px;}
+  #startBtn{margin-top:22px;padding:14px 46px;border-radius:30px;border:1px solid rgba(255,255,255,.35);
+    background:linear-gradient(135deg,#ff6b8a,#7b6bff);color:#fff;font-size:17px;letter-spacing:4px;cursor:pointer;
+    box-shadow:0 8px 28px rgba(120,90,255,.45);}
+  #startBtn:active{transform:scale(.97);}
+  .hidden{display:none!important;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="hud">生存时间 <b id="timeVal">0.0</b> 秒<br>惊险闪避 <b id="grazeVal">0</b></div>
+  <div id="bpm">心率<br><span class="num" id="bpmVal">60</span> BPM</div>
+  <div id="calmBtn">屏息<br>冷静</div>
+  <div id="hint">方向键 / WASD / 拖拽移动躲避追踪者。移动会让心跳加快——心跳越快，追踪者和刷新速度越快，也越容易被它们盯上。按住「屏息」（或长按 空格/Shift）可以快速平复心跳，但此时无法移动。</div>
+</div>
+<div id="overlay">
+  <h1>别慌</h1>
+  <p>你的恐惧会喂养它们。<br>移动能救你的命，但也会让你的心跳越来越快——而心跳越快，追捕你的影子就越快、越多。<br>
+  学会在「躲避」与「屏息平静」之间取舍，尽量活得更久。</p>
+  <div class="stat">最佳记录 <b id="bestVal">0.0</b> 秒</div>
+  <button id="startBtn">开始 / 重新开始</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var DPR = Math.min(window.devicePixelRatio||1, 2);
+  function resize(){
+    canvas.width = innerWidth*DPR; canvas.height = innerHeight*DPR;
+    canvas.style.width = innerWidth+'px'; canvas.style.height = innerHeight+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize); resize();
+
+  var W = function(){ return innerWidth; };
+  var H = function(){ return innerHeight; };
+
+  // ---- audio (synth only, no assets) ----
+  var actx = null;
+  function ensureAudio(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
+  function beep(freq, dur, gain, type){
+    if(!actx) return;
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.type = type||'sine'; o.frequency.value = freq;
+    g.gain.value = gain||0.05;
+    o.connect(g); g.connect(actx.destination);
+    var t = actx.currentTime;
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.start(t); o.stop(t+dur);
+  }
+  function thump(){ beep(70,0.16,0.09,'sine'); }
+  function hitSound(){ beep(140,0.28,0.14,'sawtooth'); }
+  function grazeSound(){ beep(880,0.09,0.05,'triangle'); }
+
+  // ---- constants ----
+  var BASE_BPM = 60, MAX_BPM = 200, CALM_FLOOR = 55;
+  var LIVES_MAX = 3;
+
+  // ---- state ----
+  var state = 'menu'; // menu | playing | gameover
+  var player, enemies, particles, pulse, lives, t, lastBeat, graze, invuln, best;
+  var keys = {};
+  var touchTarget = null;
+  var calming = false;
+
+  best = parseFloat(localStorage.getItem('dp_best')||'0') || 0;
+  document.getElementById('bestVal').textContent = best.toFixed(1);
+
+  function reset(){
+    player = { x: W()/2, y: H()/2, r: 13, vx:0, vy:0 };
+    enemies = [];
+    particles = [];
+    pulse = BASE_BPM;
+    lives = LIVES_MAX;
+    t = 0;
+    lastBeat = 0;
+    graze = 0;
+    invuln = 0;
+    nextSpawn = 0.6;
+  }
+  var nextSpawn = 0.6;
+
+  function spawnEnemy(){
+    var edge = Math.floor(Math.random()*4);
+    var x,y;
+    var margin = 30;
+    if(edge===0){ x=-margin; y=Math.random()*H(); }
+    else if(edge===1){ x=W()+margin; y=Math.random()*H(); }
+    else if(edge===2){ x=Math.random()*W(); y=-margin; }
+    else { x=Math.random()*W(); y=H()+margin; }
+    enemies.push({ x:x, y:y, r: 9+Math.random()*5, minDist: 99999, scored:false, hue: 350+Math.random()*20 });
+  }
+
+  function pulseSpeedFactor(){
+    return Math.max(1, Math.min(3.3, pulse/BASE_BPM));
+  }
+
+  function update(dt){
+    t += dt;
+    document.getElementById('timeVal').textContent = t.toFixed(1);
+
+    // --- input / movement ---
+    var mvx=0, mvy=0;
+    if(!calming){
+      if(touchTarget){
+        var dx = touchTarget.x-player.x, dy = touchTarget.y-player.y;
+        var d = Math.hypot(dx,dy);
+        if(d>4){ mvx = dx/d; mvy = dy/d; }
+      } else {
+        if(keys['ArrowLeft']||keys['a']||keys['A']) mvx -= 1;
+        if(keys['ArrowRight']||keys['d']||keys['D']) mvx += 1;
+        if(keys['ArrowUp']||keys['w']||keys['W']) mvy -= 1;
+        if(keys['ArrowDown']||keys['s']||keys['S']) mvy += 1;
+        var len = Math.hypot(mvx,mvy);
+        if(len>0){ mvx/=len; mvy/=len; }
+      }
+    }
+    var accel = 900, maxSpeed = 260, friction = 8;
+    player.vx += mvx*accel*dt; player.vy += mvy*accel*dt;
+    var sp = Math.hypot(player.vx,player.vy);
+    if(sp>maxSpeed){ player.vx *= maxSpeed/sp; player.vy *= maxSpeed/sp; }
+    player.vx -= player.vx*Math.min(1,friction*dt);
+    player.vy -= player.vy*Math.min(1,friction*dt);
+    player.x += player.vx*dt; player.y += player.vy*dt;
+    player.x = Math.max(player.r, Math.min(W()-player.r, player.x));
+    player.y = Math.max(player.r, Math.min(H()-player.r, player.y));
+
+    var moving = Math.hypot(player.vx,player.vy) > 30;
+
+    // --- pulse dynamics ---
+    if(calming){
+      pulse += (CALM_FLOOR-pulse)*Math.min(1,3.2*dt);
+    } else if(moving){
+      pulse = Math.min(MAX_BPM, pulse + 26*dt);
+    } else {
+      pulse += (BASE_BPM-pulse)*Math.min(1,0.9*dt);
+    }
+    if(invuln>0) invuln -= dt;
+
+    // heartbeat sfx
+    var beatInterval = 60/pulse;
+    if(t-lastBeat >= beatInterval){ lastBeat = t; thump(); }
+
+    // --- spawn logic: fear attracts more shadows ---
+    var timeRamp = 1 + Math.min(2.2, t/70);
+    var fearRamp = 1 + Math.max(0,(pulse-BASE_BPM)/MAX_BPM)*1.4;
+    nextSpawn -= dt;
+    if(nextSpawn<=0){
+      spawnEnemy();
+      var baseInterval = 1.15;
+      nextSpawn = baseInterval/(timeRamp*fearRamp) + Math.random()*0.25;
+    }
+
+    // --- enemies ---
+    var speedFactor = pulseSpeedFactor()*Math.sqrt(timeRamp);
+    var baseSpeed = 46;
+    for(var i=enemies.length-1;i>=0;i--){
+      var e = enemies[i];
+      var dx = player.x-e.x, dy = player.y-e.y;
+      var d = Math.hypot(dx,dy)||1;
+      var sfac = baseSpeed*speedFactor;
+      e.x += dx/d*sfac*dt; e.y += dy/d*sfac*dt;
+      if(d<e.minDist) e.minDist = d;
+
+      var hitDist = e.r+player.r;
+      if(d < hitDist){
+        if(invuln<=0){
+          lives -= 1;
+          invuln = 1.3;
+          pulse = Math.min(MAX_BPM, pulse+45);
+          hitSound();
+          burst(player.x,player.y,'#ff5f7a');
+          var kdx = (player.x-e.x)/d, kdy=(player.y-e.y)/d;
+          player.vx += kdx*260; player.vy += kdy*260;
+          enemies.splice(i,1);
+          if(lives<=0){ gameOver(); return; }
+        } else {
+          enemies.splice(i,1);
+        }
+        continue;
+      }
+
+      // graze: it got close but then never hit, and later leaves the field
+      var offscreen = e.x<-60||e.x>W()+60||e.y<-60||e.y>H()+60;
+      if(offscreen){
+        if(!e.scored && e.minDist < (e.r+player.r+34)){
+          graze++;
+          document.getElementById('grazeVal').textContent = graze;
+          grazeSound();
+        }
+        enemies.splice(i,1);
+      }
+    }
+
+    // particles
+    for(var p=particles.length-1;p>=0;p--){
+      var pt = particles[p];
+      pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.life-=dt;
+      pt.vx*=0.9; pt.vy*=0.9;
+      if(pt.life<=0) particles.splice(p,1);
+    }
+
+    // HUD bpm color
+    var bpmEl = document.getElementById('bpmVal');
+    bpmEl.textContent = Math.round(pulse);
+    var ratio = Math.min(1,(pulse-BASE_BPM)/(MAX_BPM-BASE_BPM));
+    bpmEl.style.color = 'rgb('+Math.round(180+ratio*75)+','+Math.round(220-ratio*180)+','+Math.round(230-ratio*200)+')';
+  }
+
+  function burst(x,y,color){
+    for(var i=0;i<16;i++){
+      var a = Math.random()*Math.PI*2, sp = 60+Math.random()*160;
+      particles.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.5+Math.random()*0.3,color:color});
+    }
+  }
+
+  function draw(){
+    var w=W(), h=H();
+    ctx.clearRect(0,0,w,h);
+    var grad = ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,Math.max(w,h)*0.75);
+    grad.addColorStop(0,'#0c1224'); grad.addColorStop(1,'#03040a');
+    ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
+
+    if(state==='playing'){
+      // fear vignette
+      var ratio = Math.min(1,(pulse-BASE_BPM)/(MAX_BPM-BASE_BPM));
+      if(ratio>0.02){
+        var vg = ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.25,w/2,h/2,Math.max(w,h)*0.7);
+        vg.addColorStop(0,'rgba(255,0,40,0)');
+        vg.addColorStop(1,'rgba(255,0,40,'+(ratio*0.55)+')');
+        ctx.fillStyle=vg; ctx.fillRect(0,0,w,h);
+      }
+
+      // enemies
+      enemies.forEach(function(e){
+        var dx = player.x-e.x, dy=player.y-e.y, ang = Math.atan2(dy,dx);
+        ctx.save();
+        ctx.translate(e.x,e.y); ctx.rotate(ang);
+        ctx.shadowColor = 'hsl('+e.hue+',90%,55%)'; ctx.shadowBlur = 14;
+        ctx.fillStyle = 'hsl('+e.hue+',85%,55%)';
+        ctx.beginPath();
+        ctx.moveTo(e.r*1.4,0); ctx.lineTo(-e.r,e.r*0.85); ctx.lineTo(-e.r*0.5,0); ctx.lineTo(-e.r,-e.r*0.85);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      });
+
+      // particles
+      particles.forEach(function(pt){
+        ctx.globalAlpha = Math.max(0,pt.life/0.8);
+        ctx.fillStyle = pt.color;
+        ctx.beginPath(); ctx.arc(pt.x,pt.y,3,0,Math.PI*2); ctx.fill();
+        ctx.globalAlpha=1;
+      });
+
+      // player heartbeat pulse
+      var beatInterval = 60/pulse;
+      var phase = ((t-lastBeat)/beatInterval);
+      var pulseR = player.r + Math.max(0,1-phase*2.2)*6;
+      var blink = invuln>0 && Math.floor(invuln*14)%2===0;
+      if(!blink){
+        ctx.save();
+        ctx.shadowColor = '#7ee0ff'; ctx.shadowBlur = 22;
+        var pg = ctx.createRadialGradient(player.x,player.y,0,player.x,player.y,pulseR);
+        pg.addColorStop(0,'#ffffff'); pg.addColorStop(0.4,'#8fd8ff'); pg.addColorStop(1,'rgba(70,140,255,0.15)');
+        ctx.fillStyle = pg;
+        ctx.beginPath(); ctx.arc(player.x,player.y,pulseR,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+
+      // lives
+      for(var i=0;i<LIVES_MAX;i++){
+        ctx.font='20px sans-serif';
+        ctx.fillStyle = i<lives? '#ff6b8a':'rgba(255,255,255,0.15)';
+        ctx.fillText('♥', 14+i*26, h-18);
+      }
+
+      if(calming){
+        ctx.fillStyle='rgba(120,255,210,0.85)';
+        ctx.font='14px sans-serif'; ctx.textAlign='center';
+        ctx.fillText('屏息中…', w/2, 40);
+        ctx.textAlign='left';
+      }
+    }
+  }
+
+  function gameOver(){
+    state = 'gameover';
+    if(t>best){ best=t; localStorage.setItem('dp_best', best.toFixed(2)); }
+    document.getElementById('bestVal').textContent = best.toFixed(1);
+    document.getElementById('overlay').classList.remove('hidden');
+    document.querySelector('#overlay h1').textContent = '你被吞没了';
+    document.querySelector('#overlay p').innerHTML =
+      '存活 <b style="color:#7ee0ff">'+t.toFixed(1)+'</b> 秒，惊险闪避 '+graze+' 次。<br>越慌越乱——下次试着在关键时刻屏息，让心跳降下来。';
+    document.getElementById('startBtn').textContent = '再试一次';
+  }
+
+  var last = null;
+  function loop(ts){
+    if(last===null) last = ts;
+    var dt = Math.min(0.05,(ts-last)/1000);
+    last = ts;
+    if(state==='playing') update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---- input handlers ----
+  window.addEventListener('keydown', function(e){
+    keys[e.key]=true;
+    if(e.key===' '||e.key==='Shift') calming = true;
+  });
+  window.addEventListener('keyup', function(e){
+    keys[e.key]=false;
+    if(e.key===' '||e.key==='Shift') calming = false;
+  });
+
+  canvas.addEventListener('touchstart', function(e){
+    ensureAudio();
+    e.preventDefault();
+    var tt = e.changedTouches[0];
+    touchTarget = { x: tt.clientX, y: tt.clientY };
+  }, {passive:false});
+  canvas.addEventListener('touchmove', function(e){
+    e.preventDefault();
+    var tt = e.changedTouches[0];
+    touchTarget = { x: tt.clientX, y: tt.clientY };
+  }, {passive:false});
+  canvas.addEventListener('touchend', function(e){
+    e.preventDefault();
+    touchTarget = null;
+  }, {passive:false});
+
+  canvas.addEventListener('mousedown', function(e){ touchTarget = {x:e.clientX,y:e.clientY}; });
+  window.addEventListener('mousemove', function(e){ if(touchTarget) touchTarget = {x:e.clientX,y:e.clientY}; });
+  window.addEventListener('mouseup', function(){ touchTarget = null; });
+
+  var calmBtn = document.getElementById('calmBtn');
+  function calmOn(e){ e.preventDefault(); calming = true; calmBtn.classList.add('active'); }
+  function calmOff(e){ if(e) e.preventDefault(); calming = false; calmBtn.classList.remove('active'); }
+  calmBtn.addEventListener('touchstart', calmOn, {passive:false});
+  calmBtn.addEventListener('touchend', calmOff, {passive:false});
+  calmBtn.addEventListener('mousedown', calmOn);
+  calmBtn.addEventListener('mouseup', calmOff);
+  calmBtn.addEventListener('mouseleave', calmOff);
+
+  document.getElementById('startBtn').addEventListener('click', function(){
+    ensureAudio();
+    if(actx && actx.state==='suspended') actx.resume();
+    reset();
+    state = 'playing';
+    document.getElementById('overlay').classList.add('hidden');
+    document.getElementById('grazeVal').textContent='0';
+  });
+
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>
