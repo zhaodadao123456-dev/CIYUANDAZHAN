@@ -27,3 +27,17 @@ dont-panic/index.html
 
 - 电脑：方向键 / WASD 移动，长按 空格 或 Shift 屏息。
 - 手机/平板：触摸拖拽移动，长按右下角「屏息」按钮。
+
+## 手机上怎么打开（不用任何 App）
+
+这个分支还没合并进 main、也没部署到你现有的游戏服务器，最快的办法是用 GitHub Pages（免费、一次设置、几分钟内出一个手机能直接打开的网址）：
+
+1. 手机或电脑浏览器登录 GitHub，进入本仓库 `zhaodadao123456-dev/CIYUANDAZHAN`
+2. **Settings（设置）** → 左侧 **Pages**
+3. Source 选 "Deploy from a branch"，Branch 选当前这个开发分支（或合并后选 `main`），文件夹选 `/ (root)`，点 **Save**
+4. 等 1~2 分钟，手机浏览器打开：
+   `https://zhaodadao123456-dev.github.io/CIYUANDAZHAN/dont-panic/`
+
+## 抖音小游戏版
+
+`douyin/` 目录下是同一个游戏改成抖音小游戏 API 写法的版本，可以直接在抖音 App 里玩，但需要你自己注册一个抖音开放平台开发者账号（要实名认证，这一步只能你自己做）。详细步骤见 [`douyin/README.md`](douyin/README.md)。
